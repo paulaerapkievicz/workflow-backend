@@ -1,0 +1,84 @@
+'use strict';
+/** @type {import('sequelize-cli').Migration} */
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    await queryInterface.createTable('jobs', {
+      id: {
+        allowNull: false,
+        primaryKey: true,
+        type: Sequelize.UUID,
+        defaultValue: Sequelize.UUIDV4
+      },
+      supermarket_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'supermarkets',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      branch_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'branches',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      category_id: {
+        type: Sequelize.UUID,
+        allowNull: false,
+        references: {
+          model: 'categories',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      freelancer_id: {
+        type: Sequelize.UUID,
+        allowNull: true,
+        references: {
+          model: 'freelancers',
+          key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      status: {
+        type: Sequelize.ENUM('pending', 'accepted', 'completed', 'canceled'),
+        allowNull: false,
+        defaultValue: 'pending'
+      },
+      start_time: {
+        type: Sequelize.DATE,
+        allowNull: false
+      },
+      end_time: {
+        type: Sequelize.DATE,
+        allowNull: false
+      },
+      payment_amount: {
+        type: Sequelize.DECIMAL(10,2),
+        allowNull: false
+      },
+      created_at: {
+        allowNull: false,
+        type: Sequelize.DATE,
+        defaultValue: Sequelize.literal('NOW()')
+      },
+      updated_at: {
+        allowNull: false,
+        type: Sequelize.DATE,
+        defaultValue: Sequelize.literal('NOW()')
+      }
+    });
+  },
+  async down(queryInterface, Sequelize) {
+    await queryInterface.dropTable('jobs');
+  }
+};
