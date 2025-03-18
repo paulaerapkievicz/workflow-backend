@@ -1,79 +1,77 @@
-// src/controllers/jobController.ts
 import { Request, Response } from 'express';
-import { jobService } from '../services/jobService';
+import { invoiceService } from '../services/invoiceService';
 
-export const jobController = {
-  // Criar nova vaga
-  // POST /jobs - Cria uma nova vaga de trabalho
-  async create(req: Request, res: Response) {
-    try {
-      const { supermarket_id, category_id, title, description } = req.body;
-      if (!supermarket_id || !category_id || !title || !description) {
-        return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
-      }
-      const job = await jobService.createJob(supermarket_id, category_id, title, description);
-      return res.status(201).json(job);
-    } catch (error) {
-      return res.status(500).json({ error: 'Erro ao criar vaga' });
-    }
-  },
+export const invoiceController = {
+    // POST /invoices - Cria uma nova invoice
+    async create(req: Request, res: Response) {
+        try {
+            const invoice = await invoiceService.create(req.body);
+            res.status(201).json(invoice);
+        } catch (error) {
+            res.status(500).json({ message: 'Erro ao criar invoice', error });
+        }
+    },
 
-  // Atribuir vaga ao freelancer
-  // PATCH /jobs/:id/assign - Atribui uma vaga a um freelancer
-  async assignToFreelancer(req: Request, res: Response) {
-    try {
-      const { job_id, freelancer_id } = req.body;
-      if (!job_id || !freelancer_id) {
-        return res.status(400).json({ error: 'Job ID e Freelancer ID são obrigatórios' });
-      }
-      const job = await jobService.assignJobToFreelancer(job_id, freelancer_id);
-      return res.status(200).json(job);
-    } catch (error) {
-      return res.status(500).json({ error: 'Erro ao atribuir vaga ao freelancer' });
-    }
-  },
+    // GET /invoices - Lista todas as invoices
+    async index(req: Request, res: Response) {
+        try {
+            const invoices = await invoiceService.getAllInvoices();
+            res.status(200).json(invoices);
+        } catch (error) {
+            res.status(500).json({ message: 'Erro ao listar invoices', error });
+        }
+    },
 
-  // Aceitar vaga
-  // PATCH /jobs/:id/accept - Freelancer aceita a vaga atribuída
-  async acceptJob(req: Request, res: Response) {
-    try {
-      const { job_id, freelancer_id } = req.body;
-      if (!job_id || !freelancer_id) {
-        return res.status(400).json({ error: 'Job ID e Freelancer ID são obrigatórios' });
-      }
-      const job = await jobService.acceptJob(job_id, freelancer_id);
-      return res.status(200).json(job);
-    } catch (error) {
-      return res.status(500).json({ error: 'Erro ao aceitar vaga' });
-    }
-  },
+    // GET /invoices/:id - Busca uma invoice pelo ID
+    async show(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const invoice = await invoiceService.findById(id);
+            if (!invoice) {
+                return res.status(404).json({ message: 'Invoice não encontrada' });
+            }
+            res.status(200).json(invoice);
+        } catch (error) {
+            res.status(500).json({ message: 'Erro ao buscar invoice', error });
+        }
+    },
 
-  // Cancelar vaga
-  // DELETE /jobs/:id - Cancela uma vaga
-  async cancelJob(req: Request, res: Response) {
-    try {
-      const { job_id } = req.body;
-      const job = await jobService.cancelJob(job_id);
-      return res.status(200).json(job);
-    } catch (error) {
-      return res.status(500).json({ error: 'Erro ao cancelar vaga' });
-    }
-  },
+    // PUT /invoices/:id - Atualiza uma invoice
+    async update(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const updatedInvoice = await invoiceService.update(id, req.body);
+            if (!updatedInvoice) {
+                return res.status(404).json({ message: 'Invoice não encontrada' });
+            }
+            res.status(200).json(updatedInvoice);
+        } catch (error) {
+            res.status(500).json({ message: 'Erro ao atualizar invoice', error });
+        }
+    },
 
-  // Editar vaga
-  // PUT /jobs/:id - Edita os detalhes de uma vaga de trabalho
-  async editJob(req: Request, res: Response) {
-    try {
-      const { job_id } = req.params;
-      const { title, description, category_id } = req.body;
-      if (!title || !description || !category_id) {
-        return res.status(400).json({ error: 'Todos os campos são obrigatórios' });
-      }
-      const job = await jobService.editJob(job_id, title, description, category_id);
-      return res.status(200).json(job);
-    } catch (error) {
-      return res.status(500).json({ error: 'Erro ao editar vaga' });
+    // DELETE /invoices/:id - Deleta uma invoice
+    async delete(req: Request, res: Response) {
+        try {
+            const { id } = req.params;
+            const deleted = await invoiceService.delete(id);
+            if (!deleted) {
+                return res.status(404).json({ message: 'Invoice não encontrada' });
+            }
+            res.status(200).json({ message: 'Invoice deletada com sucesso' });
+        } catch (error) {
+            res.status(500).json({ message: 'Erro ao deletar invoice', error });
+        }
+    },
+
+    // GET /invoices/supermarket/:supermarketId - Busca invoices de um supermercado específico
+    async getBySupermarket(req: Request, res: Response) {
+        try {
+            const { supermarketId } = req.params;
+            const invoices = await invoiceService.findBySupermarket(supermarketId);
+            res.status(200).json(invoices);
+        } catch (error) {
+            res.status(500).json({ message: 'Erro ao buscar invoices do supermercado', error });
+        }
     }
-  }
 };
- 

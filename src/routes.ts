@@ -14,7 +14,6 @@ import { paymentController } from './controllers/paymentController';
 // import { authController } from './controllers/authController';
 // import { reviewsController } from './controllers/reviewsController';
 // import { paymentsController } from './controllers/paymentsController';
-// import { invoicesController } from './controllers/invoicesController';
 // import { commissionsController } from './controllers/commissionsController';
 
 // Criando Router
@@ -109,14 +108,14 @@ router.get('/freelancer-locations', freelancerLocationController.getLatestLocati
 // router.get('/payments/:id', paymentController.show);
 // router.put('/payments/:id/cancel', paymentController.cancel);
 // // router.post('/payments/:id/cancel', paymentsController.cancel);
-// Requisições/Demandas
-router.post('/invoices', invoiceController.create); // Criar uma invoice
-router.get('/invoices', invoiceController.index); // Listar invoices
-router.get('/invoices/:id', invoiceController.show); // Mostrar invoice por ID
-router.delete('/invoices/:id', invoiceController.delete); // Deletar invoice
-router.put('/invoices/:id', invoiceController.update); // Atualizar invoice (ex: mudar status de 'pending' para 'paid')
-router.get('/invoices/supermarket/:supermarketId', invoiceController.getBySupermarket); // Buscar invoices de um supermercado
 
+// Requisições/Demandas 
+router.get('/invoices', invoiceController.index);
+router.get('/invoices/:id', invoiceController.show);
+router.post('/invoices', invoiceController.create);
+router.put('/invoices/:id', invoiceController.update);
+router.delete('/invoices/:id', invoiceController.delete);
+router.get('/invoices/supermarket/:supermarketId', invoiceController.getBySupermarket);
 
 // Comissões
 // router.post('/commissions', commissionsController.create);
