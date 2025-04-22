@@ -1,38 +1,61 @@
-import { Payment } from '../models';
-
-interface CreatePaymentData {
-  freelancer_id: string;
-  job_id: string;
-  amount: number;
-  status: 'pending' | 'paid' | 'canceled';
-  payment_date?: Date;
-}
+import { Payment, PaymentCreationAttributes } from '../models/Payment';
+import { Job } from '../models/Job';
+import { Freelancer } from '../models/Freelancer';
 
 export const paymentService = {
-  // 📌 Cria um novo pagamento
-  async create(data: CreatePaymentData) {
+  /**
+   * Busca todos os pagamentos, incluindo freelancer e job relacionados.
+   */
+  async findAll() {
+    return await Payment.findAll({
+      include: [
+        { model: Job, as: 'paymentJob' },
+        { model: Freelancer, as: 'paymentFreelancer' }
+      ]
+    });
+  },
+
+  /**
+   * Busca um pagamento específico por ID.
+   * @param id UUID do pagamento.
+   */
+  async findById(id: string) {
+    return await Payment.findByPk(id, {
+      include: [
+        { model: Job, as: 'paymentJob' },
+        { model: Freelancer, as: 'paymentFreelancer' }
+      ]
+    });
+  },
+
+  /**
+   * Cria um novo pagamento.
+   * @param data Dados do pagamento.
+   */
+  async create(data: PaymentCreationAttributes) {
+    const jobExists = await Job.findByPk(data.jobId);
+    if (!jobExists) throw new Error('Job não encontrado.');
+
+    const freelancerExists = await Freelancer.findByPk(data.freelancerId);
+    if (!freelancerExists) throw new Error('Freelancer não encontrado.');
+
     return await Payment.create(data);
   },
 
-  // 🔍 Lista todos os pagamentos
-  async getAll() {
-    return await Payment.findAll();
-  },
+  /**
+   * Cancela um pagamento, alterando seu status para 'canceled'.
+   * @param id UUID do pagamento.
+   */
+  async cancel(id: string) {
+    const payment = await Payment.findByPk(id);
+    if (!payment) throw new Error('Pagamento não encontrado.');
 
-  // 🔍 Obtém detalhes de um pagamento específico
-  async getById(id: string) {
-    return await Payment.findByPk(id);
-  },
+    if (payment.status === 'canceled') {
+      throw new Error('O pagamento já está cancelado.');
+    }
 
-  // ✏️ Atualiza um pagamento
-  async update(id: string, data: Partial<CreatePaymentData>) {
-    const [updatedRows] = await Payment.update(data, { where: { id }, returning: true });
-    return updatedRows > 0;
-  },
-
-  // ❌ Remove um pagamento
-  async delete(id: string) {
-    const deletedRows = await Payment.destroy({ where: { id } });
-    return deletedRows > 0;
-  },
+    payment.status = 'canceled';
+    await payment.save();
+    return payment;
+  }
 };

@@ -103,11 +103,11 @@ router.get('/freelancer-locations', freelancerLocationController.getLatestLocati
 
 // // ----- Finanças:
 // Pagamentos
-// router.post('/payments', paymentController.create);
-// router.get('/payments', paymentController.index);
-// router.get('/payments/:id', paymentController.show);
-// router.put('/payments/:id/cancel', paymentController.cancel);
-// // router.post('/payments/:id/cancel', paymentsController.cancel);
+router.post('/payments', paymentController.create);
+router.get('/payments', paymentController.index);
+router.get('/payments/:id', paymentController.show);
+router.put('/payments/:id/cancel', paymentController.cancel);
+// router.post('/payments/:id/cancel', paymentsController.cancel);
 
 // Requisições/Demandas 
 router.get('/invoices', invoiceController.index);

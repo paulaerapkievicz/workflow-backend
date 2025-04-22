@@ -46,8 +46,15 @@ export const jobLogService = {
     }
     return await JobLog.create({ jobId, freelancerId, eventType } as JobLogCreationAttributes);
   },
+  // 💡 Outro ponto legal:
+  // Quando for salvar o checkOut no JobLog, e quiser automatizar o endTime no Job (se for regra da tua lógica) — o service de logs poderia, além de gravar o log, atualizar o Job.endTime com o último log check-out daquele job.
+  // if (eventType === 'check-out') {
+  //   await Job.update(
+  //     { endTime: new Date() },
+  //     { where: { id: jobId } }
+  //   );
+  // }
   
-
   // Registra um check-out
   async checkOut(jobId: string, freelancerId: string) {
     return await JobLog.create({ jobId, freelancerId, eventType: 'check-out' } as JobLogCreationAttributes);

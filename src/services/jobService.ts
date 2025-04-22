@@ -19,7 +19,7 @@ export const jobService = {
 
   // Busca um trabalho por ID
   async findById(id: string) {
-    return await Job.findAll({
+    return await Job.findByPk(id, {
       include: [
         { model: Supermarket, as: 'jobSupermarket' },
         { model: Branch, as: 'jobBranch' },
