@@ -9,11 +9,14 @@ export interface User {
   email: string
   passwordHash: string
   role: 'admin' | 'supermarket' | 'freelancer' | 'agency'
+  phone?: string | null
+  birthDate?: string | null
   createdAt: Date
   updatedAt: Date
 }
 
-export interface UserCreationAttributes extends Optional<User, 'id' | 'createdAt' | 'updatedAt'> {}
+export interface UserCreationAttributes
+  extends Optional<User, 'id' | 'phone' | 'birthDate' | 'createdAt' | 'updatedAt'> {}
 
 export interface UserInstance extends Model<User, UserCreationAttributes>, User {}
 
@@ -40,6 +43,14 @@ export const User = sequelize.define<UserInstance, User>('User', {
   role: {
     type: DataTypes.ENUM('admin', 'supermarket', 'freelancer', 'agency'),
     allowNull: false
+  },
+  phone: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  birthDate: {
+    type: DataTypes.DATEONLY,
+    allowNull: true
   },
   createdAt: {
     allowNull: false,

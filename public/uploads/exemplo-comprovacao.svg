@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="480" height="320" viewBox="0 0 480 320">
+  <rect width="480" height="320" fill="#eef2f5"/>
+  <rect x="24" y="24" width="432" height="272" fill="#fff" stroke="#c9d3da" stroke-width="2"/>
+  <circle cx="120" cy="120" r="42" fill="#f2693d"/>
+  <rect x="190" y="96" width="220" height="18" rx="4" fill="#c9d3da"/>
+  <rect x="190" y="130" width="160" height="14" rx="4" fill="#dde4e9"/>
+  <rect x="60" y="210" width="360" height="56" rx="6" fill="#7d9d8e"/>
+  <text x="240" y="245" font-family="Arial, sans-serif" font-size="20" fill="#fff" text-anchor="middle">Comprovação de entrega (exemplo)</text>
+</svg>

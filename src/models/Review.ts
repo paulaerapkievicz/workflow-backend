@@ -8,12 +8,18 @@ export interface Review {
   jobId: string
   freelancerId: string
   rating: number
-  comment?: string
+  comment?: string | null
+  authorRole?: string | null
+  approved?: boolean | null
   createdAt: Date
   updatedAt: Date
 }
 
-export interface ReviewCreationAttributes extends Optional<Review, 'id'> {}
+export interface ReviewCreationAttributes
+  extends Optional<
+    Review,
+    'id' | 'comment' | 'authorRole' | 'approved' | 'createdAt' | 'updatedAt'
+  > {}
 
 export interface ReviewInstance extends Model<Review, ReviewCreationAttributes>, Review {}
 
@@ -56,6 +62,14 @@ export const Review = sequelize.define<ReviewInstance, Review>(
     },
     comment: {
       type: DataTypes.TEXT,
+      allowNull: true
+    },
+    authorRole: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
+    approved: {
+      type: DataTypes.BOOLEAN,
       allowNull: true
     },
     createdAt: {

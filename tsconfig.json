@@ -1,16 +1,17 @@
 {
   "compilerOptions": {
-    "target": "es2016",             
-    "jsx": "react", 
-    "module": "commonjs",        
+    "target": "es2016",
+    "jsx": "react",
+    "module": "commonjs",
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true, 
+    "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
     "strict": true,
     "skipLibCheck": true,
-    // "baseUrl": "./",
-    // "paths": {
-    //   "@adminjs/design-system": ["node_modules/@adminjs/design-system"]
-    // }
-  }
+    "outDir": "dist",
+    "rootDir": "src"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/adminjs/components/Dashboard-old.tsx", "src/services/test"]
 }

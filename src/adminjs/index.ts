@@ -6,29 +6,28 @@ import { adminJsResources } from './resources'
 import { dashboardOptions } from './dashboard'
 import { brandingOptions } from './branding'
 import { locale } from './locale'
-// import { authenticationOptions } from './authentication';
+import { authenticationOptions } from './authentication';
 
 AdminJS.registerAdapter(AdminJsSequelize)
 
 const adminJs = new AdminJS({
-  databases: [sequelize], // Conecta o banco
-  rootPath: '/admin', // Define a rota do painel
+  databases: [sequelize],
+  rootPath: '/admin',
   resources: adminJsResources,
   branding: brandingOptions,
   locale: locale,
   dashboard: dashboardOptions,
 });
 
-// const adminJsRouter = AdminJSExpress.buildAuthenticatedRouter(
-//   adminJs,
-//   authenticationOptions, // Adicionando autenticação
-//   null,
-//   {
-//     resave: false,
-//     saveUninitialized: false,
-//   }
-// );
-
-const adminJsRouter = AdminJSExpress.buildRouter(adminJs);
+const adminJsRouter = AdminJSExpress.buildAuthenticatedRouter(
+  adminJs,
+  authenticationOptions,
+  null,
+  {
+    resave: false,
+    saveUninitialized: false,
+    secret: process.env.COOKIE_SECRET || 'dev-workflow-cookie-secret-change-me',
+  }
+);
 
 export { adminJs, adminJsRouter };

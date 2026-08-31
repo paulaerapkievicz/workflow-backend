@@ -1,179 +1,114 @@
-// import { Request, Response } from 'express'
-// import { userService } from '../services/userService'
-// import { jwtService } from '../services/jwtService'
+import { Request, Response } from 'express'
+import bcrypt from 'bcrypt'
+import { sequelize } from '../database'
+import { User } from '../models/User'
+import { Supermarket } from '../models/Supermarket'
+import { Agency } from '../models/Agency'
+import { Freelancer } from '../models/Freelancer'
+import { Commission } from '../models/Commission'
+import { jwtService } from '../services/jwtService'
+import { profileService } from '../services/profileService'
+import { AuthRequest, Role } from '../middlewares/auth'
 
-// export const authController = {
-//   // POST /auth/register
-//   register: async (req: Request, res: Response) => {
-//     const { firstName, lastName, phone, birth, email, password } = req.body
+const VALID_ROLES: Role[] = ['admin', 'supermarket', 'freelancer', 'agency']
 
-//     try {
-//       const userAlreadyExists = await userService.findByEmail(email)
+function publicUser(user: User) {
+  const json = (user as any).toJSON ? (user as any).toJSON() : user
+  delete json.passwordHash
+  return json
+}
 
-//       if (userAlreadyExists) {
-//         throw new Error('Este e-mail já está cadastrado.')
-//       }
+export const authController = {
+  // POST /auth/register
+  async register(req: Request, res: Response) {
+    const { name, email, password, phone, role } = req.body ?? {}
+    const profile = req.body?.profile ?? {}
 
-//       const user = await userService.create({
-//         firstName,
-//         lastName,
-//         phone,
-//         birth,
-//         email,
-//         password,
-//         role: 'user'
-//       })
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ message: 'Informe nome, e-mail, senha e perfil.' })
+    }
+    if (!VALID_ROLES.includes(role) || role === 'admin') {
+      return res.status(400).json({ message: 'Perfil inválido para cadastro.' })
+    }
 
-//       return res.status(201).json(user)
-//     } catch (err) {
-//       if (err instanceof Error) {
-//         return res.status(400).json({ message: err.message })
-//       }
-//     }
-//   },
+    const exists = await User.findOne({ where: { email } })
+    if (exists) {
+      return res.status(409).json({ message: 'Este e-mail já está cadastrado.' })
+    }
 
-//   // POST /auth/login
-// login: async(req: Request, res: Response) => {
-//   const { email, password } = req.body
+    if ((role === 'supermarket' || role === 'agency') && (!profile.companyName || !profile.cnpj || !profile.address)) {
+      return res.status(400).json({ message: 'Informe nome da empresa, CNPJ e endereço.' })
+    }
 
-//   try {
-//     const user = await userService.findByEmail(email)
+    try {
+      const result = await sequelize.transaction(async (t) => {
+        const passwordHash = await bcrypt.hash(password, 10)
+        const user = await User.create({ name, email, passwordHash, role, phone: phone ?? null }, { transaction: t })
 
-//     if (!user) {
-//       return res.status(404).json({ message: 'E-mail não registrado' })
-//     }
+        let createdProfile: any = null
 
-//     user.checkPassword(password, (err, isSame) => {
-//       if (err) {
-//         return res.status(400).json({ message: err.message })
-//       }
+        if (role === 'supermarket') {
+          createdProfile = await Supermarket.create(
+            { ownerId: user.id, name: profile.companyName, cnpj: profile.cnpj, address: profile.address, phone: phone ?? undefined },
+            { transaction: t }
+          )
+        } else if (role === 'agency') {
+          const pct = profile.commissionPercentage != null ? Number(profile.commissionPercentage) : 10
+          createdProfile = await Agency.create(
+            { ownerId: user.id, name: profile.companyName, cnpj: profile.cnpj, address: profile.address, phone: phone ?? undefined, commissionPercentage: pct },
+            { transaction: t }
+          )
+          await Commission.create({ agencyId: createdProfile.id, percentage: pct }, { transaction: t })
+        } else if (role === 'freelancer') {
+          createdProfile = await Freelancer.create(
+            {
+              userId: user.id,
+              agencyId: profile.agencyId ?? null,
+              name,
+              email,
+              phone: phone ?? undefined,
+              skills: profile.skills ?? undefined,
+            },
+            { transaction: t }
+          )
+        }
 
-//       if (!isSame) {
-//         return res.status(401).json({ message: 'Senha incorreta' })
-//       }
+        return { user, profile: createdProfile }
+      })
 
-//       const payload = {
-//         id: user.id,
-//         firstName: user.firstName,
-//         email: user.email
-//       }
+      const token = jwtService.sign({ sub: result.user.id, role: result.user.role, email: result.user.email })
+      return res.status(201).json({ token, user: publicUser(result.user), profile: result.profile })
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao cadastrar.' })
+    }
+  },
 
-//       const token = jwtService.signToken(payload, '7d')
+  // POST /auth/login
+  async login(req: Request, res: Response) {
+    const { email, password } = req.body ?? {}
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Informe e-mail e senha.' })
+    }
 
-//       return res.json({ authenticated: true, ...payload, token })
-//     })
-//   } catch (err) {
-//     if (err instanceof Error) {
-//       return res.status(400).json({ message: err.message })
-//     }
-//   }
-// }
-// }
+    const user = await User.findOne({ where: { email } })
+    if (!user) {
+      return res.status(401).json({ message: 'E-mail ou senha inválidos.' })
+    }
 
+    const ok = await bcrypt.compare(password, user.passwordHash)
+    if (!ok) {
+      return res.status(401).json({ message: 'E-mail ou senha inválidos.' })
+    }
 
-// // import { Request, Response } from 'express';
-// // import { userService } from '../services/userService';
-// // import { jwtService } from '../services/jwtService';
-// // import bcrypt from 'bcrypt';
+    const token = jwtService.sign({ sub: user.id, role: user.role, email: user.email })
+    const profile = await profileService.forUser(user)
+    return res.json({ token, user: publicUser(user), profile })
+  },
 
-// // export const authController = {
-// //   // POST /auth/register - Cadastro de usuário
-// //   register: async (req: Request, res: Response) => {
-// //     const { firstName, lastName, phone, birth, email, password, role } = req.body;
-
-// //     try {
-// //       // Verifica se o e-mail já está cadastrado
-// //       const userAlreadyExists = await userService.findByEmail(email);
-// //       if (userAlreadyExists) {
-// //         return res.status(409).json({ message: 'Este e-mail já está cadastrado.' });
-// //       }
-
-// //       // Criação do usuário com hash de senha
-// //       const hashedPassword = await bcrypt.hash(password, 10);
-// //       const user = await userService.create({
-// //         firstName,
-// //         lastName,
-// //         phone,
-// //         birth,
-// //         email,
-// //         password: hashedPassword,
-// //         role
-// //       });
-
-// //       return res.status(201).json(user);
-// //     } catch (err) {
-// //       if (err instanceof Error) {
-// //         return res.status(400).json({ message: err.message });
-// //       }
-// //     }
-// //   },
-
-// //   // POST /auth/login - Autenticação de usuário
-// //   login: async (req: Request, res: Response) => {
-// //     const { email, password } = req.body;
-
-// //     try {
-// //       // Verifica se o e-mail está cadastrado
-// //       const user = await userService.findByEmail(email);
-// //       if (!user) {
-// //         return res.status(404).json({ message: 'E-mail não registrado' });
-// //       }
-
-// //       // Verifica se a senha está correta
-// //       const isSame = await bcrypt.compare(password, user.password);
-// //       if (!isSame) {
-// //         return res.status(401).json({ message: 'Senha incorreta' });
-// //       }
-
-// //       // Geração do token JWT
-// //       const payload = {
-// //         id: user.id,
-// //         firstName: user.firstName,
-// //         email: user.email,
-// //         role: user.role
-// //       };
-// //       const token = jwtService.signToken(payload, '7d');
-
-// //       return res.json({ authenticated: true, ...payload, token });
-// //     } catch (err) {
-// //       if (err instanceof Error) {
-// //         return res.status(400).json({ message: err.message });
-// //       }
-// //     }
-// //   },
-
-// //   // POST /auth/logout - Logout do usuário
-// //   logout: async (_req: Request, res: Response) => {
-// //     try {
-// //       return res.json({ authenticated: false, token: null });
-// //     } catch (err) {
-// //       if (err instanceof Error) {
-// //         return res.status(400).json({ message: err.message });
-// //       }
-// //     }
-// //   },
-
-// //   // POST /auth/refresh-token - Renovação do token JWT
-// //   refreshToken: async (req: Request, res: Response) => {
-// //     const { token } = req.body;
-
-// //     try {
-// //       if (!token) {
-// //         return res.status(400).json({ message: 'Token não fornecido' });
-// //       }
-
-// //       jwtService.verifyToken(token, (err, decoded) => {
-// //         if (err) {
-// //           return res.status(401).json({ message: 'Token inválido ou expirado' });
-// //         }
-
-// //         const newToken = jwtService.signToken(decoded as object, '7d');
-// //         return res.json({ token: newToken });
-// //       });
-// //     } catch (err) {
-// //       if (err instanceof Error) {
-// //         return res.status(400).json({ message: err.message });
-// //       }
-// //     }
-// //   }
-// // };
+  // GET /auth/me
+  async me(req: AuthRequest, res: Response) {
+    const user = req.user!
+    const profile = await profileService.forUser(user)
+    return res.json({ user: publicUser(user), profile })
+  },
+}

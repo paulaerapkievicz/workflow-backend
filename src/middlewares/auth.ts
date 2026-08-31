@@ -1,114 +1,45 @@
-// import { NextFunction, Request, Response } from 'express';
-// import { JwtPayload } from 'jsonwebtoken';
-// import { UserInstance } from '../models/User';
-// import { jwtService } from '../services/jwtService';
-// import { userService } from '../services/userService';
+import { NextFunction, Request, Response } from 'express'
+import { jwtService } from '../services/jwtService'
+import { User, UserInstance } from '../models/User'
 
-// export interface AuthenticatedRequest extends Request {
-//   user?: UserInstance | null;
-// }
+export type Role = 'admin' | 'supermarket' | 'freelancer' | 'agency'
 
-// // Função auxiliar para verificar o token
-// async function verifyAndAttachUser(token: string, req: AuthenticatedRequest, res: Response, next: NextFunction) {
-//   try {
-//     const decoded = await jwtService.verifyToken(token);
+export interface AuthRequest extends Request {
+  user?: UserInstance
+}
 
-//     if (!decoded || typeof decoded !== 'object' || !('email' in decoded)) {
-//       return res.status(401).json({ message: 'Não autorizado: token inválido' });
-//     }
+export async function ensureAuth(req: AuthRequest, res: Response, next: NextFunction) {
+  const header = req.headers.authorization
 
-//     const user = await userService.findByEmail(decoded.email);
-//     if (!user) {
-//       return res.status(401).json({ message: 'Não autorizado: usuário não encontrado' });
-//     }
+  if (!header) {
+    return res.status(401).json({ message: 'Não autorizado: token não informado.' })
+  }
 
-//     req.user = user;
-//     return next();
-//   } catch (error) {
-//     return res.status(401).json({ message: 'Não autorizado: erro na verificação do token' });
-//   }
-// }
+  const token = header.replace(/^Bearer\s+/i, '')
 
-// // Middleware para autenticação via header Authorization
-// export function ensureAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-//   const authorizationHeader = req.headers.authorization;
+  try {
+    const payload = await jwtService.verify(token)
+    const user = await User.findByPk(payload.sub)
 
-//   if (!authorizationHeader) {
-//     return res.status(401).json({ message: 'Não autorizado: nenhum token encontrado' });
-//   }
+    if (!user) {
+      return res.status(401).json({ message: 'Não autorizado: usuário não encontrado.' })
+    }
 
-//   const token = authorizationHeader.replace(/^Bearer\s/, '');
-//   return verifyAndAttachUser(token, req, res, next);
-// }
+    req.user = user
+    return next()
+  } catch {
+    return res.status(401).json({ message: 'Não autorizado: token inválido ou expirado.' })
+  }
+}
 
-// // Middleware para autenticação via query string (para streaming)
-// export function ensureAuthViaQuery(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-//   const { token } = req.query;
-
-//   if (!token) {
-//     return res.status(401).json({ message: 'Não autorizado: nenhum token encontrado' });
-//   }
-
-//   if (typeof token !== 'string') {
-//     return res.status(400).json({ message: 'O parâmetro token deve ser do tipo string' });
-//   }
-
-//   return verifyAndAttachUser(token, req, res, next);
-// }
-
-
-// // import { NextFunction, Request, Response } from 'express'
-// // import { JwtPayload } from 'jsonwebtoken'
-// // import { UserInstance } from '../models/User'
-// // import { jwtService } from '../services/jwtService'
-// // import { userService } from '../services/userService'
-
-// // export interface AuthenticatedRequest extends Request {
-// //   user?: UserInstance | null
-// // }
-
-// // export function ensureAuth(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-// //   const authorizationHeader = req.headers.authorization
-
-// //   if (!authorizationHeader) {
-// //     return res.status(401).json({ message: 'Não autorizado: nenhum token encontrado' })
-// //   }
-
-// //   const token = authorizationHeader.replace(/Bearer /, '')
-
-// //   jwtService.verifyToken(token, async (err, decoded) => {
-// //     if (err || typeof decoded === 'undefined') {
-// //       return res.status(401).json({ message: 'Não autorizado: token inválido' })
-// //     }
-
-// //     const user = await userService.findByEmail((decoded as JwtPayload).email)
-// //       req.user = user
-// //       next() 
-// //   })
-// // }
-
-// // // Para nos beneficiarmos do player nativo do navegador, iremos
-// // // criar um middleware específico de autorização para o endpoint
-// // // de streaming. Ele verificará pelo token presente nos
-// // // parâmetro de query da url
-// // export function ensureAuthViaQuery(req: AuthenticatedRequest, res: Response, next: NextFunction) {
-// //     const { token } = req.query
-  
-// //     if (!token) {
-// //       return res.status(401).json({ message: 'Não autorizado: nenhum token encontrado' })
-// //     }
-  
-// //     if (typeof token !== 'string') {
-// //       return res.status(400).json({ message: 'O parâmetro token deve ser do tipo string' })
-// //     }
-  
-// //     jwtService.verifyToken(token, async (err, decoded) => {
-// //       if (err || typeof decoded === 'undefined') {
-// //         return res.status(401).json({ message: 'Não autorizado: token inválido' })
-// //       }
-  
-// //       const user = await userService.findByEmail((decoded as JwtPayload).email)
-// //         req.user = user
-// //         next()
-// //     })
-// //   }
+export function authorize(...roles: Role[]) {
+  return (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return res.status(401).json({ message: 'Não autorizado.' })
+    }
+    if (!roles.includes(req.user.role)) {
+      return res.status(403).json({ message: 'Acesso negado para o seu perfil.' })
+    }
+    return next()
+  }
+}

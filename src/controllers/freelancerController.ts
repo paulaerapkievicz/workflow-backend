@@ -1,5 +1,11 @@
 import { Request, Response } from 'express';
+import bcrypt from 'bcrypt';
 import { freelancerService } from '../services/freelancerService';
+import { profileService } from '../services/profileService';
+import { sequelize } from '../database';
+import { User } from '../models/User';
+import { Freelancer } from '../models/Freelancer';
+import { AuthRequest } from '../middlewares/auth';
 
 export const freelancerController = {
   async create(req: Request, res: Response) {
@@ -8,6 +14,37 @@ export const freelancerController = {
       return res.status(201).json(freelancer);
     } catch (err) {
       return res.status(500).json({ message: 'Erro ao criar freelancer.' });
+    }
+  },
+
+  // POST /agency/freelancers — agência cadastra um freelancer (usuário + perfil) na própria agência
+  async createForMyAgency(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+
+      const { name, email, password, phone, skills } = req.body ?? {};
+      if (!name || !email || !password) {
+        return res.status(400).json({ message: 'Informe nome, e-mail e senha do freelancer.' });
+      }
+      const exists = await User.findOne({ where: { email } });
+      if (exists) return res.status(409).json({ message: 'E-mail já cadastrado.' });
+
+      const freelancer = await sequelize.transaction(async (t) => {
+        const passwordHash = await bcrypt.hash(password, 10);
+        const user = await User.create(
+          { name, email, passwordHash, role: 'freelancer', phone: phone ?? null },
+          { transaction: t }
+        );
+        return Freelancer.create(
+          { userId: user.id, agencyId, name, email, phone: phone ?? undefined, skills: skills ?? undefined },
+          { transaction: t }
+        );
+      });
+
+      return res.status(201).json(freelancer);
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao cadastrar freelancer.' });
     }
   },
 

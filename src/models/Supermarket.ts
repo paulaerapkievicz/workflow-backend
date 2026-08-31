@@ -15,7 +15,8 @@ export interface Supermarket {
   updatedAt: Date
 }
 
-export interface SupermarketCreationAttributes extends Optional<Supermarket, 'id' | 'phone'> {}
+export interface SupermarketCreationAttributes
+  extends Optional<Supermarket, 'id' | 'phone' | 'createdAt' | 'updatedAt'> {}
 
 export interface SupermarketInstance
   extends Model<Supermarket, SupermarketCreationAttributes>,

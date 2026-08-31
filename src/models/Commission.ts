@@ -11,7 +11,8 @@ export interface Commission {
   updatedAt: Date
 }
 
-export interface CommissionCreationAttributes extends Optional<Commission, 'id'> {}
+export interface CommissionCreationAttributes
+  extends Optional<Commission, 'id' | 'createdAt' | 'updatedAt'> {}
 
 export interface CommissionInstance extends Model<Commission, CommissionCreationAttributes>, Commission {}
 

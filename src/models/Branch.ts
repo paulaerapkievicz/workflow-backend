@@ -10,11 +10,18 @@ export interface Branch {
   name: string
   address: string
   phone?: string
+  latitude?: number | null
+  longitude?: number | null
+  geofenceRadius: number
   createdAt: Date
   updatedAt: Date
 }
 
-export interface BranchCreationAttributes extends Optional<Branch, 'id' | 'phone'> {}
+export interface BranchCreationAttributes
+  extends Optional<
+    Branch,
+    'id' | 'phone' | 'latitude' | 'longitude' | 'geofenceRadius' | 'createdAt' | 'updatedAt'
+  > {}
 
 export interface BranchInstance extends Model<Branch, BranchCreationAttributes>, Branch {}
 
@@ -45,6 +52,19 @@ export const Branch = sequelize.define<BranchInstance, Branch>('Branch', {
   },
   phone: {
     type: DataTypes.STRING
+  },
+  latitude: {
+    type: DataTypes.DECIMAL(10, 6),
+    allowNull: true
+  },
+  longitude: {
+    type: DataTypes.DECIMAL(10, 6),
+    allowNull: true
+  },
+  geofenceRadius: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 300
   },
   createdAt: {
     allowNull: false,

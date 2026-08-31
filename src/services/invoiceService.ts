@@ -1,45 +1,40 @@
 // src/services/invoiceService.ts
 import { Invoice, InvoiceCreationAttributes } from '../models/Invoice';
+import { Job } from '../models/Job';
+import { Payment } from '../models/Payment';
+
+const includes = [
+  { model: Job, as: 'invoiceJob' },
+  { model: Payment, as: 'invoicePayment' },
+];
 
 export const invoiceService = {
-  // Criar invoice
-  // POST /invoices - Cria uma nova fatura
-  async createInvoice(data: InvoiceCreationAttributes) {
+  async create(data: InvoiceCreationAttributes) {
     return Invoice.create(data);
   },
 
-  // Buscar todas as invoices
-  // GET /invoices - Lista todas as faturas
   async getAllInvoices() {
-    return Invoice.findAll();
+    return Invoice.findAll({ include: includes, order: [['createdAt', 'DESC']] });
   },
 
-  // Buscar invoice por ID
-  // GET /invoices/:id - Retorna uma fatura específica por ID
-  async getInvoiceById(id: string) {
-    return Invoice.findByPk(id);
+  async findById(id: string) {
+    return Invoice.findByPk(id, { include: includes });
   },
 
-  // Deletar invoice
-  // DELETE /invoices/:id - Remove uma fatura
-  async deleteInvoice(id: string) {
+  async update(id: string, data: Partial<InvoiceCreationAttributes>) {
     const invoice = await Invoice.findByPk(id);
     if (!invoice) return null;
-    return invoice.destroy();
+    return invoice.update(data);
   },
 
-  // Atualizar status da invoice
-  // PATCH /invoices/:id/status - Atualiza o status da fatura
-  async updateInvoiceStatus(id: string, status: 'pending' | 'paid' | 'canceled') {
+  async delete(id: string) {
     const invoice = await Invoice.findByPk(id);
     if (!invoice) return null;
-    invoice.status = status;
-    return invoice.save();
+    await invoice.destroy();
+    return true;
   },
 
-  // Buscar invoices de um supermercado
-  // GET /invoices/supermarket/:supermarketId - Lista faturas de um supermercado
-  async getInvoicesBySupermarket(supermarketId: string) {
-    return Invoice.findAll({ where: { supermarketId } });
-  }
+  async findBySupermarket(supermarketId: string) {
+    return Invoice.findAll({ where: { supermarketId }, include: includes, order: [['createdAt', 'DESC']] });
+  },
 };

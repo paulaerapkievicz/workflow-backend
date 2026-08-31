@@ -6,16 +6,35 @@ import { Agency } from './Agency'
 
 export interface Freelancer {
   id: string
-  agencyId: string
+  agencyId: string | null
+  userId?: string | null
   name: string
   email: string
   phone?: string
   skills?: string
+  availableBalance: number
+  blockedUntil?: Date | null
+  ratingAvg?: number | null
+  ratingCount: number
   createdAt: Date
   updatedAt: Date
 }
 
-export interface FreelancerCreationAttributes extends Optional<Freelancer, 'id' | 'phone' | 'skills' | 'createdAt' | 'updatedAt'> {}
+export interface FreelancerCreationAttributes
+  extends Optional<
+    Freelancer,
+    | 'id'
+    | 'agencyId'
+    | 'userId'
+    | 'phone'
+    | 'skills'
+    | 'availableBalance'
+    | 'blockedUntil'
+    | 'ratingAvg'
+    | 'ratingCount'
+    | 'createdAt'
+    | 'updatedAt'
+  > {}
 
 export interface FreelancerInstance extends Model<Freelancer, FreelancerCreationAttributes>, Freelancer {}
 
@@ -28,13 +47,24 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
   },
   agencyId: {
     type: DataTypes.UUID,
-    allowNull: false,
+    allowNull: true,
     references: {
       model: 'agencies',
       key: 'id'
     },
     onUpdate: 'CASCADE',
-    onDelete: 'CASCADE'
+    onDelete: 'SET NULL'
+  },
+  userId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    unique: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
   },
   name: {
     type: DataTypes.STRING,
@@ -50,6 +80,24 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
   },
   skills: {
     type: DataTypes.TEXT
+  },
+  availableBalance: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0
+  },
+  blockedUntil: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  ratingAvg: {
+    type: DataTypes.DECIMAL(3, 2),
+    allowNull: true
+  },
+  ratingCount: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
   },
   createdAt: {
     allowNull: false,

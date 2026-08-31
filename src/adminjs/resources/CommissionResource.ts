@@ -10,7 +10,7 @@ export const CommissionResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: false, show: true }
       },
       agencyId: {
-        reference: "Agency",
+        reference: "agencies",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       percentage: {

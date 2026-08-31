@@ -1,7 +1,8 @@
 # 🚀 WorkFlow - Backend
 
 ## 📌 Sobre o Projeto
-O **WorkFlow** é uma plataforma de gerenciamento de freelancers para supermercados e agências. O sistema permite que supermercados criem vagas, agências gerenciem freelancers e freelancers se candidatem a trabalhos. A aplicação conta com um painel administrativo baseado no **AdminJS**, garantindo um gerenciamento eficiente dos dados.
+O **WorkFlow** é uma plataforma de gerenciamento de freelancers para supermercados e agências. O sistema permite que supermercados criem vagas, agências gerenciem freelancers e freelancers se candidatem a trabalhos. Os pagamentos são feitos via plataforma, supermercado/filial paga. Agencia recebe a comissão e o pagamento do freelancer fica liberado para ele. Existe a gestão da parte financeira e contábil. gerenciamento de horários, trabalhos, contratações, relatórios.
+ A aplicação conta com um painel administrativo baseado no **AdminJS**, garantindo um gerenciamento eficiente dos dados.
 
 ## 🛠️ Tecnologias Utilizadas
 
@@ -38,7 +39,7 @@ O **WorkFlow** é uma plataforma de gerenciamento de freelancers para supermerca
 
 ### 🔹 Vagas e Trabalho
 - Supermercados criam vagas de trabalho para freelancers.
-- Agências gerenciam freelancers e os alocam para trabalhos.
+- Agências gerenciam freelancers e os alocam para trabalhos nas vagas criadas.
 - Freelancers se candidatam e aceitam vagas disponíveis.
 
 ### 🔹 Pagamentos e Faturamento

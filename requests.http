@@ -1,0 +1,158 @@
+### WorkFlow API — smoke test (VS Code REST Client)
+### Rode `npm run dev` antes. Base:
+@base = http://localhost:3333
+
+### ---------------------------------------------------------------------------
+### 1. Login (seed: senha "123456" para todos)
+### ---------------------------------------------------------------------------
+
+# @name loginSupermarket
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "email": "supermarket@email.com", "password": "123456" }
+
+###
+@superToken = {{loginSupermarket.response.body.token}}
+@superId = {{loginSupermarket.response.body.profile.id}}
+
+# @name loginFreelancer
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "email": "free1@email.com", "password": "123456" }
+
+###
+@freeToken = {{loginFreelancer.response.body.token}}
+
+# @name loginAgency
+POST {{base}}/auth/login
+Content-Type: application/json
+
+{ "email": "agency@email.com", "password": "123456" }
+
+###
+@agencyToken = {{loginAgency.response.body.token}}
+
+### ---------------------------------------------------------------------------
+### 2. Cadastro de um novo supermercado
+### ---------------------------------------------------------------------------
+POST {{base}}/auth/register
+Content-Type: application/json
+
+{
+  "name": "Novo Dono",
+  "email": "novo.super@email.com",
+  "password": "123456",
+  "phone": "(11) 90000-9999",
+  "role": "supermarket",
+  "profile": { "companyName": "Super Novo", "cnpj": "99888777000100", "address": "Rua Nova, 1" }
+}
+
+### ---------------------------------------------------------------------------
+### 3. Fluxo da vaga
+### ---------------------------------------------------------------------------
+
+### 3a. Supermercado lista as filiais e categorias
+GET {{base}}/branches
+Authorization: Bearer {{superToken}}
+
+###
+GET {{base}}/categories
+
+### 3b. Cria a vaga com turnos  (troque branchId/categoryId pelos ids reais)
+# @name createJob
+POST {{base}}/jobs
+Authorization: Bearer {{superToken}}
+Content-Type: application/json
+
+{
+  "branchId": "COLE_UM_BRANCH_ID",
+  "categoryId": "COLE_UMA_CATEGORY_ID",
+  "title": "Repositor - teste",
+  "description": "Reposição dia todo",
+  "paymentAmount": 150,
+  "photosRequired": true,
+  "agencyReviewEnabled": true,
+  "shifts": [
+    { "startTime": "2026-09-01T08:00:00", "endTime": "2026-09-01T12:00:00", "label": "Manhã" },
+    { "startTime": "2026-09-01T13:30:00", "endTime": "2026-09-01T18:00:00", "label": "Tarde" }
+  ]
+}
+
+###
+@jobId = {{createJob.response.body.id}}
+
+### 3c. Freelancer vê as vagas disponíveis e aceita
+GET {{base}}/jobs/available
+Authorization: Bearer {{freeToken}}
+
+###
+POST {{base}}/jobs/{{jobId}}/accept
+Authorization: Bearer {{freeToken}}
+
+### 3d. Check-in
+POST {{base}}/jobs/{{jobId}}/logs/checkin
+Authorization: Bearer {{freeToken}}
+
+### 3e. Envia foto (obrigatória para o check-out desta vaga)
+POST {{base}}/jobs/{{jobId}}/photos
+Authorization: Bearer {{freeToken}}
+Content-Type: multipart/form-data; boundary=----w
+------w
+Content-Disposition: form-data; name="photo"; filename="p.png"
+Content-Type: image/png
+
+< ./public/uploads/exemplo-comprovacao.svg
+------w--
+
+### 3f. Check-out -> vaga "completed", pagamento liberado automaticamente nas carteiras
+POST {{base}}/jobs/{{jobId}}/logs/checkout
+Authorization: Bearer {{freeToken}}
+
+### 3g. Carteira / pagamentos por papel (opaco)
+GET {{base}}/payments/mine
+Authorization: Bearer {{freeToken}}
+
+### 3h. Agência avalia a entrega (só reputação)
+POST {{base}}/jobs/{{jobId}}/review
+Authorization: Bearer {{agencyToken}}
+Content-Type: application/json
+
+{ "rating": 4, "comment": "OK", "approved": true }
+
+### 3i. Supermercado quita a fatura com a agência
+GET {{base}}/invoices/mine
+Authorization: Bearer {{superToken}}
+
+###
+POST {{base}}/invoices/COLE_UM_INVOICE_ID/pay
+Authorization: Bearer {{superToken}}
+
+### 3j. Freelancer solicita saque
+POST {{base}}/withdrawals
+Authorization: Bearer {{freeToken}}
+Content-Type: application/json
+
+{ "amount": 50 }
+
+### 3k. Agência registra falta (bloqueia o freelancer)
+POST {{base}}/jobs/{{jobId}}/no-show
+Authorization: Bearer {{agencyToken}}
+Content-Type: application/json
+
+{ "reason": "Não retornou após o intervalo" }
+
+### ---------------------------------------------------------------------------
+### 4. Checagens de segurança (devem falhar)
+### ---------------------------------------------------------------------------
+
+### 401 — sem token
+GET {{base}}/jobs
+
+### 403 — freelancer tentando criar vaga
+POST {{base}}/jobs
+Authorization: Bearer {{freeToken}}
+Content-Type: application/json
+
+{ "title": "x", "branchId": "x", "categoryId": "x", "paymentAmount": 10, "shifts": [{ "startTime": "2026-09-01T08:00:00", "endTime": "2026-09-01T12:00:00" }] }

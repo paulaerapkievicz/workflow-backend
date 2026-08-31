@@ -3,17 +3,37 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
+export const PAYMENT_STATUSES = ['settled', 'canceled'] as const
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number]
+
 export interface Payment {
   id: string
   jobId: string
   freelancerId: string
   amount: number
-  status: 'pending' | 'paid' | 'canceled'
+  grossAmount: number
+  agencyAmount: number
+  freelancerAmount: number
+  status: PaymentStatus
+  paidAt?: Date | null
+  releasedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
 
-export interface PaymentCreationAttributes extends Optional<Payment, 'id'> {}
+export interface PaymentCreationAttributes
+  extends Optional<
+    Payment,
+    | 'id'
+    | 'status'
+    | 'paidAt'
+    | 'releasedAt'
+    | 'grossAmount'
+    | 'agencyAmount'
+    | 'freelancerAmount'
+    | 'createdAt'
+    | 'updatedAt'
+  > {}
 
 export interface PaymentInstance extends Model<Payment, PaymentCreationAttributes>, Payment {}
 
@@ -50,10 +70,36 @@ export const Payment = sequelize.define<PaymentInstance, Payment>(
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false
     },
-    status: {
-      type: DataTypes.ENUM('pending', 'paid', 'canceled'),
+    grossAmount: {
+      type: DataTypes.DECIMAL(10, 2),
       allowNull: false,
-      defaultValue: 'pending'
+      defaultValue: 0
+    },
+    agencyAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0
+    },
+    freelancerAmount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0
+    },
+    status: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: 'settled',
+      validate: {
+        isIn: [[...PAYMENT_STATUSES]]
+      }
+    },
+    paidAt: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    releasedAt: {
+      type: DataTypes.DATE,
+      allowNull: true
     },
     createdAt: {
       allowNull: false,

@@ -1,5 +1,7 @@
 import { Request, Response } from 'express';
 import { branchService } from '../services/branchService';
+import { profileService } from '../services/profileService';
+import { AuthRequest } from '../middlewares/auth';
 
 export const branchController = {
   // GET /branches - Lista todas as filiais
@@ -25,9 +27,16 @@ export const branchController = {
   },
 
   // POST /branches - Cria uma nova filial
-  async create(req: Request, res: Response) {
+  async create(req: AuthRequest, res: Response) {
     try {
-      const branch = await branchService.create(req.body);
+      let supermarketId = req.body.supermarketId;
+      if (req.user && req.user.role === 'supermarket') {
+        supermarketId = await profileService.supermarketIdForUser(req.user);
+        if (!supermarketId) {
+          return res.status(400).json({ message: 'Cadastre o supermercado antes de criar filiais.' });
+        }
+      }
+      const branch = await branchService.create({ ...req.body, supermarketId });
       return res.status(201).json(branch);
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao criar filial.' });

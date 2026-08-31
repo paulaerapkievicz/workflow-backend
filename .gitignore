@@ -1,3 +1,8 @@
 node_modules/
 .env
 dist
+
+# fotos enviadas em runtime (mantém a pasta e os exemplos)
+public/uploads/*
+!public/uploads/.gitkeep
+!public/uploads/exemplo-comprovacao.svg

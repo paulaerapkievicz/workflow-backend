@@ -10,7 +10,7 @@ export const InvoiceResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: false, show: true }
       },
       supermarketId: {
-        reference: "Supermarket",
+        reference: "supermarkets",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       totalAmount: {

@@ -10,11 +10,11 @@ export const PaymentResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: false, show: true }
       },
       jobId: {
-        reference: "Job",
+        reference: "jobs",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       freelancerId: {
-        reference: "Freelancer",
+        reference: "freelancers",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       amount: {
@@ -23,12 +23,14 @@ export const PaymentResource: ResourceWithOptions = {
       },
       status: {
         availableValues: [
-          { value: "pending", label: "Pendente" },
-          { value: "paid", label: "Pago" },
-          { value: "failed", label: "Falhou" }
+          { value: "settled", label: "Liberado" },
+          { value: "canceled", label: "Cancelado" }
         ],
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
+      grossAmount: { type: "number", isVisible: { list: true, edit: false, filter: false, show: true } },
+      agencyAmount: { type: "number", isVisible: { list: true, edit: false, filter: false, show: true } },
+      freelancerAmount: { type: "number", isVisible: { list: true, edit: false, filter: false, show: true } },
       createdAt: {
         type: "datetime",
         isVisible: { list: false, edit: false, filter: true, show: true }
@@ -38,10 +40,10 @@ export const PaymentResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: true, show: true }
       }
     },
-    editProperties: ["jobId", "freelancerId", "amount", "status"],
-    filterProperties: ["jobId", "freelancerId", "amount", "status", "createdAt", "updatedAt"],
-    listProperties: ["jobId", "freelancerId", "amount", "status"],
-    showProperties: ["id", "jobId", "freelancerId", "amount", "status", "createdAt", "updatedAt"]
+    editProperties: ["status"],
+    filterProperties: ["jobId", "freelancerId", "status", "createdAt", "updatedAt"],
+    listProperties: ["jobId", "freelancerId", "grossAmount", "agencyAmount", "freelancerAmount", "status"],
+    showProperties: ["id", "jobId", "freelancerId", "grossAmount", "agencyAmount", "freelancerAmount", "status", "paidAt", "releasedAt", "createdAt"]
   }
 };
 

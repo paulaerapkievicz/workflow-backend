@@ -11,7 +11,8 @@ export interface Session {
   updatedAt: Date
 }
 
-export interface SessionCreationAttributes extends Optional<Session, 'id'> {}
+export interface SessionCreationAttributes
+  extends Optional<Session, 'id' | 'createdAt' | 'updatedAt'> {}
 
 export interface SessionInstance extends Model<Session, SessionCreationAttributes>, Session {}
 

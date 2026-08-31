@@ -4,16 +4,31 @@
   "description": "",
   "main": "src/server.ts",
   "scripts": {
-    "dev": "ts-node-dev --transpile-only --ignore-watch node_modules src/server.ts"
+    "dev": "ts-node-dev --transpile-only --ignore-watch node_modules src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "migrate": "sequelize db:migrate",
+    "migrate:undo": "sequelize db:migrate:undo",
+    "seed": "sequelize db:seed:all",
+    "seed:reset": "sequelize db:seed:undo:all && sequelize db:seed:all",
+    "db:reset": "sequelize db:migrate:undo:all && sequelize db:migrate && sequelize db:seed:all",
+    "test:flow": "node scripts/smoke-flow.mjs"
   },
   "keywords": [],
   "author": "Paula Rapkievicz",
   "license": "ISC",
+  "overrides": {
+    "react": "16.14.0",
+    "react-dom": "16.14.0"
+  },
   "devDependencies": {
     "@types/bcrypt": "~5.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.13",
     "@types/jsonwebtoken": "^9.0.7",
+    "@types/express-session": "^1.17.10",
+    "@types/multer": "^1.4.11",
     "@types/node": "~17.0.10",
     "@types/recharts": "^1.8.29",
     "@types/sequelize": "^4.28.20",
@@ -33,7 +48,9 @@
     "dotenv": "^16.3.1",
     "express": "^4.21.2",
     "express-formidable": "~1.2.0",
+    "express-session": "^1.18.0",
     "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
     "pg": "^8.7.1",
     "pg-hstore": "^2.3.4",
     "recharts": "^2.15.1",

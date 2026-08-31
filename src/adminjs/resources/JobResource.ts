@@ -10,19 +10,19 @@ export const JobResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: false, show: true }
       },
       supermarketId: {
-        reference: "Supermarket",
+        reference: "supermarkets",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       branchId: {
-        reference: "Branch",
+        reference: "branches",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       categoryId: {
-        reference: "Category",
+        reference: "categories",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       freelancerId: {
-        reference: "Freelancer",
+        reference: "freelancers",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       title: {
@@ -35,13 +35,16 @@ export const JobResource: ResourceWithOptions = {
       },
       status: {
         availableValues: [
-          { value: "open", label: "Aberto" },
-          { value: "in_progress", label: "Em Andamento" },
-          { value: "completed", label: "Concluído" },
-          { value: "canceled", label: "Cancelado" }
+          { value: "pending", label: "Disponível" },
+          { value: "accepted", label: "Aceita" },
+          { value: "in_progress", label: "Em andamento" },
+          { value: "completed", label: "Concluída" },
+          { value: "canceled", label: "Cancelada" }
         ],
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
+      photosRequired: { type: "boolean", isVisible: { list: false, edit: true, filter: true, show: true } },
+      agencyReviewEnabled: { type: "boolean", isVisible: { list: false, edit: true, filter: true, show: true } },
       createdAt: {
         type: "datetime",
         isVisible: { list: false, edit: false, filter: true, show: true }

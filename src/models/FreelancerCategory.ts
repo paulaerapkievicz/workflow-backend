@@ -13,7 +13,8 @@ export interface FreelancerCategory {
   updatedAt: Date
 }
 
-export interface FreelancerCategoryCreationAttributes extends Optional<FreelancerCategory, 'id'> {}
+export interface FreelancerCategoryCreationAttributes
+  extends Optional<FreelancerCategory, 'id' | 'createdAt' | 'updatedAt'> {}
 
 export interface FreelancerCategoryInstance
   extends Model<FreelancerCategory, FreelancerCategoryCreationAttributes>,

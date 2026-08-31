@@ -10,7 +10,7 @@ export const SessionResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: false, show: true }
       },
       userId: {
-        reference: "User",
+        reference: "users",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       token: {

@@ -10,11 +10,11 @@ export const JobLogResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: false, show: true }
       },
       jobId: {
-        reference: "Job",
+        reference: "jobs",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       freelancerId: {
-        reference: "Freelancer",
+        reference: "freelancers",
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
       status: {

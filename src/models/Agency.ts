@@ -11,11 +11,17 @@ export interface Agency {
   cnpj: string
   address: string
   phone?: string
+  availableBalance: number
+  commissionPercentage: number
   createdAt: Date
   updatedAt: Date
 }
 
-export interface AgencyCreationAttributes extends Optional<Agency, 'id' | 'phone'> {}
+export interface AgencyCreationAttributes
+  extends Optional<
+    Agency,
+    'id' | 'phone' | 'availableBalance' | 'commissionPercentage' | 'createdAt' | 'updatedAt'
+  > {}
 
 export interface AgencyInstance extends Model<Agency, AgencyCreationAttributes>, Agency {}
 
@@ -51,6 +57,16 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
   },
   phone: {
     type: DataTypes.STRING
+  },
+  availableBalance: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0
+  },
+  commissionPercentage: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: false,
+    defaultValue: 10
   },
   createdAt: {
     allowNull: false,

@@ -10,7 +10,8 @@ export interface Category {
   updatedAt: Date
 }
 
-export interface CategoryCreationAttributes extends Optional<Category, 'id'> {}
+export interface CategoryCreationAttributes
+  extends Optional<Category, 'id' | 'createdAt' | 'updatedAt'> {}
 
 export interface CategoryInstance extends Model<Category, CategoryCreationAttributes>, Category {}
 

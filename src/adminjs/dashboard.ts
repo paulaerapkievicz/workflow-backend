@@ -32,22 +32,22 @@ export const dashboardOptions: {
           attributes: [
             [sequelize.fn('DATE_TRUNC', 'month', sequelize.col('created_at')), 'month'],
             [sequelize.fn('COALESCE', sequelize.fn('SUM', sequelize.col('amount')), 0), 'amount']
-          ],
+          ] as any,
           group: ['month'],
           order: [['month', 'ASC']],
           limit: 6
         }).then(results => results.map(row => ({
-          month: ((row.getDataValue('month') as unknown) as string) ?? '',
-          amount: parseFloat(((row.getDataValue('amount') as unknown) as string | number)?.toString() ?? '0')
+          month: ((row.getDataValue('month' as any) as unknown) as string) ?? '',
+          amount: parseFloat(((row.getDataValue('amount' as any) as unknown) as string | number)?.toString() ?? '0')
         }))),
 
         // Query para distribuição de status dos jobs
         Job.findAll({
-          attributes: ['status', [sequelize.fn('COUNT', sequelize.col('id')), 'count']],
+          attributes: ['status', [sequelize.fn('COUNT', sequelize.col('id')), 'count']] as any,
           group: ['status']
         }).then(results => results.map(row => ({
           status: ((row.getDataValue('status') as unknown) as string) ?? 'unknown',
-          count: parseInt(((row.getDataValue('count') as unknown) as string | number)?.toString() ?? '0', 10)
+          count: parseInt(((row.getDataValue('count' as any) as unknown) as string | number)?.toString() ?? '0', 10)
         })))
       ])
 
