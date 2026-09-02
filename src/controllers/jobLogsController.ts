@@ -9,13 +9,13 @@ function fail(res: Response, err: unknown, code = 400) {
   return res.status(code).json({ message: err instanceof Error ? err.message : 'Erro inesperado.' })
 }
 
-async function requireFreelancerId(req: AuthRequest, res: Response) {
+async function requireFreelancer(req: AuthRequest, res: Response) {
   const freelancer = await profileService.freelancerForUser(req.user!)
   if (!freelancer) {
     res.status(400).json({ message: 'Perfil de freelancer não encontrado.' })
     return null
   }
-  return freelancer.id
+  return freelancer
 }
 
 export const jobLogsController = {
@@ -53,19 +53,9 @@ export const jobLogsController = {
 
   async checkIn(req: AuthRequest, res: Response) {
     try {
-      const freelancerId = await requireFreelancerId(req, res)
-      if (!freelancerId) return
-      return res.status(201).json(await jobLogService.checkIn(req.params.id, freelancerId, req.body ?? {}))
-    } catch (error) {
-      return fail(res, error)
-    }
-  },
-
-  async registerInterval(req: AuthRequest, res: Response) {
-    try {
-      const freelancerId = await requireFreelancerId(req, res)
-      if (!freelancerId) return
-      return res.status(201).json(await jobLogService.registerInterval(req.params.id, freelancerId, req.body.eventType))
+      const freelancer = await requireFreelancer(req, res)
+      if (!freelancer) return
+      return res.status(201).json(await jobLogService.checkIn(req.params.id, freelancer, req.body ?? {}))
     } catch (error) {
       return fail(res, error)
     }
@@ -73,9 +63,9 @@ export const jobLogsController = {
 
   async checkOut(req: AuthRequest, res: Response) {
     try {
-      const freelancerId = await requireFreelancerId(req, res)
-      if (!freelancerId) return
-      return res.status(201).json(await jobLogService.checkOut(req.params.id, freelancerId, req.body ?? {}))
+      const freelancer = await requireFreelancer(req, res)
+      if (!freelancer) return
+      return res.status(201).json(await jobLogService.checkOut(req.params.id, freelancer, req.body ?? {}))
     } catch (error) {
       return fail(res, error)
     }

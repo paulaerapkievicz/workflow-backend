@@ -27,11 +27,11 @@ export const closingController = {
     try {
       const agencyId = await profileService.agencyIdForUser(req.user!)
       if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
-      const { supermarketId, referenceMonth } = req.query as Record<string, string>
+      const { supermarketId, referenceMonth, branchId } = req.query as Record<string, string>
       if (!supermarketId || !referenceMonth) {
         return res.status(400).json({ message: 'Informe supermarketId e referenceMonth (AAAA-MM).' })
       }
-      return res.json(await closingService.previewMonth(agencyId, supermarketId, referenceMonth))
+      return res.json(await closingService.previewMonth(agencyId, supermarketId, referenceMonth, branchId || null))
     } catch (error) {
       return fail(res, error)
     }
@@ -42,11 +42,13 @@ export const closingController = {
     try {
       const agencyId = await profileService.agencyIdForUser(req.user!)
       if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
-      const { supermarketId, referenceMonth } = req.body
+      const { supermarketId, referenceMonth, branchId } = req.body
       if (!supermarketId || !referenceMonth) {
         return res.status(400).json({ message: 'Informe supermarketId e referenceMonth (AAAA-MM).' })
       }
-      return res.status(201).json(await closingService.closeMonth(agencyId, supermarketId, referenceMonth))
+      return res.status(201).json(
+        await closingService.closeMonth(agencyId, supermarketId, referenceMonth, branchId || null)
+      )
     } catch (error) {
       return fail(res, error)
     }

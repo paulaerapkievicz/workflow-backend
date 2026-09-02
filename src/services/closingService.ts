@@ -4,6 +4,7 @@ import { Invoice } from '../models/Invoice'
 import { Job } from '../models/Job'
 import { JobShift } from '../models/JobShift'
 import { Category } from '../models/Category'
+import { Branch } from '../models/Branch'
 import { Freelancer } from '../models/Freelancer'
 import { Agency } from '../models/Agency'
 import { Supermarket } from '../models/Supermarket'
@@ -12,15 +13,29 @@ import { monthRange, round2 } from '../helpers/time'
 const monthlyIncludes = [
   { model: Supermarket, as: 'invoiceSupermarket' },
   { model: Agency, as: 'invoiceAgency' },
+  { model: Branch, as: 'invoiceBranch' },
   {
     model: Job,
     as: 'invoiceJobs',
     include: [
       { model: Category, as: 'jobCategory' },
+      { model: Branch, as: 'jobBranch' },
       { model: Freelancer, as: 'assignedFreelancer' },
     ],
   },
 ]
+
+function jobWhere(fIds: string[], supermarketId: string, start: Date, end: Date, branchId?: string | null) {
+  const where: any = {
+    supermarketId,
+    status: 'completed',
+    monthlyInvoiceId: null,
+    freelancerId: { [Op.in]: fIds },
+    completedAt: { [Op.gte]: start, [Op.lt]: end },
+  }
+  if (branchId) where.branchId = branchId
+  return where
+}
 
 export const closingService = {
   async findById(id: string) {
@@ -28,38 +43,25 @@ export const closingService = {
   },
 
   async listForAgency(agencyId: string) {
-    return Invoice.findAll({
-      where: { agencyId, type: 'monthly' },
-      include: monthlyIncludes,
-      order: [['referenceMonth', 'DESC']],
-    })
+    return Invoice.findAll({ where: { agencyId, type: 'monthly' }, include: monthlyIncludes, order: [['referenceMonth', 'DESC']] })
   },
 
   async listForSupermarket(supermarketId: string) {
-    return Invoice.findAll({
-      where: { supermarketId, type: 'monthly' },
-      include: monthlyIncludes,
-      order: [['referenceMonth', 'DESC']],
-    })
+    return Invoice.findAll({ where: { supermarketId, type: 'monthly' }, include: monthlyIncludes, order: [['referenceMonth', 'DESC']] })
   },
 
-  /** Prévia: vagas concluídas ainda não faturadas da rede da agência para um supermercado no mês. */
-  async previewMonth(agencyId: string, supermarketId: string, referenceMonth: string) {
+  /** Prévia: vagas concluídas ainda não faturadas (opcionalmente filtrando por filial). */
+  async previewMonth(agencyId: string, supermarketId: string, referenceMonth: string, branchId?: string | null) {
     const { start, end } = monthRange(referenceMonth)
     const freelancers = await Freelancer.findAll({ where: { agencyId }, attributes: ['id'] })
     const fIds = freelancers.map((f) => f.id)
-    if (!fIds.length) return { jobs: [], totals: emptyTotals(referenceMonth) }
+    if (!fIds.length) return { jobs: [], totals: aggregate([], referenceMonth) }
 
     const jobs = await Job.findAll({
-      where: {
-        supermarketId,
-        status: 'completed',
-        monthlyInvoiceId: null,
-        freelancerId: { [Op.in]: fIds },
-        completedAt: { [Op.gte]: start, [Op.lt]: end },
-      },
+      where: jobWhere(fIds, supermarketId, start, end, branchId),
       include: [
         { model: Category, as: 'jobCategory' },
+        { model: Branch, as: 'jobBranch' },
         { model: Freelancer, as: 'assignedFreelancer' },
         { model: JobShift, as: 'shifts' },
       ],
@@ -68,9 +70,18 @@ export const closingService = {
     return { jobs, totals: aggregate(jobs, referenceMonth) }
   },
 
-  async closeMonth(agencyId: string, supermarketId: string, referenceMonth: string) {
+  async closeMonth(
+    agencyId: string,
+    supermarketId: string,
+    referenceMonth: string,
+    branchId?: string | null
+  ) {
     const supermarket = await Supermarket.findByPk(supermarketId)
     if (!supermarket) throw new Error('Supermercado inválido.')
+    if (branchId) {
+      const branch = await Branch.findByPk(branchId)
+      if (!branch || branch.supermarketId !== supermarketId) throw new Error('Filial inválida para este supermercado.')
+    }
     const { start, end } = monthRange(referenceMonth)
 
     const freelancers = await Freelancer.findAll({ where: { agencyId }, attributes: ['id'] })
@@ -79,34 +90,25 @@ export const closingService = {
 
     return sequelize.transaction(async (t) => {
       const jobs = await Job.findAll({
-        where: {
-          supermarketId,
-          status: 'completed',
-          monthlyInvoiceId: null,
-          freelancerId: { [Op.in]: fIds },
-          completedAt: { [Op.gte]: start, [Op.lt]: end },
-        },
+        where: jobWhere(fIds, supermarketId, start, end, branchId),
         transaction: t,
         lock: t.LOCK.UPDATE,
       })
       if (!jobs.length) throw new Error('Nenhuma vaga concluída neste período para fechar.')
 
-      const totalAmount = round2(jobs.reduce((acc, j) => acc + Number(j.grossAmount ?? 0), 0))
-      const contractedMinutes = jobs.reduce((acc, j) => acc + (j.contractedMinutes ?? 0), 0)
-      const workedMinutes = jobs.reduce((acc, j) => acc + (j.workedMinutes ?? 0), 0)
-
       const invoice = await Invoice.create(
         {
           supermarketId,
           agencyId,
+          branchId: branchId ?? null,
           type: 'monthly',
           referenceMonth,
           periodStart: start,
           periodEnd: end,
           totalJobs: jobs.length,
-          contractedMinutes,
-          workedMinutes,
-          totalAmount,
+          contractedMinutes: jobs.reduce((a, j) => a + (j.contractedMinutes ?? 0), 0),
+          workedMinutes: jobs.reduce((a, j) => a + (j.workedMinutes ?? 0), 0),
+          totalAmount: round2(jobs.reduce((a, j) => a + Number(j.grossAmount ?? 0), 0)),
           status: 'pending',
         },
         { transaction: t }
@@ -116,14 +118,9 @@ export const closingService = {
         { monthlyInvoiceId: invoice.id },
         { where: { id: { [Op.in]: jobs.map((j) => j.id) } }, transaction: t }
       )
-
       return invoice
     }).then((inv) => this.findById(inv.id))
   },
-}
-
-function emptyTotals(referenceMonth: string) {
-  return { referenceMonth, totalJobs: 0, contractedMinutes: 0, workedMinutes: 0, totalAmount: 0 }
 }
 
 function aggregate(jobs: any[], referenceMonth: string) {

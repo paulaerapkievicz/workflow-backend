@@ -31,9 +31,14 @@ export const jobController = {
     }
   },
 
-  // GET /jobs/live — vagas em andamento da rede da agência (tempo real)
+  // GET /jobs/live — vagas em andamento (agência: sua rede; supermercado: suas lojas)
   async live(req: AuthRequest, res: Response) {
     try {
+      if (req.user!.role === 'supermarket') {
+        const ctx = await profileService.supermarketContextForUser(req.user!)
+        if (!ctx) return res.status(403).json({ message: 'Supermercado não encontrado.' })
+        return res.json(await jobService.liveForSupermarket(ctx.supermarketId, ctx.branchId))
+      }
       const agencyId = await profileService.agencyIdForUser(req.user!)
       if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
       return res.json(await jobService.liveForAgency(agencyId))
@@ -56,9 +61,9 @@ export const jobController = {
   // POST /jobs (supermarket)
   async create(req: AuthRequest, res: Response) {
     try {
-      const supermarketId = await profileService.supermarketIdForUser(req.user!)
-      if (!supermarketId) return res.status(400).json({ message: 'Cadastre o supermercado antes de criar vagas.' })
-      const job = await jobService.create(req.body, supermarketId)
+      const ctx = await profileService.supermarketContextForUser(req.user!)
+      if (!ctx) return res.status(400).json({ message: 'Cadastre o supermercado antes de criar vagas.' })
+      const job = await jobService.create(req.body, { ...ctx, userId: req.user!.id })
       return res.status(201).json(job)
     } catch (error) {
       return fail(res, error)
@@ -71,6 +76,17 @@ export const jobController = {
       const supermarketId = await profileService.supermarketIdForUser(req.user!)
       if (!supermarketId) return res.status(403).json({ message: 'Supermercado não encontrado.' })
       return res.json(await jobService.update(req.params.id, req.body, supermarketId))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // PUT /agency/jobs/:id (agency) — gerencia função/turno (pendente) e overrides de configuração
+  async updateByAgency(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await jobService.updateByAgency(req.params.id, agencyId, req.body ?? {}))
     } catch (error) {
       return fail(res, error)
     }
@@ -104,6 +120,28 @@ export const jobController = {
       const freelancer = await profileService.freelancerForUser(req.user!)
       if (!freelancer) return res.status(400).json({ message: 'Perfil de freelancer não encontrado.' })
       return res.json(await jobService.accept(req.params.id, freelancer))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /jobs/:id/withdraw (freelancer) — desiste da vaga dentro do prazo
+  async withdraw(req: AuthRequest, res: Response) {
+    try {
+      const freelancer = await profileService.freelancerForUser(req.user!)
+      if (!freelancer) return res.status(400).json({ message: 'Perfil de freelancer não encontrado.' })
+      return res.json(await jobService.withdrawByFreelancer(req.params.id, freelancer, req.body?.reason))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /jobs/:id/release (agency) — libera a vaga de um freelancer para repassar/reabrir
+  async release(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await jobService.releaseByAgency(req.params.id, agencyId, req.body?.reason))
     } catch (error) {
       return fail(res, error)
     }

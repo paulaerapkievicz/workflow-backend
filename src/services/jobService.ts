@@ -1,8 +1,9 @@
-import { Op } from 'sequelize'
+import { Op, Transaction } from 'sequelize'
 import { sequelize } from '../database'
-import { Job, JobCreationAttributes } from '../models/Job'
+import { Job } from '../models/Job'
 import { JobShift } from '../models/JobShift'
 import { Freelancer, FreelancerInstance } from '../models/Freelancer'
+import { FreelancerCategory } from '../models/FreelancerCategory'
 import { Category } from '../models/Category'
 import { Branch } from '../models/Branch'
 import { Supermarket } from '../models/Supermarket'
@@ -12,11 +13,21 @@ import { Payment } from '../models/Payment'
 import { Review } from '../models/Review'
 import { Order } from '../models/Order'
 import { OrderItem } from '../models/OrderItem'
+import { FreelancerContract } from '../models/FreelancerContract'
 import { UserInstance } from '../models/User'
+import { Agency } from '../models/Agency'
 import { profileService } from './profileService'
-import { orderService } from './orderService'
+import { orderService, OrderContext } from './orderService'
 import { agencyRateService } from './agencyRateService'
+import { paymentService } from './paymentService'
 import { minutesBetween } from '../helpers/time'
+import { resolveShifts } from '../helpers/shifts'
+
+const fmtWindow = (a: Date | string, b: Date | string) => {
+  const d = (x: Date | string) =>
+    new Date(x).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return `${d(a)}–${new Date(b).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+}
 
 const jobIncludes = [
   { model: Supermarket, as: 'jobSupermarket' },
@@ -32,33 +43,164 @@ const jobIncludes = [
   { model: OrderItem, as: 'jobOrderItem' },
 ]
 
-const shiftOrder: any = [[{ model: JobShift, as: 'shifts' }, 'position', 'ASC']]
-
 /** Soma dos minutos contratados dos turnos de uma vaga. */
 function sumShiftMinutes(shifts: { startTime: Date | string; endTime: Date | string }[]) {
   return shifts.reduce((acc, s) => acc + minutesBetween(s.startTime, s.endTime), 0)
 }
 
-interface ShiftInput {
-  startTime: string | Date
-  endTime: string | Date
-  label?: string | null
+/**
+ * Se a agência exige onboarding, o colaborador só trabalha depois de concluir o perfil
+ * contratual E ter o uniforme aprovado. Retorna a mensagem de bloqueio ou null.
+ */
+export async function onboardingBlockReason(freelancer: FreelancerInstance): Promise<string | null> {
+  if (!freelancer.agencyId) return null
+  const agency = await Agency.findByPk(freelancer.agencyId)
+  if (!agency?.onboardingRequired) return null
+  const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
+  if (!contract?.completedAt) return 'Preencha o perfil contratual para aceitar vagas.'
+  if (!freelancer.onboardingApprovedAt) return 'Aguarde a aprovação do seu uniforme para aceitar vagas.'
+  return null
 }
 
-function normalizeShifts(raw: any): ShiftInput[] {
-  const list: any[] = Array.isArray(raw?.shifts) ? raw.shifts : []
-  if (!list.length) {
-    // compat: aceita startTime/endTime únicos como um turno só
-    if (raw?.startTime && raw?.endTime) return [{ startTime: raw.startTime, endTime: raw.endTime }]
-    throw new Error('Informe ao menos um turno de trabalho.')
+/** Campos de override de configuração operacional por vaga. */
+const JOB_CONFIG_FIELDS = [
+  'checkinRadius',
+  'cancellationWindowMinutes',
+  'requireCheckoutPhoto',
+  'reviewEnabled',
+] as const
+
+/**
+ * Aplica a edição de função/turno/data/título de uma vaga (usada pelo supermercado e
+ * pela agência enquanto a vaga está disponível). Retorna o patch para `job.update`.
+ */
+async function applyJobEdit(job: any, data: any, t: Transaction) {
+  const patch: any = {}
+  if (data.title != null) patch.title = String(data.title).trim() || job.title
+  if (data.categoryId != null && data.categoryId !== job.categoryId) {
+    const category = await Category.findByPk(data.categoryId)
+    if (!category) throw new Error('Função (categoria) inválida.')
+    patch.categoryId = data.categoryId
   }
-  return list.map((s, i) => {
-    if (!s.startTime || !s.endTime) throw new Error(`Turno ${i + 1}: informe início e fim.`)
-    if (new Date(s.endTime) <= new Date(s.startTime)) {
-      throw new Error(`Turno ${i + 1}: o fim precisa ser depois do início.`)
+
+  const date = data.date ?? (job.startTime ? new Date(job.startTime).toISOString().slice(0, 10) : null)
+  const reshift =
+    data.shifts != null ||
+    data.shiftPeriod != null ||
+    data.date != null ||
+    data.startTime != null ||
+    data.endTime != null
+
+  if (reshift) {
+    if (!date) throw new Error('Informe a data da vaga.')
+    const rawShifts =
+      Array.isArray(data.shifts) && data.shifts.length
+        ? data.shifts
+        : [{ shiftPeriod: data.shiftPeriod ?? job.shiftPeriod, startTime: data.startTime, endTime: data.endTime }]
+    const shifts = resolveShifts(rawShifts, String(date))
+
+    await JobShift.destroy({ where: { jobId: job.id }, transaction: t })
+    for (let position = 0; position < shifts.length; position++) {
+      const s = shifts[position]
+      await JobShift.create(
+        { jobId: job.id, position, startTime: s.startTime, endTime: s.endTime, label: s.label },
+        { transaction: t }
+      )
     }
-    return { startTime: s.startTime, endTime: s.endTime, label: s.label ?? null }
+    patch.shiftPeriod = shifts[0].shiftPeriod
+    patch.startTime = shifts[0].startTime
+    patch.endTime = shifts[shifts.length - 1].endTime
+    patch.contractedMinutes = shifts.reduce((acc, s) => acc + minutesBetween(s.startTime, s.endTime), 0)
+  }
+  return patch
+}
+
+/**
+ * Cancelamento da vaga pela agência (liberar ou registrar falta).
+ * - Nenhum turno trabalhado: a vaga volta ao pool (pending, sem freelancer).
+ * - Parte do turno trabalhada: a vaga original vira registro `canceled` do freelancer
+ *   (com as horas trabalhadas liquidadas) e uma nova vaga `pending` com os turnos
+ *   restantes vai para o pool de vagas disponíveis.
+ */
+async function cancelJobByAgency(
+  job: any,
+  freelancerId: string,
+  eventType: 'withdrawn' | 'no-show',
+  reason: string
+) {
+  const now = new Date()
+  const shifts = await JobShift.findAll({ where: { jobId: job.id }, order: [['position', 'ASC']] })
+  const workedShifts = shifts.filter((s) => s.status === 'done' && (s.workedMinutes ?? 0) > 0)
+
+  if (!workedShifts.length) {
+    await sequelize.transaction(async (t) => {
+      await JobLog.create(
+        { jobId: job.id, freelancerId, eventType, reason, timestamp: now },
+        { transaction: t }
+      )
+      await JobLog.destroy({
+        where: { jobId: job.id, freelancerId, eventType: { [Op.in]: ['check-in', 'check-out'] } },
+        transaction: t,
+      })
+      await JobShift.update(
+        { status: 'pending', checkInAt: null, checkOutAt: null, workedMinutes: null },
+        { where: { jobId: job.id }, transaction: t }
+      )
+      await job.update(
+        { freelancerId: null, status: 'pending', workedMinutes: null, grossAmount: null, completedAt: null },
+        { transaction: t }
+      )
+    })
+    await orderService.syncStatus(job.orderId)
+    return
+  }
+
+  const remainingShifts = shifts.filter((s) => s.status !== 'done')
+  const workedMinutes = workedShifts.reduce((acc, s) => acc + (s.workedMinutes ?? 0), 0)
+
+  await sequelize.transaction(async (t) => {
+    await JobLog.create(
+      { jobId: job.id, freelancerId, eventType, reason, timestamp: now },
+      { transaction: t }
+    )
+    // Turnos não trabalhados saem do registro da vaga cancelada.
+    await JobShift.destroy({ where: { jobId: job.id, status: { [Op.ne]: 'done' } }, transaction: t })
+    await job.update({ status: 'canceled', workedMinutes, completedAt: now }, { transaction: t })
+
+    if (remainingShifts.length) {
+      const config: any = {}
+      for (const f of JOB_CONFIG_FIELDS) config[f] = job[f] ?? null
+      const newJob = await Job.create(
+        {
+          supermarketId: job.supermarketId,
+          branchId: job.branchId,
+          categoryId: job.categoryId,
+          orderId: job.orderId,
+          orderItemId: job.orderItemId,
+          shiftPeriod: job.shiftPeriod,
+          title: `${job.title} (restante)`,
+          status: 'pending',
+          freelancerId: null,
+          startTime: remainingShifts[0].startTime,
+          endTime: remainingShifts[remainingShifts.length - 1].endTime,
+          contractedMinutes: sumShiftMinutes(remainingShifts),
+          ...config,
+        },
+        { transaction: t }
+      )
+      for (let position = 0; position < remainingShifts.length; position++) {
+        const s = remainingShifts[position]
+        await JobShift.create(
+          { jobId: newJob.id, position, startTime: s.startTime, endTime: s.endTime, label: s.label },
+          { transaction: t }
+        )
+      }
+    }
   })
+
+  // Liquida o que foi efetivamente trabalhado (settleForJob abre a própria transação).
+  await paymentService.settleForJob(await job.reload())
+  await orderService.syncStatus(job.orderId)
 }
 
 export const jobService = {
@@ -72,9 +214,11 @@ export const jobService = {
     }
 
     if (user.role === 'supermarket') {
-      const supermarketId = await profileService.supermarketIdForUser(user)
-      if (!supermarketId) return []
-      return Job.findAll({ where: { supermarketId }, include: jobIncludes, order: [['createdAt', 'DESC']] })
+      const ctx = await profileService.supermarketContextForUser(user)
+      if (!ctx) return []
+      const where: any = { supermarketId: ctx.supermarketId }
+      if (ctx.branchId) where.branchId = ctx.branchId
+      return Job.findAll({ where, include: jobIncludes, order: [['createdAt', 'DESC']] })
     }
 
     if (user.role === 'freelancer') {
@@ -104,14 +248,48 @@ export const jobService = {
     if (freelancer.blockedUntil && new Date(freelancer.blockedUntil) > new Date()) {
       return []
     }
-    const where: any = { status: 'pending', freelancerId: null }
-    // Só oferece vagas cuja função a agência do freelancer já precifica.
-    if (freelancer.agencyId) {
-      const rates = await agencyRateService.listForAgency(freelancer.agencyId)
-      const priced = rates.filter((r) => r.active).map((r) => r.categoryId)
-      where.categoryId = { [Op.in]: priced.length ? priced : ['00000000-0000-0000-0000-000000000000'] }
+    if (!freelancer.agencyId) return []
+    if (await onboardingBlockReason(freelancer)) return []
+
+    // O freelancer só vê vagas das funções marcadas no perfil dele pela agência.
+    const marked = await FreelancerCategory.findAll({
+      where: { freelancerId: freelancer.id },
+      attributes: ['categoryId'],
+    })
+    const markedIds = marked.map((m) => m.categoryId)
+    if (!markedIds.length) return []
+
+    // …e que a agência do freelancer precifica (valor/hora ativo), específico da loja ou padrão.
+    const rates = await agencyRateService.listForAgency(freelancer.agencyId)
+    const defaultPriced = new Set(
+      rates.filter((r) => r.active && !r.branchId).map((r) => r.categoryId)
+    )
+    const branchPriced = new Set(
+      rates.filter((r) => r.active && r.branchId).map((r) => `${r.categoryId}|${r.branchId}`)
+    )
+    const isPriced = (categoryId: string, branchId?: string | null) =>
+      (branchId != null && branchPriced.has(`${categoryId}|${branchId}`)) || defaultPriced.has(categoryId)
+
+    const eligibleCategories = markedIds.filter(
+      (id) => defaultPriced.has(id) || [...branchPriced].some((k) => k.startsWith(`${id}|`))
+    )
+    if (!eligibleCategories.length) return []
+
+    const where: any = {
+      status: 'pending',
+      freelancerId: null,
+      categoryId: { [Op.in]: eligibleCategories },
     }
-    return Job.findAll({ where, include: jobIncludes, order: [['startTime', 'ASC']] })
+    const jobs = await Job.findAll({ where, include: jobIncludes, order: [['startTime', 'ASC']] })
+
+    // Filtra pelo preço da loja da vaga + não mostra vagas cujo último turno já terminou.
+    const now = Date.now()
+    return jobs.filter((job) => {
+      if (!isPriced(job.categoryId, job.branchId)) return false
+      const shifts = (job as any).shifts ?? []
+      if (!shifts.length) return new Date(job.endTime).getTime() > now
+      return shifts.some((s: any) => new Date(s.endTime).getTime() > now)
+    })
   },
 
   /** Vagas em andamento da rede da agência, com o último ponto de localização. */
@@ -126,8 +304,15 @@ export const jobService = {
     })
   },
 
-  // Compat: cria uma vaga avulsa como um pedido de 1 item (sem valor — a agência precifica).
-  async create(data: any, supermarketId: string) {
+  /** Vagas em andamento de um supermercado (opcionalmente de uma loja só). */
+  async liveForSupermarket(supermarketId: string, branchId?: string | null) {
+    const where: any = { status: 'in_progress', supermarketId }
+    if (branchId) where.branchId = branchId
+    return Job.findAll({ where, include: jobIncludes, order: [['startTime', 'ASC']] })
+  },
+
+  // Compat: cria uma vaga avulsa como um pedido de 1 item (turno = manha|tarde|noite|madrugada).
+  async create(data: any, ctx: OrderContext) {
     const order = await orderService.create(
       {
         branchId: data.branchId,
@@ -135,71 +320,80 @@ export const jobService = {
         items: [
           {
             categoryId: data.categoryId,
+            branchId: data.branchId,
             title: data.title,
-            description: data.description ?? null,
             quantity: Number(data.quantity) > 1 ? Number(data.quantity) : 1,
-            photosRequired: data.photosRequired !== false,
-            agencyReviewEnabled: data.agencyReviewEnabled === true,
-            shifts: Array.isArray(data.shifts) && data.shifts.length
-              ? data.shifts
-              : data.startTime && data.endTime
-              ? [{ startTime: data.startTime, endTime: data.endTime }]
-              : [],
+            shiftPeriod: data.shiftPeriod,
+            shifts: data.shifts,
+            date: data.date,
+            startTime: data.startTime,
+            endTime: data.endTime,
           },
         ],
       },
-      supermarketId
+      ctx
     )
     const firstJob = (order as any)?.orderJobs?.[0]
     return firstJob ? this.findById(firstJob.id) : order
   },
 
+  // Edita uma vaga ainda disponível: função, turno/data e título.
   async update(id: string, data: any, supermarketId: string) {
     const job = await this.assertOwned(id, supermarketId)
     if (job.status !== 'pending') {
       throw new Error('Só é possível editar a vaga enquanto ela está disponível (sem freelancer).')
     }
+    await sequelize.transaction(async (t) => {
+      const patch = await applyJobEdit(job, data, t)
+      await job.update(patch, { transaction: t })
+    })
+    return this.findById(id)
+  },
 
-    const patch: any = {
-      title: data.title ?? job.title,
-      description: data.description ?? job.description,
-      branchId: data.branchId ?? job.branchId,
-      categoryId: data.categoryId ?? job.categoryId,
-      paymentAmount: data.paymentAmount != null ? Number(data.paymentAmount) : job.paymentAmount,
-      photosRequired: data.photosRequired != null ? data.photosRequired !== false : job.photosRequired,
-      agencyReviewEnabled:
-        data.agencyReviewEnabled != null ? data.agencyReviewEnabled === true : job.agencyReviewEnabled,
-    }
-
-    if (patch.branchId !== job.branchId) {
-      const branch = await Branch.findByPk(patch.branchId)
-      if (!branch || branch.supermarketId !== supermarketId) throw new Error('Filial inválida.')
+  /**
+   * A agência gerencia a vaga: edita função/turno/título enquanto pendente e ajusta os
+   * overrides de configuração (raio, prazo, foto, avaliação) enquanto não estiver
+   * concluída/cancelada. `null` num override volta ao padrão da agência.
+   */
+  async updateByAgency(id: string, _agencyId: string, data: any) {
+    const job = await Job.findByPk(id)
+    if (!job) throw new Error('Vaga não encontrada.')
+    if (['completed', 'canceled'].includes(job.status)) {
+      throw new Error('Não é possível editar uma vaga concluída ou cancelada.')
     }
 
     await sequelize.transaction(async (t) => {
-      if (Array.isArray(data.shifts) && data.shifts.length) {
-        const shifts = normalizeShifts(data)
-        await JobShift.destroy({ where: { jobId: id }, transaction: t })
-        await JobShift.bulkCreate(
-          shifts.map((s, i) => ({
-            jobId: id,
-            position: i,
-            startTime: new Date(s.startTime),
-            endTime: new Date(s.endTime),
-            label: s.label ?? null,
-          })),
-          { transaction: t }
-        )
-        patch.startTime = new Date(Math.min(...shifts.map((s) => new Date(s.startTime).getTime())))
-        patch.endTime = new Date(Math.max(...shifts.map((s) => new Date(s.endTime).getTime())))
-        patch.contractedMinutes = shifts.reduce(
-          (acc, s) => acc + minutesBetween(s.startTime, s.endTime),
-          0
-        )
+      const patch: any = {}
+
+      for (const f of JOB_CONFIG_FIELDS) {
+        if (!(f in data)) continue
+        const v = data[f]
+        if (v == null || v === '') {
+          patch[f] = null
+        } else if (f === 'requireCheckoutPhoto' || f === 'reviewEnabled') {
+          patch[f] = v === true || v === 'true'
+        } else {
+          const n = Math.trunc(Number(v))
+          if (!Number.isFinite(n) || n < 0) throw new Error('Valor de configuração inválido.')
+          patch[f] = n
+        }
       }
+
+      const wantsReshape =
+        data.title != null ||
+        data.categoryId != null ||
+        data.shifts != null ||
+        data.shiftPeriod != null ||
+        data.date != null
+      if (wantsReshape) {
+        if (job.status !== 'pending') {
+          throw new Error('Função, turno e título só mudam enquanto a vaga está disponível.')
+        }
+        Object.assign(patch, await applyJobEdit(job, data, t))
+      }
+
       await job.update(patch, { transaction: t })
     })
-
     return this.findById(id)
   },
 
@@ -229,16 +423,33 @@ export const jobService = {
     if (freelancer.blockedUntil && new Date(freelancer.blockedUntil) > new Date()) {
       throw new Error('Você está temporariamente bloqueado para novas vagas.')
     }
+    const blocked = await onboardingBlockReason(freelancer)
+    if (blocked) throw new Error(blocked)
     const job = await Job.findByPk(id, { include: [{ model: JobShift, as: 'shifts' }] })
     if (!job) throw new Error('Vaga não encontrada.')
     if (job.status !== 'pending' || job.freelancerId) {
       throw new Error('Esta vaga não está mais disponível.')
     }
 
-    // A vaga só pode ser assumida se a agência do freelancer tiver valor/hora para a função.
-    const rate = await agencyRateService.activeRate(freelancer.agencyId, job.categoryId)
+    // A vaga só pode ser assumida se a agência tiver valor/hora para a função nessa loja.
+    const rate = await agencyRateService.activeRate(freelancer.agencyId, job.categoryId, job.branchId)
     if (!rate) {
-      throw new Error('Sua agência ainda não definiu um valor/hora para esta função.')
+      throw new Error('Sua agência ainda não definiu um valor/hora para esta função nesta loja.')
+    }
+
+    // Um freelancer só pode ter uma vaga por período — sem sobreposição de horário.
+    const clash = await Job.findOne({
+      where: {
+        freelancerId: freelancer.id,
+        status: { [Op.in]: ['accepted', 'in_progress'] },
+        startTime: { [Op.lt]: job.endTime },
+        endTime: { [Op.gt]: job.startTime },
+      },
+    })
+    if (clash) {
+      throw new Error(
+        `Você já tem uma vaga aceita nesse período (${fmtWindow(clash.startTime, clash.endTime)}).`
+      )
     }
 
     const shifts = (job as any).shifts ?? []
@@ -246,6 +457,61 @@ export const jobService = {
 
     await job.update({ freelancerId: freelancer.id, status: 'accepted', contractedMinutes })
     await orderService.syncStatus(job.orderId)
+    return this.findById(id)
+  },
+
+  // Freelancer desiste da vaga (dentro do prazo definido pela agência). Volta a ficar disponível.
+  async withdrawByFreelancer(id: string, freelancer: FreelancerInstance, reason?: string) {
+    const job = await Job.findByPk(id)
+    if (!job) throw new Error('Vaga não encontrada.')
+    if (job.freelancerId !== freelancer.id) throw new Error('Esta vaga não está atribuída a você.')
+    if (job.status !== 'accepted') {
+      throw new Error('Só é possível desistir de uma vaga aceita que ainda não começou.')
+    }
+
+    const agency = freelancer.agencyId ? await Agency.findByPk(freelancer.agencyId) : null
+    const windowMin = job.cancellationWindowMinutes ?? agency?.cancellationWindowMinutes ?? 30
+    const deadline = new Date(new Date(job.startTime).getTime() - windowMin * 60000)
+    if (new Date() > deadline) {
+      throw new Error(
+        `Fora do prazo de cancelamento (até ${windowMin} min antes do início). Solicite o cancelamento à sua agência.`
+      )
+    }
+
+    await sequelize.transaction(async (t) => {
+      await JobLog.create(
+        {
+          jobId: id,
+          freelancerId: freelancer.id,
+          eventType: 'withdrawn',
+          reason: reason?.trim() || 'Freelancer desistiu da vaga.',
+          timestamp: new Date(),
+        },
+        { transaction: t }
+      )
+      await JobShift.update(
+        { status: 'pending', checkInAt: null, checkOutAt: null, workedMinutes: null },
+        { where: { jobId: id }, transaction: t }
+      )
+      await job.update({ freelancerId: null, status: 'pending' }, { transaction: t })
+    })
+
+    await orderService.syncStatus(job.orderId)
+    return this.findById(id)
+  },
+
+  // A agência libera a vaga de um freelancer da sua rede (para repassar / reabrir).
+  async releaseByAgency(id: string, agencyId: string, reason?: string) {
+    const job = await Job.findByPk(id)
+    if (!job) throw new Error('Vaga não encontrada.')
+    if (!['accepted', 'in_progress'].includes(job.status)) {
+      throw new Error('Só é possível liberar uma vaga aceita ou em andamento.')
+    }
+    const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
+    if (!freelancer || freelancer.agencyId !== agencyId) {
+      throw new Error('Este freelancer não pertence à sua agência.')
+    }
+    await cancelJobByAgency(job, freelancer.id, 'withdrawn', reason?.trim() || 'Vaga liberada pela agência.')
     return this.findById(id)
   },
 
@@ -264,28 +530,9 @@ export const jobService = {
 
     const blockedUntil = new Date()
     blockedUntil.setDate(blockedUntil.getDate() + 7)
+    await freelancer.update({ blockedUntil })
 
-    await sequelize.transaction(async (t) => {
-      await JobLog.create(
-        { jobId: id, freelancerId: freelancer.id, eventType: 'no-show', reason: reason.trim(), timestamp: new Date() },
-        { transaction: t }
-      )
-      await JobLog.destroy({
-        where: { jobId: id, freelancerId: freelancer.id, eventType: { [Op.in]: ['check-in', 'check-out', 'break-start', 'break-end'] } },
-        transaction: t,
-      })
-      await JobShift.update(
-        { status: 'pending', checkInAt: null, checkOutAt: null, workedMinutes: null },
-        { where: { jobId: id }, transaction: t }
-      )
-      await freelancer.update({ blockedUntil }, { transaction: t })
-      await job.update(
-        { freelancerId: null, status: 'pending', workedMinutes: null, grossAmount: null, completedAt: null },
-        { transaction: t }
-      )
-    })
-
-    await orderService.syncStatus(job.orderId)
+    await cancelJobByAgency(job, freelancer.id, 'no-show', reason.trim())
     return this.findById(id)
   },
 

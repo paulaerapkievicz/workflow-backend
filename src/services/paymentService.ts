@@ -90,8 +90,8 @@ export const paymentService = {
     const agency = await Agency.findByPk(freelancer.agencyId)
     if (!agency) throw new Error('Agência não encontrada.')
 
-    const rate = await agencyRateService.activeRate(agency.id, job.categoryId)
-    if (!rate) throw new Error('Agência sem valor/hora cadastrado para esta função.')
+    const rate = await agencyRateService.activeRate(agency.id, job.categoryId, job.branchId)
+    if (!rate) throw new Error('Agência sem valor/hora cadastrado para esta função nesta loja.')
 
     let workedMinutes = job.workedMinutes ?? 0
     if (!workedMinutes) {

@@ -3,7 +3,7 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
-export const JOB_LOG_EVENTS = ['check-in', 'check-out', 'break-start', 'break-end', 'no-show'] as const;
+export const JOB_LOG_EVENTS = ['check-in', 'check-out', 'break-start', 'break-end', 'no-show', 'withdrawn'] as const;
 export type EventType = (typeof JOB_LOG_EVENTS)[number];
 
 export interface JobLog {

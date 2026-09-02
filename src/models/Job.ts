@@ -4,6 +4,7 @@ import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
 export const JOB_STATUSES = [
+  'awaiting_approval',
   'pending',
   'accepted',
   'in_progress',
@@ -22,6 +23,7 @@ export interface Job {
   orderId?: string | null
   orderItemId?: string | null
   monthlyInvoiceId?: string | null
+  shiftPeriod?: string | null
   title: string
   description?: string | null
   status: JobStatus
@@ -34,6 +36,11 @@ export interface Job {
   completedAt?: Date | null
   photosRequired: boolean
   agencyReviewEnabled: boolean
+  /** Overrides de configuração por vaga — NULL = usa o padrão da agência. */
+  checkinRadius?: number | null
+  cancellationWindowMinutes?: number | null
+  requireCheckoutPhoto?: boolean | null
+  reviewEnabled?: boolean | null
   createdAt: Date
   updatedAt: Date
 }
@@ -46,6 +53,7 @@ export interface JobCreationAttributes
     | 'orderId'
     | 'orderItemId'
     | 'monthlyInvoiceId'
+    | 'shiftPeriod'
     | 'description'
     | 'status'
     | 'paymentAmount'
@@ -55,6 +63,10 @@ export interface JobCreationAttributes
     | 'completedAt'
     | 'photosRequired'
     | 'agencyReviewEnabled'
+    | 'checkinRadius'
+    | 'cancellationWindowMinutes'
+    | 'requireCheckoutPhoto'
+    | 'reviewEnabled'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -131,6 +143,10 @@ export const Job = sequelize.define<JobInstance, Job>(
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL'
     },
+    shiftPeriod: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     title: {
       type: DataTypes.STRING,
       allowNull: false
@@ -184,6 +200,22 @@ export const Job = sequelize.define<JobInstance, Job>(
       type: DataTypes.BOOLEAN,
       allowNull: false,
       defaultValue: false
+    },
+    checkinRadius: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    cancellationWindowMinutes: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    requireCheckoutPhoto: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true
+    },
+    reviewEnabled: {
+      type: DataTypes.BOOLEAN,
+      allowNull: true
     },
     createdAt: {
       allowNull: false,

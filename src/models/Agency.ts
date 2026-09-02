@@ -13,6 +13,12 @@ export interface Agency {
   phone?: string
   availableBalance: number
   commissionPercentage: number
+  checkinRadius: number
+  cancellationWindowMinutes: number
+  requireCheckoutPhoto: boolean
+  reviewEnabled: boolean
+  onboardingRequired: boolean
+  uniformPrice: number
   createdAt: Date
   updatedAt: Date
 }
@@ -20,7 +26,18 @@ export interface Agency {
 export interface AgencyCreationAttributes
   extends Optional<
     Agency,
-    'id' | 'phone' | 'availableBalance' | 'commissionPercentage' | 'createdAt' | 'updatedAt'
+    | 'id'
+    | 'phone'
+    | 'availableBalance'
+    | 'commissionPercentage'
+    | 'checkinRadius'
+    | 'cancellationWindowMinutes'
+    | 'requireCheckoutPhoto'
+    | 'reviewEnabled'
+    | 'onboardingRequired'
+    | 'uniformPrice'
+    | 'createdAt'
+    | 'updatedAt'
   > {}
 
 export interface AgencyInstance extends Model<Agency, AgencyCreationAttributes>, Agency {}
@@ -67,6 +84,36 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.DECIMAL(5, 2),
     allowNull: false,
     defaultValue: 10
+  },
+  checkinRadius: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 300
+  },
+  cancellationWindowMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 30
+  },
+  requireCheckoutPhoto: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true
+  },
+  reviewEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  onboardingRequired: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  uniformPrice: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0
   },
   createdAt: {
     allowNull: false,

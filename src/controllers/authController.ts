@@ -6,9 +6,48 @@ import { Supermarket } from '../models/Supermarket'
 import { Agency } from '../models/Agency'
 import { Freelancer } from '../models/Freelancer'
 import { Commission } from '../models/Commission'
+import { SupermarketMember } from '../models/SupermarketMember'
+import { FreelancerContract } from '../models/FreelancerContract'
+import { UniformOrder } from '../models/UniformOrder'
 import { jwtService } from '../services/jwtService'
 import { profileService } from '../services/profileService'
 import { AuthRequest, Role } from '../middlewares/auth'
+
+/** Serializa o perfil e anexa contexto extra por papel (permissões do supermercado, onboarding do colaborador). */
+async function profileWithContext(user: { id: string; role: Role }) {
+  const profile = await profileService.forUser(user)
+  if (!profile) return null
+
+  if (user.role === 'supermarket') {
+    const membership = await profileService.supermarketContextForUser(user)
+    return { ...(profile as any).toJSON(), membership }
+  }
+
+  if (user.role === 'freelancer') {
+    const f = profile as any
+    const agency = f.agencyId ? await Agency.findByPk(f.agencyId) : null
+    const contract = await FreelancerContract.findOne({ where: { freelancerId: f.id } })
+    const uniform = await UniformOrder.findOne({
+      where: { freelancerId: f.id },
+      order: [['createdAt', 'DESC']],
+    })
+    const required = !!agency?.onboardingRequired
+    const contractComplete = !!contract?.completedAt
+    const approved = !!f.onboardingApprovedAt
+    return {
+      ...f.toJSON(),
+      onboarding: {
+        required,
+        contractComplete,
+        uniformStatus: uniform?.status ?? null,
+        approved,
+        blocked: required && (!contractComplete || !approved),
+      },
+    }
+  }
+
+  return profile
+}
 
 const VALID_ROLES: Role[] = ['admin', 'supermarket', 'freelancer', 'agency']
 
@@ -50,6 +89,17 @@ export const authController = {
         if (role === 'supermarket') {
           createdProfile = await Supermarket.create(
             { ownerId: user.id, name: profile.companyName, cnpj: profile.cnpj, address: profile.address, phone: phone ?? undefined },
+            { transaction: t }
+          )
+          await SupermarketMember.create(
+            {
+              supermarketId: createdProfile.id,
+              userId: user.id,
+              branchId: null,
+              canSubmitOrders: true,
+              canApproveOrders: true,
+              isOwner: true,
+            },
             { transaction: t }
           )
         } else if (role === 'agency') {
@@ -101,14 +151,14 @@ export const authController = {
     }
 
     const token = jwtService.sign({ sub: user.id, role: user.role, email: user.email })
-    const profile = await profileService.forUser(user)
+    const profile = await profileWithContext(user)
     return res.json({ token, user: publicUser(user), profile })
   },
 
   // GET /auth/me
   async me(req: AuthRequest, res: Response) {
     const user = req.user!
-    const profile = await profileService.forUser(user)
+    const profile = await profileWithContext(user)
     return res.json({ user: publicUser(user), profile })
   },
 }

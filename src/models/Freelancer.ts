@@ -14,6 +14,7 @@ export interface Freelancer {
   skills?: string
   availableBalance: number
   blockedUntil?: Date | null
+  onboardingApprovedAt?: Date | null
   ratingAvg?: number | null
   ratingCount: number
   createdAt: Date
@@ -30,6 +31,7 @@ export interface FreelancerCreationAttributes
     | 'skills'
     | 'availableBalance'
     | 'blockedUntil'
+    | 'onboardingApprovedAt'
     | 'ratingAvg'
     | 'ratingCount'
     | 'createdAt'
@@ -87,6 +89,10 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
     defaultValue: 0
   },
   blockedUntil: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  onboardingApprovedAt: {
     type: DataTypes.DATE,
     allowNull: true
   },

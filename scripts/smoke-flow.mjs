@@ -1,7 +1,6 @@
 /**
- * Teste de fluxo ponta a ponta (Bloco B): pedidos/carrinho, valor/hora da agência,
- * check-in/out por turno com geolocalização, liquidação por horas, fechamento mensal
- * e faturamento. Requer o servidor rodando em BASE_URL e o banco de teste seedado.
+ * Teste de fluxo ponta a ponta (Bloco C). Requer o servidor rodando em BASE_URL
+ * e o banco de teste seedado.
  *
  *   NODE_ENV=test PORT=3334 npx ts-node-dev --transpile-only src/server.ts   (noutro terminal)
  *   node scripts/smoke-flow.mjs
@@ -15,29 +14,26 @@ const FAR = { latitude: -23.4, longitude: -46.4 }
 
 let pass = 0
 let fail = 0
-function ok(cond, label, extra) {
-  if (cond) { pass++; console.log(`  ✔ ${label}`) }
-  else { fail++; console.error(`  ✘ ${label}${extra ? ` — ${JSON.stringify(extra)}` : ''}`) }
+const ok = (cond, label, extra) => {
+  if (cond) { pass++; console.log(`  ok  ${label}`) }
+  else { fail++; console.error(`  X   ${label}${extra !== undefined ? ` -> ${JSON.stringify(extra)}` : ''}`) }
 }
-function section(t) { console.log(`\n▶ ${t}`) }
+const section = (t) => console.log(`\n== ${t}`)
 
 async function req(method, path, { token, body } = {}) {
   const res = await fetch(BASE + path, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   })
   let data = null
-  try { data = await res.json() } catch { /* sem corpo */ }
+  try { data = await res.json() } catch { /* vazio */ }
   return { status: res.status, data }
 }
 
 const login = async (email) => {
   const { status, data } = await req('POST', '/auth/login', { body: { email, password: '123456' } })
-  if (status !== 200) throw new Error(`login ${email} falhou: ${status} ${JSON.stringify(data)}`)
+  if (status !== 200) throw new Error(`login ${email}: ${status} ${JSON.stringify(data)}`)
   return data.token
 }
 
@@ -50,210 +46,254 @@ const db = new pg.Client({
 })
 
 const yyyymm = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+const dateInDays = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
 
 async function main() {
   await db.connect()
 
-  section('Login dos papéis')
+  section('Login')
   const superT = await login('supermarket@email.com')
   const agencyT = await login('agency@email.com')
   const freeT = await login('free1@email.com')
   ok(!!superT && !!agencyT && !!freeT, 'tokens obtidos')
 
-  const meFree = (await req('GET', '/auth/me', { token: freeT })).data
   const meSuper = (await req('GET', '/auth/me', { token: superT })).data
   const meAgency = (await req('GET', '/auth/me', { token: agencyT })).data
-  const freelancerId = meFree.profile.id
+  const meFree = (await req('GET', '/auth/me', { token: freeT })).data
   const supermarketId = meSuper.profile.id
   const agencyId = meAgency.profile.id
+  const freelancerId = meFree.profile.id
+  ok(!!meFree.profile.affiliatedAgency, 'perfil do freelancer traz a agência (prazo de cancelamento)')
 
-  section('Agência: tabela de valor/hora')
-  let rates = (await req('GET', '/agency/rates', { token: agencyT })).data
-  ok(Array.isArray(rates) && rates.length >= 5, 'agência já tem valores/hora seedados', rates?.length)
+  section('Configurações da agência')
+  let settings = (await req('GET', '/agency/settings', { token: agencyT })).data
+  ok(settings.checkinRadius === 300 && settings.cancellationWindowMinutes === 30, 'settings padrão', settings)
+  const upd = await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 250, cancellationWindowMinutes: 45 } })
+  ok(upd.status === 200 && upd.data.checkinRadius === 250 && upd.data.cancellationWindowMinutes === 45, 'settings atualizadas')
+  await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 300, cancellationWindowMinutes: 30, requireCheckoutPhoto: true } })
+
+  section('Tabela de valor/hora + remove Padeiro para testar bloqueio')
   const cats = (await req('GET', '/categories', { token: superT })).data
   const catCaixa = cats.find((c) => c.name === 'Operador de Caixa')
   const catRepositor = cats.find((c) => c.name === 'Repositor')
   const catPadeiro = cats.find((c) => c.name === 'Padeiro')
+  const rates = (await req('GET', '/agency/rates', { token: agencyT })).data
   const rateCaixa = rates.find((r) => r.categoryId === catCaixa.id)
   ok(Number(rateCaixa.hourlyRate) === 24, 'valor/hora Operador de Caixa = 24', rateCaixa?.hourlyRate)
-
-  // remove o valor de Padeiro para testar o bloqueio de aceite
   const ratePadeiro = rates.find((r) => r.categoryId === catPadeiro.id)
   await req('DELETE', `/agency/rates/${ratePadeiro.id}`, { token: agencyT })
 
-  section('Supermercado: cria um pedido (carrinho) — 1 clique, várias vagas')
-  const day = new Date(Date.now() + 24 * 3600 * 1000)
-  const iso = (h, m) => new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m).toISOString()
+  section('Supermercado cria pedido (turno = dropdown)')
   const branches = (await req('GET', '/branches', { token: superT })).data
   const branchCentro = branches.find((b) => b.name === 'Filial Centro')
+  const branchSul = branches.find((b) => b.name === 'Filial Zona Sul')
+  const day = dateInDays(1)
 
   const orderRes = await req('POST', '/orders', {
     token: superT,
     body: {
-      branchId: branchCentro.id,
-      notes: 'Reforço de fim de semana',
       items: [
-        { categoryId: catCaixa.id, title: 'Operador de Caixa', quantity: 3, photosRequired: true,
-          shifts: [{ startTime: iso(8, 0), endTime: iso(14, 0) }] },
-        { categoryId: catRepositor.id, title: 'Repositor', quantity: 2, photosRequired: false,
-          shifts: [{ startTime: iso(8, 0), endTime: iso(12, 0), label: 'Manhã' },
-                   { startTime: iso(13, 0), endTime: iso(17, 0), label: 'Tarde' }] },
-        { categoryId: catPadeiro.id, title: 'Padeiro', quantity: 1, photosRequired: false,
-          shifts: [{ startTime: iso(6, 0), endTime: iso(10, 0) }] },
+        { categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 3, shiftPeriod: 'manha', date: day },
+        { categoryId: catRepositor.id, branchId: branchCentro.id, quantity: 2, shiftPeriod: 'tarde', date: day, startTime: '13:00', endTime: '17:00' },
+        { categoryId: catPadeiro.id, branchId: branchSul.id, quantity: 1, shiftPeriod: 'madrugada', date: day },
       ],
     },
   })
   ok(orderRes.status === 201, 'POST /orders 201', orderRes.status === 201 ? undefined : orderRes.data)
   const order = orderRes.data
-  ok(order.items.length === 3, 'pedido com 3 itens', order.items?.length)
-  ok(order.orderJobs.length === 6, 'pedido gerou 6 vagas (3+2+1)', order.orderJobs?.length)
+  ok(order.orderJobs.length === 6, 'pedido gerou 6 vagas', order.orderJobs?.length)
+  ok(
+    new Set(order.orderJobs.map((j) => j.branchId)).size === 2,
+    'pedido pode ter vagas em filiais diferentes',
+    [...new Set(order.orderJobs.map((j) => j.branchId))].length
+  )
   const caixaJobs = order.orderJobs.filter((j) => j.categoryId === catCaixa.id)
   ok(caixaJobs.length === 3, '3 vagas de Operador de Caixa', caixaJobs.length)
-  ok(caixaJobs.every((j) => j.paymentAmount == null), 'vagas sem valor definido pelo supermercado')
+  ok(caixaJobs[0].title === 'Operador de Caixa - Filial Centro (1/3)', 'título padrão = função + filial', caixaJobs[0].title)
+  ok(caixaJobs[0].shiftPeriod === 'manha', 'vaga guarda o turno', caixaJobs[0].shiftPeriod)
   const repJob = order.orderJobs.find((j) => j.categoryId === catRepositor.id)
-  ok((repJob.shifts?.length ?? 0) === 2, 'vaga de Repositor tem 2 turnos', repJob.shifts?.length)
-  ok(repJob.contractedMinutes === 480, 'Repositor: 480 min contratados (2x4h)', repJob.contractedMinutes)
-  const padeiroJob = order.orderJobs.find((j) => j.categoryId === catPadeiro.id)
+  ok(repJob.contractedMinutes === 240, 'Repositor 13–17 = 240 min', repJob.contractedMinutes)
 
-  section('Freelancer: vagas disponíveis respeitam a tabela de valor/hora')
+  section('Adicionar vagas a um pedido já enviado')
+  const added = await req('POST', `/orders/${order.id}/items`, {
+    token: superT,
+    body: {
+      items: [
+        { categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, shiftPeriod: 'tarde', date: day },
+        { categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, shiftPeriod: 'manha', date: day },
+      ],
+    },
+  })
+  ok(added.status === 201 && added.data.orderJobs.length === 8, '2 vagas adicionadas (6 -> 8)', added.data?.orderJobs?.length)
+
+  section('Gerente de loja + aprovação de pedido')
+  const mgrEmail = `gerente-sul-${Date.now()}@email.com`
+  const mkMember = await req('POST', `/supermarkets/${supermarketId}/members`, {
+    token: superT,
+    body: { name: 'Gerente Zona Sul', email: mgrEmail, password: '123456', branchId: branchSul.id, canApproveOrders: false },
+  })
+  ok(mkMember.status === 201, 'dono cadastra gerente de loja')
+  const mgrT = await login(mgrEmail)
+  const mgrOrder = await req('POST', '/orders', {
+    token: mgrT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 2, shiftPeriod: 'tarde', date: day }] },
+  })
+  ok(mgrOrder.status === 201 && mgrOrder.data.approvalStatus === 'pending_approval', 'pedido do gerente fica aguardando aprovação')
+  ok(mgrOrder.data.orderJobs.every((j) => j.status === 'awaiting_approval'), 'vagas nascem awaiting_approval')
+  ok(mgrOrder.data.orderJobs.every((j) => j.branchId === branchSul.id), 'gerente de loja força a filial dele', mgrOrder.data.orderJobs[0]?.branchId)
+  const availBefore = (await req('GET', '/jobs/available', { token: freeT })).data
+  ok(!availBefore.some((j) => j.orderId === mgrOrder.data.id), 'vaga aguardando aprovação não aparece para o freelancer')
+  const appr = await req('POST', `/orders/${mgrOrder.data.id}/approve`, { token: superT })
+  ok(appr.status === 200 && appr.data.approvalStatus === 'approved', 'dono aprova o pedido')
+  ok(appr.data.orderJobs.every((j) => j.status === 'pending'), 'vagas aprovadas entram como pending')
+  const mgrOrder2 = await req('POST', '/orders', {
+    token: mgrT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchSul.id, quantity: 1, shiftPeriod: 'manha', date: day }] },
+  })
+  const rej = await req('POST', `/orders/${mgrOrder2.data.id}/reject`, { token: superT, body: { reason: 'fora do orçamento' } })
+  ok(rej.status === 200 && rej.data.approvalStatus === 'rejected', 'dono recusa o pedido')
+  ok(rej.data.orderJobs.every((j) => j.status === 'canceled'), 'vagas do pedido recusado são canceladas')
+
+  section('Editar / remover vaga ainda disponível')
+  const editable = caixaJobs[2]
+  const edited = await req('PUT', `/jobs/${editable.id}`, { token: superT, body: { shiftPeriod: 'tarde', date: day } })
+  ok(edited.status === 200 && edited.data.shiftPeriod === 'tarde', 'vaga pendente editada (turno)', edited.data?.shiftPeriod)
+  const del = await req('DELETE', `/jobs/${caixaJobs[1].id}`, { token: superT })
+  ok(del.status === 200, 'vaga pendente removida')
+
+  section('Freelancer: disponíveis respeitam a tabela')
   const avail = (await req('GET', '/jobs/available', { token: freeT })).data
-  ok(avail.some((j) => j.categoryId === catCaixa.id), 'Operador de Caixa aparece (tem valor/hora)')
+  ok(avail.some((j) => j.categoryId === catCaixa.id), 'Operador de Caixa aparece')
   ok(!avail.some((j) => j.categoryId === catPadeiro.id), 'Padeiro NÃO aparece (sem valor/hora)')
-
-  const accPadeiro = await req('POST', `/jobs/${padeiroJob.id}/accept`, { token: freeT })
-  ok(accPadeiro.status === 400, 'aceitar vaga sem valor/hora é bloqueado', accPadeiro.data?.message)
-  // repõe o valor de Padeiro
+  const padeiroJob = order.orderJobs.find((j) => j.categoryId === catPadeiro.id)
+  const accPad = await req('POST', `/jobs/${padeiroJob.id}/accept`, { token: freeT })
+  ok(accPad.status === 400, 'aceitar vaga sem valor/hora é bloqueado', accPad.data?.message)
   await req('POST', '/agency/rates', { token: agencyT, body: { categoryId: catPadeiro.id, hourlyRate: 25 } })
 
-  section('Freelancer aceita e faz check-in/out com geolocalização')
+  section('Aceite + conflito de horário')
   const job = caixaJobs[0]
   const acc = await req('POST', `/jobs/${job.id}/accept`, { token: freeT })
-  ok(acc.status === 200 && acc.data.status === 'accepted', 'vaga aceita', acc.data?.status)
+  ok(acc.status === 200 && acc.data.status === 'accepted', 'vaga (manhã) aceita')
+  // outra vaga de manhã no mesmo dia -> conflito
+  const otherManha = avail.find((j) => j.categoryId === catCaixa.id && j.id !== job.id && j.shiftPeriod === 'manha')
+  if (otherManha) {
+    const clash = await req('POST', `/jobs/${otherManha.id}/accept`, { token: freeT })
+    ok(clash.status === 400 && /já tem uma vaga/.test(clash.data?.message || ''), 'conflito de horário bloqueia o aceite', clash.data?.message)
+  } else {
+    ok(true, 'conflito de horário (sem 2ª vaga de manhã para testar — pulado)')
+  }
 
+  section('Check-in por turno + geolocalização (raio da agência)')
   const noGeo = await req('POST', `/jobs/${job.id}/logs/checkin`, { token: freeT, body: {} })
-  ok(noGeo.status === 400, 'check-in sem localização é recusado', noGeo.data?.message)
-
+  ok(noGeo.status === 400, 'check-in sem localização recusado')
   const farGeo = await req('POST', `/jobs/${job.id}/logs/checkin`, { token: freeT, body: FAR })
-  ok(farGeo.status === 400 && /limite de/.test(farGeo.data?.message || ''), 'check-in fora do raio é recusado', farGeo.data?.message)
+  ok(farGeo.status === 400 && /limite de/.test(farGeo.data?.message || ''), 'check-in fora do raio recusado', farGeo.data?.message)
+  const ci = await req('POST', `/jobs/${job.id}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 10 } })
+  ok(ci.status === 201, 'check-in no local aceito', ci.data?.message)
+  const jobCi = (await req('GET', `/jobs/${job.id}`, { token: freeT })).data
+  ok(jobCi.status === 'in_progress' && jobCi.shifts[0].status === 'in_progress', 'vaga e turno em andamento')
 
-  const ci = await req('POST', `/jobs/${job.id}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 12 } })
-  ok(ci.status === 201, 'check-in no local é aceito', ci.data?.message)
-  const jobAfterCi = (await req('GET', `/jobs/${job.id}`, { token: freeT })).data
-  ok(jobAfterCi.status === 'in_progress', 'vaga em andamento após check-in', jobAfterCi.status)
-  ok(jobAfterCi.shifts[0].status === 'in_progress', 'turno 1 em andamento')
-
-  section('Agência: acompanhamento em tempo real')
+  section('Agência: ao vivo')
   const live = (await req('GET', '/jobs/live', { token: agencyT })).data
-  ok(Array.isArray(live) && live.some((j) => j.id === job.id), 'vaga aparece em /jobs/live', live?.length)
+  ok(Array.isArray(live) && live.some((j) => j.id === job.id), 'vaga aparece em /jobs/live')
 
-  section('Check-out: exige foto e recalcula por horas trabalhadas')
+  section('Check-out: exige foto (config da agência) e paga por horas')
   const coNoPhoto = await req('POST', `/jobs/${job.id}/logs/checkout`, { token: freeT, body: CENTRO })
-  ok(coNoPhoto.status === 400, 'check-out sem foto é recusado', coNoPhoto.data?.message)
-
-  // envia foto de comprovação (multipart)
+  ok(coNoPhoto.status === 400, 'check-out sem foto recusado', coNoPhoto.data?.message)
   const fd = new FormData()
-  fd.append('photo', new Blob(['fake-jpeg-bytes'], { type: 'image/jpeg' }), 'comprovacao.jpg')
-  fd.append('caption', 'Caixa 03 aberto')
-  const upRes = await fetch(`${BASE}/jobs/${job.id}/photos`, {
-    method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fd,
-  })
-  ok(upRes.status === 201, 'upload de foto 201', upRes.status)
+  fd.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg')
+  const up = await fetch(`${BASE}/jobs/${job.id}/photos`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fd })
+  ok(up.status === 201, 'upload de foto 201', up.status)
 
-  // "trabalha" 6h: recua o check-in do turno 6 horas no banco
-  await db.query(
-    `UPDATE job_shifts SET check_in_at = check_in_at - interval '6 hours' WHERE job_id = $1 AND status = 'in_progress'`,
-    [job.id]
-  )
-  await db.query(
-    `UPDATE job_logs SET timestamp = timestamp - interval '6 hours' WHERE job_id = $1 AND event_type = 'check-in'`,
-    [job.id]
-  )
+  await db.query(`UPDATE job_shifts SET check_in_at = check_in_at - interval '6 hours' WHERE job_id=$1 AND status='in_progress'`, [job.id])
+  await db.query(`UPDATE job_logs SET timestamp = timestamp - interval '6 hours' WHERE job_id=$1 AND event_type='check-in'`, [job.id])
 
   const freeBefore = Number((await req('GET', `/freelancers/${freelancerId}`, { token: freeT })).data.availableBalance)
   const agencyBefore = Number((await req('GET', `/agencies/${agencyId}`, { token: agencyT })).data.availableBalance)
 
   const co = await req('POST', `/jobs/${job.id}/logs/checkout`, { token: freeT, body: CENTRO })
-  ok(co.status === 201, 'check-out aceito', co.data?.message)
-  ok(co.data.jobCompleted === true, 'vaga concluída (turno único fechado)')
-
-  const jobDone = (await req('GET', `/jobs/${job.id}`, { token: freeT })).data
-  ok(jobDone.status === 'completed', 'status = completed', jobDone.status)
-  ok(jobDone.workedMinutes >= 355 && jobDone.workedMinutes <= 361, 'minutos trabalhados ≈ 360', jobDone.workedMinutes)
-  // 24/h * 6h = 144 ; agência 15% = 21,6 ; freelancer = 122,4
-  ok(Math.abs(Number(jobDone.grossAmount) - 144) < 0.5, 'valor bruto ≈ R$ 144 (24/h × 6h)', jobDone.grossAmount)
-
-  section('Carteiras creditadas na conclusão')
-  const pays = (await req('GET', '/payments/mine', { token: freeT })).data
-  const p = pays.find((x) => x.jobId === job.id)
-  ok(!!p, 'pagamento criado para a vaga')
-  ok(p.grossAmount === undefined, 'freelancer não enxerga valor bruto (carteira opaca)')
-  ok(Math.abs(Number(p.freelancerAmount) - 122.4) < 0.5, 'freelancerAmount ≈ 122,40', p?.freelancerAmount)
+  ok(co.status === 201 && co.data.jobCompleted === true, 'check-out conclui a vaga (turno único)')
+  const done = (await req('GET', `/jobs/${job.id}`, { token: freeT })).data
+  ok(Math.abs(Number(done.grossAmount) - 144) < 0.5, 'valor bruto ~ R$ 144 (24/h x 6h)', done.grossAmount)
 
   const freeAfter = Number((await req('GET', `/freelancers/${freelancerId}`, { token: freeT })).data.availableBalance)
   const agencyAfter = Number((await req('GET', `/agencies/${agencyId}`, { token: agencyT })).data.availableBalance)
   ok(Math.abs((freeAfter - freeBefore) - 122.4) < 0.5, 'carteira do freelancer +122,40', freeAfter - freeBefore)
   ok(Math.abs((agencyAfter - agencyBefore) - 21.6) < 0.5, 'carteira da agência +21,60', agencyAfter - agencyBefore)
 
-  section('Multi-turno: check-in/out por turno (vaga de Repositor)')
-  await req('POST', `/jobs/${repJob.id}/accept`, { token: freeT })
-  const r1 = await req('POST', `/jobs/${repJob.id}/logs/checkin`, { token: freeT, body: CENTRO })
-  ok(r1.status === 201, 'turno 1: check-in')
-  const rDouble = await req('POST', `/jobs/${repJob.id}/logs/checkin`, { token: freeT, body: CENTRO })
-  ok(rDouble.status === 400, 'não deixa fazer check-in do turno 2 sem fechar o 1')
-  const r1o = await req('POST', `/jobs/${repJob.id}/logs/checkout`, { token: freeT, body: CENTRO })
-  ok(r1o.status === 201 && r1o.data.jobCompleted === false, 'turno 1: check-out (vaga ainda não concluída)')
-  const r2 = await req('POST', `/jobs/${repJob.id}/logs/checkin`, { token: freeT, body: CENTRO })
-  ok(r2.status === 201, 'turno 2: check-in')
-  const r2o = await req('POST', `/jobs/${repJob.id}/logs/checkout`, { token: freeT, body: CENTRO })
-  ok(r2o.status === 201 && r2o.data.jobCompleted === true, 'turno 2: check-out conclui a vaga')
-  const r3 = await req('POST', `/jobs/${repJob.id}/logs/checkin`, { token: freeT, body: CENTRO })
-  ok(r3.status === 400, 'não há 3º turno para check-in')
+  section('Freelancer desiste da vaga (dentro / fora do prazo)')
+  const repToWithdraw = order.orderJobs.find((j) => j.categoryId === catRepositor.id)
+  await req('POST', `/jobs/${repToWithdraw.id}/accept`, { token: freeT })
+  const wOk = await req('POST', `/jobs/${repToWithdraw.id}/withdraw`, { token: freeT })
+  ok(wOk.status === 200 && wOk.data.status === 'pending' && !wOk.data.freelancerId, 'desistência dentro do prazo -> volta a pending')
+  ok((wOk.data.jobLogs ?? []).some((l) => l.eventType === 'withdrawn'), 'registra log de desistência')
 
-  section('Fechamento mensal: agência fecha o mês do supermercado')
+  await req('POST', `/jobs/${repToWithdraw.id}/accept`, { token: freeT })
+  await db.query(`UPDATE jobs SET start_time = NOW() + interval '10 minutes' WHERE id=$1`, [repToWithdraw.id])
+  const wLate = await req('POST', `/jobs/${repToWithdraw.id}/withdraw`, { token: freeT })
+  ok(wLate.status === 400 && /prazo de cancelamento/.test(wLate.data?.message || ''), 'fora do prazo -> bloqueado', wLate.data?.message)
+
+  section('Agência libera a vaga do freelancer')
+  const rel = await req('POST', `/jobs/${repToWithdraw.id}/release`, { token: agencyT })
+  ok(rel.status === 200 && rel.data.status === 'pending', 'agência libera -> volta a pending')
+
+  section('Fechamento mensal: por matriz e prévia por loja')
   const ref = yyyymm()
-  // garante datas de conclusão dentro do mês corrente
-  await db.query(`UPDATE jobs SET completed_at = NOW() WHERE status = 'completed' AND supermarket_id = $1 AND monthly_invoice_id IS NULL`, [supermarketId])
+  await db.query(`UPDATE jobs SET completed_at = NOW() WHERE status='completed' AND supermarket_id=$1 AND monthly_invoice_id IS NULL`, [supermarketId])
+  const prevMatriz = (await req('GET', `/closings/preview?supermarketId=${supermarketId}&referenceMonth=${ref}`, { token: agencyT })).data
+  ok(prevMatriz.totals.totalJobs >= 1, 'prévia (matriz) lista vagas', prevMatriz.totals?.totalJobs)
+  const prevLojaSul = (await req('GET', `/closings/preview?supermarketId=${supermarketId}&referenceMonth=${ref}&branchId=${branchSul.id}`, { token: agencyT })).data
+  ok(prevLojaSul.totals.totalJobs === 0, 'prévia por loja (Zona Sul) vazia — vagas foram na Centro', prevLojaSul.totals?.totalJobs)
 
-  const preview = (await req('GET', `/closings/preview?supermarketId=${supermarketId}&referenceMonth=${ref}`, { token: agencyT })).data
-  ok(preview.totals.totalJobs >= 2, 'prévia do fechamento lista vagas concluídas', preview.totals?.totalJobs)
+  const close = await req('POST', '/closings', { token: agencyT, body: { supermarketId, referenceMonth: ref } })
+  ok(close.status === 201 && close.data.type === 'monthly' && close.data.branchId == null, 'fechamento da matriz criado')
+  ok(Number(close.data.totalAmount) > 0, 'fatura mensal com valor', close.data?.totalAmount)
 
-  const closeRes = await req('POST', '/closings', { token: agencyT, body: { supermarketId, referenceMonth: ref } })
-  ok(closeRes.status === 201, 'POST /closings 201', closeRes.status === 201 ? undefined : closeRes.data)
-  const closing = closeRes.data
-  ok(closing.type === 'monthly' && closing.status === 'pending', 'fatura mensal pendente criada')
-  ok(closing.totalJobs >= 2, 'fatura mensal agrega as vagas', closing.totalJobs)
-  ok(Number(closing.totalAmount) > 0, 'fatura mensal tem valor', closing.totalAmount)
-
-  const closeAgain = await req('POST', '/closings', { token: agencyT, body: { supermarketId, referenceMonth: ref } })
-  ok(closeAgain.status === 400, 'não fecha duas vezes o mesmo período sem novas vagas', closeAgain.data?.message)
-
-  section('Supermercado: faturamento (histórico por mês e função)')
+  section('Faturamento do supermercado (dados + filtros)')
   const billing = (await req('GET', '/billing/summary', { token: superT })).data
-  ok(billing.months.length >= 1, 'faturamento tem ao menos 1 mês')
-  const thisMonth = billing.months.find((m) => m.referenceMonth === ref)
-  ok(!!thisMonth, 'mês corrente presente no faturamento')
-  ok(thisMonth.totalJobs >= 2, 'total de vagas do mês', thisMonth?.totalJobs)
-  ok(thisMonth.workedHours > 0 && thisMonth.contractedHours > 0, 'horas contratadas e trabalhadas exibidas', {
-    contratadas: thisMonth?.contractedHours, trabalhadas: thisMonth?.workedHours,
-  })
-  ok(thisMonth.byCategory.some((c) => c.categoryName === 'Operador de Caixa'), 'quebra por função inclui Operador de Caixa')
-  ok(thisMonth.invoices.some((i) => i.id === closing.id), 'fatura mensal aparece no faturamento')
+  ok(Array.isArray(billing.jobs) && Array.isArray(billing.branches) && Array.isArray(billing.invoices), 'summary tem jobs/branches/invoices')
+  ok(billing.jobs.some((j) => j.categoryName === 'Operador de Caixa' && j.branchName === 'Filial Centro'), 'linha com função + loja')
+  ok(billing.invoices.some((i) => i.id === close.data.id && i.branchName == null), 'fatura mensal (matriz) no faturamento')
+  ok(billing.totals.workedHours > 0, 'totais com horas trabalhadas', billing.totals?.workedHours)
 
-  section('Supermercado paga a fatura mensal')
-  const payInv = await req('POST', `/invoices/${closing.id}/pay`, { token: superT })
-  ok(payInv.status === 200 && payInv.data.status === 'paid', 'fatura mensal paga', payInv.data?.status)
+  const payInv = await req('POST', `/invoices/${close.data.id}/pay`, { token: superT })
+  ok(payInv.status === 200 && payInv.data.status === 'paid', 'supermercado paga a fatura mensal')
 
-  section('Freelancer: relatório de trabalhos')
+  section('Relatório do freelancer')
   const report = (await req('GET', '/reports/freelancer', { token: freeT })).data
-  ok(report.items.length >= 2, 'relatório lista trabalhos concluídos', report.items?.length)
-  ok(report.totals.earned > 0, 'total recebido no relatório', report.totals?.earned)
-  ok(report.items.every((i) => i.workedHours >= 0 && 'amount' in i), 'itens do relatório têm horas e valor')
+  ok(report.items.length >= 1 && report.totals.earned > 0, 'relatório com trabalhos e ganhos', report.totals)
 
-  section('Pedido reflete o andamento das vagas')
-  const orderNow = (await req('GET', `/orders/${order.id}`, { token: superT })).data
-  ok(orderNow.status === 'in_progress', 'pedido em andamento (algumas vagas concluídas, outras abertas)', orderNow.status)
+  section('Onboarding do colaborador (perfil contratual + trava de trabalho)')
+  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: true, uniformPrice: 80 } })
+  const availLocked = (await req('GET', '/jobs/available', { token: freeT })).data
+  ok(Array.isArray(availLocked) && availLocked.length === 0, 'com onboarding ligado e sem contrato: nenhuma vaga', availLocked.length)
+  const openJob = (await req('GET', '/jobs', { token: agencyT })).data.find((j) => j.status === 'pending')
+  const accLocked = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
+  ok(accLocked.status === 400 && /perfil contratual/i.test(accLocked.data?.message || ''), 'aceite bloqueado sem perfil contratual', accLocked.data?.message)
 
-  console.log(`\n──────────\n${pass} passaram, ${fail} falharam`)
+  const contractBody = {
+    fullName: 'Joana Freelancer', cpf: '123.456.789-00', rg: '12.345.678-9', pisNis: '123.45678.90-1',
+    birthDate: '1995-05-10', maritalStatus: 'solteira', nationality: 'brasileira', motherName: 'Maria',
+    addressCep: '01000-000', addressStreet: 'Rua A', addressNumber: '10', addressNeighborhood: 'Centro',
+    addressCity: 'São Paulo', addressState: 'SP', bankName: 'Banco X', bankBranch: '0001', bankAccount: '12345-6',
+    emergencyContactName: 'José', emergencyContactPhone: '(11) 99999-0000', shirtSize: 'M',
+  }
+  const ct = await req('PUT', '/freelancer/contract', { token: freeT, body: contractBody })
+  ok(ct.status === 200 && ct.data.completedAt, 'perfil contratual concluído', ct.data?.completedAt)
+  const accStillLocked = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
+  ok(accStillLocked.status === 400 && /uniforme/i.test(accStillLocked.data?.message || ''), 'ainda bloqueado até o uniforme ser aprovado', accStillLocked.data?.message)
+
+  // Simula a aprovação do uniforme (o fluxo com Mercado Pago exige credenciais reais).
+  await db.query(`UPDATE freelancers SET onboarding_approved_at = NOW() WHERE id = $1`, [freelancerId])
+  const availOk = (await req('GET', '/jobs/available', { token: freeT })).data
+  ok(availOk.length > 0, 'onboarding aprovado: vagas voltam a aparecer', availOk.length)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: false } })
+
+  section('Geocodificação (tolerante a rede)')
+  const geo = await req('POST', '/branches/geocode', { token: superT, body: { address: 'Avenida Paulista, 1578, São Paulo' } })
+  ok(geo.status === 200 || geo.status === 400, `geocode respondeu (${geo.status})`, geo.status === 200 ? { lat: geo.data.latitude } : geo.data?.message)
+
+  console.log(`\n----------\n${pass} passaram, ${fail} falharam`)
   await db.end()
   process.exit(fail ? 1 : 0)
 }

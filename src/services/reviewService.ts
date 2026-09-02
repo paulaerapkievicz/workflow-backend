@@ -2,6 +2,7 @@ import { sequelize } from '../database'
 import { Review } from '../models/Review'
 import { Job } from '../models/Job'
 import { Freelancer } from '../models/Freelancer'
+import { Agency } from '../models/Agency'
 
 const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
@@ -26,7 +27,6 @@ export const reviewService = {
   ) {
     const job = await Job.findByPk(jobId)
     if (!job) throw new Error('Vaga não encontrada.')
-    if (!job.agencyReviewEnabled) throw new Error('Esta vaga não tem avaliação da agência habilitada.')
     if (job.status !== 'completed') throw new Error('A vaga precisa estar concluída para ser avaliada.')
     if (!job.freelancerId) throw new Error('Vaga sem freelancer.')
 
@@ -34,6 +34,11 @@ export const reviewService = {
     if (!freelancer || freelancer.agencyId !== agencyId) {
       throw new Error('Este freelancer não pertence à sua agência.')
     }
+
+    // A avaliação é uma decisão da agência (config), com override opcional por vaga.
+    const agency = await Agency.findByPk(agencyId)
+    const reviewEnabled = job.reviewEnabled ?? agency?.reviewEnabled ?? false
+    if (!reviewEnabled) throw new Error('Ative a avaliação de entregas nas configurações da agência.')
 
     const rating = Number(data.rating)
     if (!(rating >= 1 && rating <= 5)) throw new Error('A nota deve ser de 1 a 5.')

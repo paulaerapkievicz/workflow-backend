@@ -1,7 +1,12 @@
+import { Op } from 'sequelize'
 import { AgencyCategoryRate } from '../models/AgencyCategoryRate'
 import { Category } from '../models/Category'
+import { Branch } from '../models/Branch'
 
-const includes = [{ model: Category, as: 'rateCategory' }]
+const includes = [
+  { model: Category, as: 'rateCategory' },
+  { model: Branch, as: 'rateBranch' },
+]
 
 export const agencyRateService = {
   async listForAgency(agencyId: string) {
@@ -12,18 +17,38 @@ export const agencyRateService = {
     })
   },
 
-  /** Valor/hora ativo de uma agência para uma categoria (ou null). */
-  async activeRate(agencyId: string, categoryId: string) {
-    return AgencyCategoryRate.findOne({ where: { agencyId, categoryId, active: true } })
+  /**
+   * Valor/hora ativo de uma agência para uma categoria numa filial.
+   * Procura primeiro o valor específico da filial; se não houver, usa o padrão da rede
+   * (branchId = null). Sem `branchId`, considera só o padrão.
+   */
+  async activeRate(agencyId: string, categoryId: string, branchId?: string | null) {
+    if (branchId) {
+      const specific = await AgencyCategoryRate.findOne({
+        where: { agencyId, categoryId, branchId, active: true },
+      })
+      if (specific) return specific
+    }
+    return AgencyCategoryRate.findOne({ where: { agencyId, categoryId, branchId: null, active: true } })
   },
 
-  async upsert(agencyId: string, data: { categoryId: string; hourlyRate: number; active?: boolean }) {
+  async upsert(
+    agencyId: string,
+    data: { categoryId: string; branchId?: string | null; hourlyRate: number; active?: boolean }
+  ) {
     if (!data.categoryId) throw new Error('Informe a categoria.')
     if (!(Number(data.hourlyRate) > 0)) throw new Error('Informe um valor/hora válido.')
     const category = await Category.findByPk(data.categoryId)
     if (!category) throw new Error('Categoria inválida.')
+    const branchId = data.branchId || null
+    if (branchId) {
+      const branch = await Branch.findByPk(branchId)
+      if (!branch) throw new Error('Filial inválida.')
+    }
 
-    const existing = await AgencyCategoryRate.findOne({ where: { agencyId, categoryId: data.categoryId } })
+    const existing = await AgencyCategoryRate.findOne({
+      where: { agencyId, categoryId: data.categoryId, branchId: branchId ?? { [Op.is]: null } },
+    })
     if (existing) {
       await existing.update({
         hourlyRate: Number(data.hourlyRate),
@@ -34,6 +59,7 @@ export const agencyRateService = {
     const created = await AgencyCategoryRate.create({
       agencyId,
       categoryId: data.categoryId,
+      branchId,
       hourlyRate: Number(data.hourlyRate),
       active: data.active ?? true,
     })

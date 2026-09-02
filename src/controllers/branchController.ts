@@ -26,6 +26,17 @@ export const branchController = {
     }
   },
 
+  // POST /branches/geocode - Busca coordenadas de um endereço (prévia, não salva)
+  async geocode(req: AuthRequest, res: Response) {
+    try {
+      const address = req.body?.address ?? req.query?.address;
+      if (!address) return res.status(400).json({ message: 'Informe o endereço.' });
+      return res.json(await branchService.geocode(String(address)));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao geocodificar.' });
+    }
+  },
+
   // POST /branches - Cria uma nova filial
   async create(req: AuthRequest, res: Response) {
     try {

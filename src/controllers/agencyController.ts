@@ -1,7 +1,31 @@
 import { Request, Response } from 'express';
 import { agencyService } from '../services/agencyService';
+import { profileService } from '../services/profileService';
+import { AuthRequest } from '../middlewares/auth';
 
 export const agencyController = {
+  // GET /agency/settings (agency) — configurações operacionais da minha agência
+  async getSettings(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(400).json({ message: 'Cadastre a agência primeiro.' });
+      return res.json(await agencyService.getSettings(agencyId));
+    } catch (error) {
+      return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' });
+    }
+  },
+
+  // PUT /agency/settings (agency)
+  async updateSettings(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(400).json({ message: 'Cadastre a agência primeiro.' });
+      return res.json(await agencyService.updateSettings(agencyId, req.body ?? {}));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro.' });
+    }
+  },
+
   // GET /agencies - Lista todas as agências
   async index(req: Request, res: Response) {
     try {

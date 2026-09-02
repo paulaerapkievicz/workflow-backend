@@ -10,6 +10,7 @@ export interface Invoice {
   id: string
   supermarketId: string
   agencyId?: string | null
+  branchId?: string | null
   jobId?: string | null
   paymentId?: string | null
   type: InvoiceType
@@ -30,6 +31,7 @@ export interface InvoiceCreationAttributes
     Invoice,
     | 'id'
     | 'agencyId'
+    | 'branchId'
     | 'jobId'
     | 'paymentId'
     | 'type'
@@ -68,6 +70,13 @@ export const Invoice = sequelize.define<InvoiceInstance, Invoice>(
       type: DataTypes.UUID,
       allowNull: true,
       references: { model: 'agencies', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL'
+    },
+    branchId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'branches', key: 'id' },
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL'
     },

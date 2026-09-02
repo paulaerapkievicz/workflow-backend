@@ -4,6 +4,7 @@ import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
 export interface OrderItemShiftTemplate {
+  shiftPeriod?: string | null
   startTime: string
   endTime: string
   label?: string | null
@@ -13,9 +14,11 @@ export interface OrderItem {
   id: string
   orderId: string
   categoryId: string
+  branchId?: string | null
   title: string
   description?: string | null
   quantity: number
+  shiftPeriod?: string | null
   photosRequired: boolean
   agencyReviewEnabled: boolean
   shifts: OrderItemShiftTemplate[]
@@ -27,8 +30,10 @@ export interface OrderItemCreationAttributes
   extends Optional<
     OrderItem,
     | 'id'
+    | 'branchId'
     | 'description'
     | 'quantity'
+    | 'shiftPeriod'
     | 'photosRequired'
     | 'agencyReviewEnabled'
     | 'createdAt'
@@ -60,6 +65,13 @@ export const OrderItem = sequelize.define<OrderItemInstance, OrderItem>(
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE',
     },
+    branchId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'branches', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL',
+    },
     title: {
       type: DataTypes.STRING,
       allowNull: false,
@@ -72,6 +84,10 @@ export const OrderItem = sequelize.define<OrderItemInstance, OrderItem>(
       type: DataTypes.INTEGER,
       allowNull: false,
       defaultValue: 1,
+    },
+    shiftPeriod: {
+      type: DataTypes.STRING,
+      allowNull: true,
     },
     photosRequired: {
       type: DataTypes.BOOLEAN,

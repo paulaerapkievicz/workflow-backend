@@ -26,7 +26,12 @@ export const freelancerService = {
     const freelancer = await Freelancer.findByPk(id);
     if (!freelancer) return null;
 
-    return await freelancer.update(data);
+    // Só campos de perfil — nunca agencyId / saldo / userId.
+    const patch: Record<string, unknown> = {};
+    for (const field of ['name', 'email', 'phone', 'skills'] as const) {
+      if (data[field] !== undefined) patch[field] = data[field];
+    }
+    return await freelancer.update(patch);
   },
 
   async deleteFreelancer(id: string) {

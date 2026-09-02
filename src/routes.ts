@@ -18,6 +18,8 @@ import { orderController } from './controllers/orderController';
 import { agencyRateController } from './controllers/agencyRateController';
 import { closingController } from './controllers/closingController';
 import { billingController } from './controllers/billingController';
+import { onboardingController } from './controllers/onboardingController';
+import { pendingController } from './controllers/pendingController';
 import { ensureAuth, authorize } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
@@ -31,6 +33,9 @@ router.post('/auth/login', authController.login);
 router.get('/categories', categoryController.index);
 router.get('/categories/:id', categoryController.show);
 router.get('/agencies', agencyController.index);
+
+// Webhook do Mercado Pago (chamado pelo provedor, sem token)
+router.post('/payments/mercadopago/webhook', onboardingController.mercadoPagoWebhook);
 
 // ----- A partir daqui, tudo exige autenticação -----
 router.use(ensureAuth);
@@ -48,15 +53,21 @@ router.delete('/users/:id', authorize('admin'), userController.delete);
 router.get('/supermarkets', supermarketController.index);
 router.get('/supermarkets/:id', supermarketController.show);
 router.post('/supermarkets', authorize('supermarket', 'admin'), supermarketController.create);
-router.put('/supermarkets/:id', authorize('supermarket', 'admin'), supermarketController.update);
-router.delete('/supermarkets/:id', authorize('supermarket', 'admin'), supermarketController.delete);
+router.post('/agency/supermarkets', authorize('agency'), supermarketController.createForAgency);
+router.get('/supermarkets/:id/members', authorize('supermarket', 'agency'), supermarketController.listMembers);
+router.post('/supermarkets/:id/members', authorize('supermarket', 'agency'), supermarketController.addMember);
+router.put('/supermarket-members/:id', authorize('supermarket', 'agency'), supermarketController.updateMember);
+router.delete('/supermarket-members/:id', authorize('supermarket', 'agency'), supermarketController.deleteMember);
+router.put('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.update);
+router.delete('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.delete);
 
 // ----- Filiais -----
 router.get('/branches', branchController.index);
+router.post('/branches/geocode', authorize('supermarket', 'agency', 'admin'), branchController.geocode);
 router.get('/branches/:id', branchController.show);
-router.post('/branches', authorize('supermarket', 'admin'), branchController.create);
-router.put('/branches/:id', authorize('supermarket', 'admin'), branchController.update);
-router.delete('/branches/:id', authorize('supermarket', 'admin'), branchController.delete);
+router.post('/branches', authorize('supermarket', 'agency', 'admin'), branchController.create);
+router.put('/branches/:id', authorize('supermarket', 'agency', 'admin'), branchController.update);
+router.delete('/branches/:id', authorize('supermarket', 'agency', 'admin'), branchController.delete);
 
 // ----- Agências -----
 router.get('/agencies/:id', agencyController.show);
@@ -80,7 +91,9 @@ router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'f
 router.post('/categories', authorize('admin'), categoryController.create);
 router.delete('/categories/:id', authorize('admin'), categoryController.delete);
 
-// ----- Tabela de valor/hora (agência) -----
+// ----- Configurações e tabela de valor/hora (agência) -----
+router.get('/agency/settings', authorize('agency'), agencyController.getSettings);
+router.put('/agency/settings', authorize('agency'), agencyController.updateSettings);
 router.get('/agency/rates', authorize('agency'), agencyRateController.index);
 router.post('/agency/rates', authorize('agency'), agencyRateController.create);
 router.put('/agency/rates/:id', authorize('agency'), agencyRateController.update);
@@ -90,6 +103,9 @@ router.delete('/agency/rates/:id', authorize('agency'), agencyRateController.rem
 router.get('/orders', authorize('supermarket', 'agency', 'admin'), orderController.index);
 router.post('/orders', authorize('supermarket'), orderController.create);
 router.get('/orders/:id', authorize('supermarket', 'agency', 'admin'), orderController.show);
+router.post('/orders/:id/items', authorize('supermarket'), orderController.addItems);
+router.post('/orders/:id/approve', authorize('supermarket'), orderController.approve);
+router.post('/orders/:id/reject', authorize('supermarket'), orderController.reject);
 router.post('/orders/:id/cancel', authorize('supermarket'), orderController.cancel);
 
 // ----- Fechamento mensal (agência fecha o mês de um supermercado) -----
@@ -102,16 +118,33 @@ router.get('/closings/:id', authorize('agency', 'supermarket', 'admin'), closing
 router.get('/billing/summary', authorize('supermarket'), billingController.summary);
 router.get('/reports/freelancer', authorize('freelancer'), billingController.freelancerReport);
 
+// ----- Onboarding do colaborador (perfil contratual + uniforme) -----
+router.get('/freelancer/contract', authorize('freelancer'), onboardingController.getContract);
+router.put('/freelancer/contract', authorize('freelancer'), onboardingController.saveContract);
+router.get('/freelancer/uniform', authorize('freelancer'), onboardingController.getUniform);
+router.post('/freelancer/uniform', authorize('freelancer'), onboardingController.requestUniform);
+router.post('/freelancer/uniform/:id/sync', authorize('freelancer'), onboardingController.syncUniform);
+router.post('/freelancer/uniform/:id/received', authorize('freelancer'), onboardingController.confirmReceived);
+router.post('/freelancer/uniform/:id/selfie', authorize('freelancer'), upload.single('photo'), onboardingController.submitSelfie);
+router.get('/agency/uniforms', authorize('agency'), onboardingController.listForAgency);
+router.get('/agency/pending-counts', authorize('agency'), pendingController.agency);
+router.get('/supermarket/pending-counts', authorize('supermarket'), pendingController.supermarket);
+router.post('/agency/uniforms/:id/ship', authorize('agency'), onboardingController.shipUniform);
+router.post('/agency/uniforms/:id/review', authorize('agency'), onboardingController.reviewUniform);
+
 // ----- Vagas -----
 router.get('/jobs', jobController.index);
 router.get('/jobs/available', authorize('freelancer'), jobController.available);
-router.get('/jobs/live', authorize('agency'), jobController.live);
+router.get('/jobs/live', authorize('agency', 'supermarket'), jobController.live);
 router.get('/jobs/:id', jobController.show);
 router.post('/jobs', authorize('supermarket'), jobController.create);
 router.put('/jobs/:id', authorize('supermarket'), jobController.update);
+router.put('/agency/jobs/:id', authorize('agency'), jobController.updateByAgency);
 router.delete('/jobs/:id', authorize('supermarket'), jobController.delete);
 router.post('/jobs/:id/cancel', authorize('supermarket'), jobController.cancel);
 router.post('/jobs/:id/accept', authorize('freelancer'), jobController.accept);
+router.post('/jobs/:id/withdraw', authorize('freelancer'), jobController.withdraw);
+router.post('/jobs/:id/release', authorize('agency'), jobController.release);
 router.post('/jobs/:id/no-show', authorize('agency'), jobController.noShow);
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
 router.get('/jobs/:id/review', reviewController.getByJob);
@@ -122,7 +155,6 @@ router.get('/jobs/:id/logs', jobLogsController.index);
 router.get('/freelancers/:id/logs', jobLogsController.findByFreelancer);
 router.get('/job_logs/status', jobLogsController.findByStatus);
 router.post('/jobs/:id/logs/checkin', authorize('freelancer'), jobLogsController.checkIn);
-router.post('/jobs/:id/logs/interval', authorize('freelancer'), jobLogsController.registerInterval);
 router.post('/jobs/:id/logs/checkout', authorize('freelancer'), jobLogsController.checkOut);
 
 // ----- Fotos de comprovação -----

@@ -19,6 +19,9 @@ import { JobShift } from './JobShift'
 import { AgencyCategoryRate } from './AgencyCategoryRate'
 import { Order } from './Order'
 import { OrderItem } from './OrderItem'
+import { SupermarketMember } from './SupermarketMember'
+import { FreelancerContract } from './FreelancerContract'
+import { UniformOrder } from './UniformOrder'
 
 // Definição de relacionamentos
 User.hasOne(Supermarket, { foreignKey: 'ownerId', as: 'ownedSupermarket' })
@@ -28,6 +31,13 @@ User.hasOne(Freelancer, { foreignKey: 'userId', as: 'freelancerProfile' })
 Supermarket.hasMany(Branch, { foreignKey: 'supermarketId', as: 'supermarketBranches' })
 Supermarket.hasMany(Job, { foreignKey: 'supermarketId', as: 'supermarketJobs' })
 
+// Equipe do supermercado (dono + gerentes de loja)
+Supermarket.hasMany(SupermarketMember, { foreignKey: 'supermarketId', as: 'members' })
+SupermarketMember.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'memberSupermarket' })
+SupermarketMember.belongsTo(User, { foreignKey: 'userId', as: 'memberUser' })
+SupermarketMember.belongsTo(Branch, { foreignKey: 'branchId', as: 'memberBranch' })
+User.hasMany(SupermarketMember, { foreignKey: 'userId', as: 'supermarketMemberships' })
+
 Branch.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'parentSupermarket' })
 Branch.hasMany(Job, { foreignKey: 'branchId', as: 'branchJobs' })
 
@@ -35,6 +45,10 @@ Agency.hasMany(Freelancer, { foreignKey: 'agencyId', as: 'agencyFreelancers' })
 
 Freelancer.belongsTo(Agency, { foreignKey: 'agencyId', as: 'affiliatedAgency' })
 Freelancer.belongsTo(User, { foreignKey: 'userId', as: 'freelancerUser' })
+Freelancer.hasOne(FreelancerContract, { foreignKey: 'freelancerId', as: 'contract' })
+FreelancerContract.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'contractFreelancer' })
+Freelancer.hasMany(UniformOrder, { foreignKey: 'freelancerId', as: 'uniformOrders' })
+UniformOrder.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'uniformFreelancer' })
 Freelancer.hasMany(Job, { foreignKey: 'freelancerId', as: 'freelancerJobs' })
 Freelancer.hasMany(Review, { foreignKey: 'freelancerId', as: 'freelancerReviews' })
 Freelancer.hasMany(Payment, { foreignKey: 'freelancerId', as: 'freelancerPayments' })
@@ -74,6 +88,8 @@ Order.hasMany(OrderItem, { foreignKey: 'orderId', as: 'items' })
 Order.hasMany(Job, { foreignKey: 'orderId', as: 'orderJobs' })
 OrderItem.belongsTo(Order, { foreignKey: 'orderId', as: 'itemOrder' })
 OrderItem.belongsTo(Category, { foreignKey: 'categoryId', as: 'itemCategory' })
+OrderItem.belongsTo(Branch, { foreignKey: 'branchId', as: 'itemBranch' })
+Branch.hasMany(OrderItem, { foreignKey: 'branchId', as: 'branchOrderItems' })
 OrderItem.hasMany(Job, { foreignKey: 'orderItemId', as: 'itemJobs' })
 Job.belongsTo(Order, { foreignKey: 'orderId', as: 'jobOrder' })
 Job.belongsTo(OrderItem, { foreignKey: 'orderItemId', as: 'jobOrderItem' })
@@ -82,10 +98,12 @@ Job.belongsTo(OrderItem, { foreignKey: 'orderItemId', as: 'jobOrderItem' })
 Agency.hasMany(AgencyCategoryRate, { foreignKey: 'agencyId', as: 'categoryRates' })
 AgencyCategoryRate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'rateAgency' })
 AgencyCategoryRate.belongsTo(Category, { foreignKey: 'categoryId', as: 'rateCategory' })
+AgencyCategoryRate.belongsTo(Branch, { foreignKey: 'branchId', as: 'rateBranch' })
 Category.hasMany(AgencyCategoryRate, { foreignKey: 'categoryId', as: 'categoryRates' })
 
 // Fatura mensal consolidada (agência -> supermercado)
 Invoice.belongsTo(Agency, { foreignKey: 'agencyId', as: 'invoiceAgency' })
+Invoice.belongsTo(Branch, { foreignKey: 'branchId', as: 'invoiceBranch' })
 Invoice.hasMany(Job, { foreignKey: 'monthlyInvoiceId', as: 'invoiceJobs' })
 Job.belongsTo(Invoice, { foreignKey: 'monthlyInvoiceId', as: 'jobMonthlyInvoice' })
 
@@ -125,4 +143,7 @@ export {
   AgencyCategoryRate,
   Order,
   OrderItem,
+  SupermarketMember,
+  FreelancerContract,
+  UniformOrder,
 }

@@ -36,15 +36,18 @@ module.exports = {
     // ---- Supermercado + filiais ----
     const supermarket = { id: uid(), owner_id: superUser.id, name: 'Mercado Central', cnpj: '11222333000144', address: 'Av. Principal, 1000 - São Paulo/SP', phone: '(11) 3000-0000', ...ts };
     await queryInterface.bulkInsert('supermarkets', [supermarket]);
+    await queryInterface.bulkInsert('supermarket_members', [
+      { id: uid(), supermarket_id: supermarket.id, user_id: superUser.id, branch_id: null, can_submit_orders: true, can_approve_orders: true, is_owner: true, ...ts },
+    ]);
 
-    const branchCentro = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Centro', address: 'Rua do Centro, 50 - Centro, São Paulo/SP', phone: '(11) 3000-0001', latitude: -23.550520, longitude: -46.633308, geofence_radius: 300, ...ts };
-    const branchZonaSul = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Zona Sul', address: 'Av. Sul, 2500 - Santo Amaro, São Paulo/SP', phone: '(11) 3000-0002', latitude: -23.650000, longitude: -46.700000, geofence_radius: 300, ...ts };
+    const branchCentro = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Centro', address: 'Rua do Centro, 50 - Centro, São Paulo/SP', phone: '(11) 3000-0001', latitude: -23.550520, longitude: -46.633308, geocoded_at: now(), geocode_query: 'Rua do Centro, 50 - Centro, São Paulo/SP', ...ts };
+    const branchZonaSul = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Zona Sul', address: 'Av. Sul, 2500 - Santo Amaro, São Paulo/SP', phone: '(11) 3000-0002', latitude: -23.650000, longitude: -46.700000, geocoded_at: now(), geocode_query: 'Av. Sul, 2500 - Santo Amaro, São Paulo/SP', ...ts };
     await queryInterface.bulkInsert('branches', [branchCentro, branchZonaSul]);
 
     // ---- Agência + comissão ----
     const agencyAmountPaid = 27.0; // 15% de 180 da vaga concluída
     const freelancerAmountPaid = 153.0;
-    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', cnpj: '55666777000188', address: 'Rua das Agências, 300', phone: '(11) 4000-0000', available_balance: agencyAmountPaid, commission_percentage: 15, ...ts };
+    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', cnpj: '55666777000188', address: 'Rua das Agências, 300', phone: '(11) 4000-0000', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, require_checkout_photo: true, review_enabled: true, ...ts };
     await queryInterface.bulkInsert('agencies', [agency]);
     await queryInterface.bulkInsert('commissions', [{ id: uid(), agency_id: agency.id, percentage: 15, ...ts }]);
 
@@ -63,8 +66,11 @@ module.exports = {
     const free2 = { id: uid(), agency_id: agency.id, user_id: free2User.id, name: free2User.name, email: free2User.email, phone: free2User.phone, skills: 'Caixa, Atendimento', available_balance: freelancerAmountPaid, rating_count: 0, ...ts };
     await queryInterface.bulkInsert('freelancers', [free1, free2]);
 
+    // free1 exerce várias funções (repositor/caixa/padeiro); free2 é caixa.
     await queryInterface.bulkInsert('freelancer_categories', [
       { id: uid(), freelancer_id: free1.id, category_id: categories[0].id, ...ts },
+      { id: uid(), freelancer_id: free1.id, category_id: categories[1].id, ...ts },
+      { id: uid(), freelancer_id: free1.id, category_id: categories[4].id, ...ts },
       { id: uid(), freelancer_id: free2.id, category_id: categories[1].id, ...ts },
     ]);
 
@@ -86,29 +92,27 @@ module.exports = {
       ...over,
     });
 
-    // vaga com 2 turnos (manhã + tarde)
-    const jobDoisTurnos = baseJob({ title: 'Repositor - dia todo (Centro)', start_time: at(1, 8, 0), end_time: at(1, 18, 0), payment_amount: null, contracted_minutes: 510 });
-    const jobPendingB = baseJob({ title: 'Operador de Caixa - tarde (Zona Sul)', branch_id: branchZonaSul.id, category_id: categories[1].id, start_time: at(1, 13, 0), end_time: at(1, 19, 0), payment_amount: null, contracted_minutes: 360 });
-    const jobAccepted = baseJob({ title: 'Repositor - noite (Centro)', freelancer_id: free1.id, status: 'accepted', start_time: at(1, 18, 0), end_time: at(1, 22, 0), payment_amount: null, contracted_minutes: 240 });
-    const jobInProgress = baseJob({ title: 'Fiscal de Loja - manhã (Centro)', category_id: categories[2].id, freelancer_id: free1.id, status: 'in_progress', start_time: hoursFromNow(-1), end_time: hoursFromNow(3), payment_amount: null, contracted_minutes: 240 });
-    const jobCompleted = baseJob({ title: 'Padeiro - madrugada (Centro)', category_id: categories[4].id, freelancer_id: free2.id, status: 'completed', agency_review_enabled: true, start_time: hoursFromNow(-30), end_time: hoursFromNow(-26), payment_amount: 180.0, gross_amount: 180.0, contracted_minutes: 240, worked_minutes: 240, completed_at: hoursFromNow(-26) });
+    const jobDoisTurnos = baseJob({ title: 'Repositor - Filial Centro', start_time: at(1, 6, 0), end_time: at(1, 12, 0), payment_amount: null, shift_period: 'manha', contracted_minutes: 360 });
+    const jobPendingB = baseJob({ title: 'Operador de Caixa - Filial Zona Sul', branch_id: branchZonaSul.id, category_id: categories[1].id, start_time: at(1, 12, 0), end_time: at(1, 18, 0), payment_amount: null, shift_period: 'tarde', contracted_minutes: 360 });
+    const jobAccepted = baseJob({ title: 'Repositor - Filial Centro', freelancer_id: free1.id, status: 'accepted', start_time: at(1, 18, 0), end_time: at(1, 24, 0), payment_amount: null, shift_period: 'noite', contracted_minutes: 360 });
+    const jobInProgress = baseJob({ title: 'Fiscal de Loja - Filial Centro', category_id: categories[2].id, freelancer_id: free2.id, status: 'in_progress', start_time: hoursFromNow(-1), end_time: hoursFromNow(3), payment_amount: null, shift_period: 'tarde', contracted_minutes: 240 });
+    const jobCompleted = baseJob({ title: 'Padeiro - Filial Centro', category_id: categories[4].id, freelancer_id: free2.id, status: 'completed', agency_review_enabled: true, start_time: hoursFromNow(-30), end_time: hoursFromNow(-26), payment_amount: 180.0, gross_amount: 180.0, shift_period: 'madrugada', contracted_minutes: 240, worked_minutes: 240, completed_at: hoursFromNow(-26) });
 
     await queryInterface.bulkInsert('jobs', [jobDoisTurnos, jobPendingB, jobAccepted, jobInProgress, jobCompleted]);
 
     // ---- Turnos ----
     const shift = (job, pos, s, e, label, over = {}) => ({ id: uid(), job_id: job.id, position: pos, start_time: s, end_time: e, label, status: 'pending', ...ts, ...over });
     await queryInterface.bulkInsert('job_shifts', [
-      shift(jobDoisTurnos, 0, at(1, 8, 0), at(1, 12, 0), 'Manhã'),
-      shift(jobDoisTurnos, 1, at(1, 13, 30), at(1, 18, 0), 'Tarde'),
-      shift(jobPendingB, 0, at(1, 13, 0), at(1, 19, 0), null),
-      shift(jobAccepted, 0, at(1, 18, 0), at(1, 22, 0), 'Noite'),
-      shift(jobInProgress, 0, hoursFromNow(-1), hoursFromNow(3), null, { status: 'in_progress', check_in_at: hoursFromNow(-1) }),
-      shift(jobCompleted, 0, hoursFromNow(-30), hoursFromNow(-26), null, { status: 'done', check_in_at: hoursFromNow(-30), check_out_at: hoursFromNow(-26), worked_minutes: 240 }),
+      shift(jobDoisTurnos, 0, at(1, 6, 0), at(1, 12, 0), 'Manhã'),
+      shift(jobPendingB, 0, at(1, 12, 0), at(1, 18, 0), 'Tarde'),
+      shift(jobAccepted, 0, at(1, 18, 0), at(1, 24, 0), 'Noite'),
+      shift(jobInProgress, 0, hoursFromNow(-1), hoursFromNow(3), 'Tarde', { status: 'in_progress', check_in_at: hoursFromNow(-1) }),
+      shift(jobCompleted, 0, hoursFromNow(-30), hoursFromNow(-26), 'Madrugada', { status: 'done', check_in_at: hoursFromNow(-30), check_out_at: hoursFromNow(-26), worked_minutes: 240 }),
     ]);
 
     // ---- Logs de jornada ----
     await queryInterface.bulkInsert('job_logs', [
-      { id: uid(), job_id: jobInProgress.id, freelancer_id: free1.id, event_type: 'check-in', reason: null, timestamp: hoursFromNow(-1), latitude: -23.550520, longitude: -46.633308, ...ts },
+      { id: uid(), job_id: jobInProgress.id, freelancer_id: free2.id, event_type: 'check-in', reason: null, timestamp: hoursFromNow(-1), latitude: -23.550520, longitude: -46.633308, ...ts },
       { id: uid(), job_id: jobCompleted.id, freelancer_id: free2.id, event_type: 'check-in', reason: null, timestamp: hoursFromNow(-30), latitude: -23.550520, longitude: -46.633308, ...ts },
       { id: uid(), job_id: jobCompleted.id, freelancer_id: free2.id, event_type: 'check-out', reason: null, timestamp: hoursFromNow(-26), latitude: -23.550520, longitude: -46.633308, ...ts },
     ]);
@@ -144,7 +148,7 @@ module.exports = {
     for (const table of [
       'withdrawals', 'job_photos', 'invoices', 'payments', 'job_logs', 'job_shifts',
       'freelancer_locations', 'jobs', 'order_items', 'orders', 'agency_category_rates',
-      'freelancer_categories', 'reviews', 'commissions',
+      'freelancer_categories', 'reviews', 'commissions', 'supermarket_members',
       'freelancers', 'branches', 'agencies', 'supermarkets', 'categories', 'sessions', 'users',
     ]) {
       await queryInterface.bulkDelete(table, null, {});

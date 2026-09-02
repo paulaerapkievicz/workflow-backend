@@ -7,6 +7,8 @@ export interface AgencyCategoryRate {
   id: string
   agencyId: string
   categoryId: string
+  /** Filial específica; NULL = valor padrão da rede para essa função. */
+  branchId?: string | null
   hourlyRate: number
   active: boolean
   createdAt: Date
@@ -14,7 +16,7 @@ export interface AgencyCategoryRate {
 }
 
 export interface AgencyCategoryRateCreationAttributes
-  extends Optional<AgencyCategoryRate, 'id' | 'active' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<AgencyCategoryRate, 'id' | 'branchId' | 'active' | 'createdAt' | 'updatedAt'> {}
 
 export interface AgencyCategoryRateInstance
   extends Model<AgencyCategoryRate, AgencyCategoryRateCreationAttributes>,
@@ -40,6 +42,13 @@ export const AgencyCategoryRate = sequelize.define<AgencyCategoryRateInstance, A
       type: DataTypes.UUID,
       allowNull: false,
       references: { model: 'categories', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'CASCADE',
+    },
+    branchId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'branches', key: 'id' },
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE',
     },

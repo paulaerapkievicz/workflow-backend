@@ -24,6 +24,66 @@ export const agencyService = {
     return await agency.update(data);
   },
 
+  // Configurações operacionais da agência (raio de check-in, prazo de cancelamento, etc.)
+  async getSettings(agencyId: string) {
+    const a = await Agency.findByPk(agencyId)
+    if (!a) throw new Error('Agência não encontrada.')
+    return {
+      id: a.id,
+      commissionPercentage: Number(a.commissionPercentage),
+      checkinRadius: a.checkinRadius,
+      cancellationWindowMinutes: a.cancellationWindowMinutes,
+      requireCheckoutPhoto: a.requireCheckoutPhoto,
+      reviewEnabled: a.reviewEnabled,
+      onboardingRequired: a.onboardingRequired,
+      uniformPrice: Number(a.uniformPrice),
+    }
+  },
+
+  async updateSettings(
+    agencyId: string,
+    data: Partial<{
+      checkinRadius: number
+      cancellationWindowMinutes: number
+      requireCheckoutPhoto: boolean
+      reviewEnabled: boolean
+      commissionPercentage: number
+      onboardingRequired: boolean
+      uniformPrice: number
+    }>
+  ) {
+    const a = await Agency.findByPk(agencyId)
+    if (!a) throw new Error('Agência não encontrada.')
+    const patch: any = {}
+
+    if (data.checkinRadius != null) {
+      const n = Math.trunc(Number(data.checkinRadius))
+      if (!Number.isFinite(n) || n < 20 || n > 5000) throw new Error('Raio de check-in deve ficar entre 20 e 5000 metros.')
+      patch.checkinRadius = n
+    }
+    if (data.cancellationWindowMinutes != null) {
+      const n = Math.trunc(Number(data.cancellationWindowMinutes))
+      if (!Number.isFinite(n) || n < 0 || n > 10080) throw new Error('Prazo de cancelamento inválido.')
+      patch.cancellationWindowMinutes = n
+    }
+    if (data.requireCheckoutPhoto != null) patch.requireCheckoutPhoto = data.requireCheckoutPhoto === true
+    if (data.reviewEnabled != null) patch.reviewEnabled = data.reviewEnabled === true
+    if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true
+    if (data.uniformPrice != null) {
+      const n = Number(data.uniformPrice)
+      if (!Number.isFinite(n) || n < 0) throw new Error('Preço do uniforme inválido.')
+      patch.uniformPrice = n
+    }
+    if (data.commissionPercentage != null) {
+      const n = Number(data.commissionPercentage)
+      if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error('Comissão deve ficar entre 0 e 100%.')
+      patch.commissionPercentage = n
+    }
+
+    await a.update(patch)
+    return this.getSettings(agencyId)
+  },
+
   // Exclui uma agência pelo ID
   async delete(id: string) {
     const agency = await Agency.findByPk(id);

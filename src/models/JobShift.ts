@@ -3,7 +3,7 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
-export const JOB_SHIFT_STATUSES = ['pending', 'in_progress', 'done'] as const
+export const JOB_SHIFT_STATUSES = ['pending', 'in_progress', 'done', 'missed'] as const
 export type JobShiftStatus = (typeof JOB_SHIFT_STATUSES)[number]
 
 export interface JobShift {
