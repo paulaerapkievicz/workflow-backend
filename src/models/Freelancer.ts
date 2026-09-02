@@ -11,7 +11,9 @@ export interface Freelancer {
   name: string
   email: string
   phone?: string
+  document?: string | null
   skills?: string
+  registrationStatus: 'pending' | 'approved' | 'rejected'
   availableBalance: number
   blockedUntil?: Date | null
   onboardingApprovedAt?: Date | null
@@ -28,7 +30,9 @@ export interface FreelancerCreationAttributes
     | 'agencyId'
     | 'userId'
     | 'phone'
+    | 'document'
     | 'skills'
+    | 'registrationStatus'
     | 'availableBalance'
     | 'blockedUntil'
     | 'onboardingApprovedAt'
@@ -80,8 +84,18 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
   phone: {
     type: DataTypes.STRING
   },
+  document: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   skills: {
     type: DataTypes.TEXT
+  },
+  registrationStatus: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'approved',
+    validate: { isIn: [['pending', 'approved', 'rejected']] }
   },
   availableBalance: {
     type: DataTypes.DECIMAL(10, 2),

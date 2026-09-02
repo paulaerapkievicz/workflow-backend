@@ -37,6 +37,7 @@ export const agencyService = {
       reviewEnabled: a.reviewEnabled,
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
+      allowSelfRegistration: a.allowSelfRegistration,
     }
   },
 
@@ -50,6 +51,7 @@ export const agencyService = {
       commissionPercentage: number
       onboardingRequired: boolean
       uniformPrice: number
+      allowSelfRegistration: boolean
     }>
   ) {
     const a = await Agency.findByPk(agencyId)
@@ -69,6 +71,7 @@ export const agencyService = {
     if (data.requireCheckoutPhoto != null) patch.requireCheckoutPhoto = data.requireCheckoutPhoto === true
     if (data.reviewEnabled != null) patch.reviewEnabled = data.reviewEnabled === true
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true
+    if (data.allowSelfRegistration != null) patch.allowSelfRegistration = data.allowSelfRegistration === true
     if (data.uniformPrice != null) {
       const n = Number(data.uniformPrice)
       if (!Number.isFinite(n) || n < 0) throw new Error('Preço do uniforme inválido.')

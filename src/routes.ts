@@ -78,6 +78,9 @@ router.delete('/agencies/:id', authorize('agency', 'admin'), agencyController.de
 // ----- Freelancers -----
 router.get('/freelancers', freelancerController.index);
 router.post('/agency/freelancers', authorize('agency'), freelancerController.createForMyAgency);
+router.get('/agency/pending-freelancers', authorize('agency'), freelancerController.listPendingForMyAgency);
+router.post('/agency/freelancers/:id/approve', authorize('agency'), freelancerController.approveFreelancer);
+router.post('/agency/freelancers/:id/reject', authorize('agency'), freelancerController.rejectFreelancer);
 router.get('/freelancers/:id', freelancerController.show);
 router.post('/freelancers', authorize('agency', 'admin'), freelancerController.create);
 router.put('/freelancers/:id', authorize('agency', 'freelancer', 'admin'), freelancerController.update);

@@ -34,6 +34,8 @@ async function profileWithContext(user: { id: string; role: Role }) {
     const required = !!agency?.onboardingRequired
     const contractComplete = !!contract?.completedAt
     const approved = !!f.onboardingApprovedAt
+    // Autocadastro aguardando a agência aprovar: bloqueia tudo até lá.
+    const awaitingRegistration = f.registrationStatus === 'pending'
     return {
       ...f.toJSON(),
       onboarding: {
@@ -41,7 +43,9 @@ async function profileWithContext(user: { id: string; role: Role }) {
         contractComplete,
         uniformStatus: uniform?.status ?? null,
         approved,
-        blocked: required && (!contractComplete || !approved),
+        registrationStatus: f.registrationStatus ?? 'approved',
+        awaitingRegistration,
+        blocked: awaitingRegistration || (required && (!contractComplete || !approved)),
       },
     }
   }
@@ -110,14 +114,26 @@ export const authController = {
           )
           await Commission.create({ agencyId: createdProfile.id, percentage: pct }, { transaction: t })
         } else if (role === 'freelancer') {
+          // Autocadastro só é permitido se a agência escolhida abriu essa porta.
+          const agencyId = profile.agencyId ?? null
+          if (!agencyId) {
+            throw new Error('Selecione a agência para se cadastrar.')
+          }
+          const agency = await Agency.findByPk(agencyId, { transaction: t })
+          if (!agency) throw new Error('Agência não encontrada.')
+          if (!agency.allowSelfRegistration) {
+            throw new Error('Esta agência não está aceitando novos cadastros. Peça um convite à agência.')
+          }
           createdProfile = await Freelancer.create(
             {
               userId: user.id,
-              agencyId: profile.agencyId ?? null,
+              agencyId,
               name,
               email,
               phone: phone ?? undefined,
+              document: profile.document ?? undefined,
               skills: profile.skills ?? undefined,
+              registrationStatus: 'pending',
             },
             { transaction: t }
           )

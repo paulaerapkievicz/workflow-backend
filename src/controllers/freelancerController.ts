@@ -118,4 +118,37 @@ export const freelancerController = {
       return res.status(500).json({ message: 'Erro ao remover categoria do freelancer.' });
     }
   },
+
+  // GET /agency/pending-freelancers — autocadastros aguardando aprovação da minha agência
+  async listPendingForMyAgency(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+      return res.json(await freelancerService.listPendingForAgency(agencyId));
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : 'Erro ao listar cadastros pendentes.' });
+    }
+  },
+
+  // POST /agency/freelancers/:id/approve
+  async approveFreelancer(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+      return res.json(await freelancerService.approveRegistration(req.params.id, agencyId));
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao aprovar cadastro.' });
+    }
+  },
+
+  // POST /agency/freelancers/:id/reject
+  async rejectFreelancer(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+      return res.json(await freelancerService.rejectRegistration(req.params.id, agencyId));
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao recusar cadastro.' });
+    }
+  },
 };

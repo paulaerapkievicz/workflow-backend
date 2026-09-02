@@ -19,6 +19,7 @@ export interface Agency {
   reviewEnabled: boolean
   onboardingRequired: boolean
   uniformPrice: number
+  allowSelfRegistration: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -36,6 +37,7 @@ export interface AgencyCreationAttributes
     | 'reviewEnabled'
     | 'onboardingRequired'
     | 'uniformPrice'
+    | 'allowSelfRegistration'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -114,6 +116,11 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
     defaultValue: 0
+  },
+  allowSelfRegistration: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
   },
   createdAt: {
     allowNull: false,

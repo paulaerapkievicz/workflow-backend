@@ -1,6 +1,8 @@
+import { sequelize } from '../database';
 import { Freelancer } from '../models/Freelancer';
 import { FreelancerCategory } from '../models/FreelancerCategory';
 import { Category } from '../models/Category';
+import { User } from '../models/User';
 
 export const freelancerService = {
   async createFreelancer(data: any) {
@@ -55,5 +57,33 @@ export const freelancerService = {
       where: { freelancerId, categoryId },
     });
     return deleted > 0;
+  },
+
+  // ----- Autocadastro: aprovação pela agência -----
+  async listPendingForAgency(agencyId: string) {
+    return Freelancer.findAll({
+      where: { agencyId, registrationStatus: 'pending' },
+      order: [['createdAt', 'DESC']],
+    });
+  },
+
+  async approveRegistration(id: string, agencyId: string) {
+    const f = await Freelancer.findOne({ where: { id, agencyId } });
+    if (!f) throw new Error('Colaborador não encontrado.');
+    if (f.registrationStatus !== 'pending') throw new Error('Este cadastro não está pendente.');
+    await f.update({ registrationStatus: 'approved' });
+    return f;
+  },
+
+  async rejectRegistration(id: string, agencyId: string) {
+    const f = await Freelancer.findOne({ where: { id, agencyId } });
+    if (!f) throw new Error('Colaborador não encontrado.');
+    if (f.registrationStatus !== 'pending') throw new Error('Este cadastro não está pendente.');
+    const userId = f.userId;
+    await sequelize.transaction(async (t) => {
+      await f.destroy({ transaction: t });
+      if (userId) await User.destroy({ where: { id: userId }, transaction: t });
+    });
+    return { ok: true };
   },
 };
