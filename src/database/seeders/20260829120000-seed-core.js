@@ -47,7 +47,7 @@ module.exports = {
     // ---- Agência + comissão ----
     const agencyAmountPaid = 27.0; // 15% de 180 da vaga concluída
     const freelancerAmountPaid = 153.0;
-    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', cnpj: '55666777000188', address: 'Rua das Agências, 300', phone: '(11) 4000-0000', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: true, ...ts };
+    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', cnpj: '55666777000188', address: 'Rua das Agências, 300', phone: '(11) 4000-0000', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: false, ...ts };
     await queryInterface.bulkInsert('agencies', [agency]);
     await queryInterface.bulkInsert('commissions', [{ id: uid(), agency_id: agency.id, percentage: 15, ...ts }]);
 
