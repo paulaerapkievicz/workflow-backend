@@ -8,16 +8,30 @@ import { router } from './routes'
 
 const app = express();
 
-// Em produção restringe o CORS às origens do front (lista separada por vírgula
-// em FRONTEND_BASE_URL); em dev libera geral.
-const allowedOrigins = (process.env.FRONTEND_BASE_URL || '')
+// CORS: origens explícitas em FRONTEND_BASE_URL (lista separada por vírgula) +
+// qualquer deploy da Vercel (produção e previews) + localhost em dev.
+const configuredOrigins = (process.env.FRONTEND_BASE_URL || '')
   .split(',')
-  .map((o) => o.trim())
+  .map((o) => o.trim().replace(/\/$/, ''))
   .filter(Boolean);
+
+function isAllowedOrigin(origin: string): boolean {
+  const clean = origin.replace(/\/$/, '');
+  if (configuredOrigins.includes(clean)) return true;
+  if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(clean)) return true;
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(clean)) return true;
+  return false;
+}
 
 app.use(
   cors({
-    origin: allowedOrigins.length ? allowedOrigins : true,
+    origin(origin, cb) {
+      // sem Origin = curl / app mobile / same-origin
+      if (!origin) return cb(null, true);
+      // sem nada configurado (dev) = libera geral
+      if (!configuredOrigins.length) return cb(null, true);
+      return cb(null, isAllowedOrigin(origin));
+    },
     credentials: true,
   }),
 );
