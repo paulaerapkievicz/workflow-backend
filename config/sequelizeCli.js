@@ -1,6 +1,13 @@
 require('dotenv').config();
 
-const define = { underscored: true, timestamps: true };
+// Registra os seeders aplicados (tabela SequelizeData) para não re-executar
+// o seed a cada boot em produção.
+const common = {
+  dialect: 'postgres',
+  logging: false,
+  seederStorage: 'sequelize',
+  define: { underscored: true, timestamps: true },
+};
 
 // Provedores gerenciados (Neon, Railway, Render) exigem conexão SSL.
 // Deixe DB_SSL=false apenas para um Postgres local sem TLS.
@@ -13,44 +20,36 @@ const sslDialectOptions = sslEnabled
 // Aceita DATABASE_URL (padrão Neon/Railway) e cai para as variáveis DB_* soltas.
 const productionConfig = process.env.DATABASE_URL
   ? {
+      ...common,
       use_env_variable: 'DATABASE_URL',
-      dialect: 'postgres',
-      logging: false,
       dialectOptions: sslDialectOptions,
-      define,
     }
   : {
-      dialect: 'postgres',
+      ...common,
       host: process.env.DB_HOST,
       port: Number(process.env.DB_PORT) || 5432,
       database: process.env.DB_NAME,
       username: process.env.DB_USER,
       password: process.env.DB_PASS,
-      logging: false,
       dialectOptions: sslDialectOptions,
-      define,
     };
 
 module.exports = {
   development: {
-    dialect: 'postgres',
+    ...common,
     host: process.env.DB_HOST || 'localhost',
     port: Number(process.env.DB_PORT) || 5432,
     database: process.env.DB_NAME || 'workflow_db',
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASS || 'postgres',
-    logging: false,
-    define,
   },
   test: {
-    dialect: 'postgres',
+    ...common,
     host: process.env.DB_HOST || 'localhost',
     port: Number(process.env.DB_PORT) || 5432,
     database: process.env.DB_NAME_TEST || 'workflow_db_test',
     username: process.env.DB_USER || 'postgres',
     password: process.env.DB_PASS || 'postgres',
-    logging: false,
-    define,
   },
   production: productionConfig,
 };

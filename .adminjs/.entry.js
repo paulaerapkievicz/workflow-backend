@@ -1,3 +1,3 @@
 AdminJS.UserComponents = {}
-import Component1 from '../src/adminjs/components/Dashboard'
+import Component1 from '../dist/adminjs/components/Dashboard'
 AdminJS.UserComponents.Component1 = Component1

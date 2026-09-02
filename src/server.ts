@@ -1,10 +1,9 @@
 import 'dotenv/config';
 import path from 'path';
-import express from 'express';
+import express, { RequestHandler } from 'express';
 import cors from 'cors';
 import { sequelize } from './database';
 import './models';
-import { adminJs, adminJsRouter } from './adminjs';
 import { router } from './routes'
 
 const app = express();
@@ -22,27 +21,40 @@ app.use(
     credentials: true,
   }),
 );
+
+// O AdminJS empacota (bundle) os componentes do painel no boot, o que leva
+// alguns segundos. Para não atrasar o listen (e o health check do Railway),
+// ele é carregado de forma assíncrona logo abaixo; até lá o /admin responde 503.
+let adminJsHandler: RequestHandler | null = null;
+app.use('/admin', (req, res, next) => {
+  if (adminJsHandler) return adminJsHandler(req, res, next);
+  res.status(503).type('text').send('Painel administrativo inicializando, tente novamente em instantes.');
+});
+
 app.use(express.json());
 app.use(express.static(path.resolve(__dirname, '..', 'public')));
 
-// Configura o painel AdminJS
-app.use(adminJs.options.rootPath, adminJsRouter);
+// Health check simples — responde antes mesmo do banco conectar.
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
 app.use(router)
 
 const PORT = Number(process.env.PORT) || 3333;
 const HOST = '0.0.0.0';
 
-// Conectar ao banco antes de iniciar o servidor
+// Sobe o servidor HTTP imediatamente (porta aberta = sem 502) e faz o resto
+// (banco, AdminJS) em paralelo, logando erros sem derrubar o processo.
+app.listen(PORT, HOST, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+});
+
 sequelize.authenticate()
-  .then(() => {
-    console.log('✅ DB connection successful.');
-    app.listen(PORT, HOST, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`🎛️ AdminJS mounted at ${adminJs.options.rootPath}`);
-    });
+  .then(() => console.log('✅ DB connection successful.'))
+  .catch(err => console.error('❌ Unable to connect to the database:', err));
+
+import('./adminjs')
+  .then(({ adminJs, adminJsRouter }) => {
+    adminJsHandler = adminJsRouter;
+    console.log(`🎛️ AdminJS mounted at ${adminJs.options.rootPath}`);
   })
-  .catch(err => {
-    console.error('❌ Unable to connect to the database:', err);
-    process.exit(1);
-  });
+  .catch(err => console.error('❌ Falha ao montar o AdminJS:', err));
