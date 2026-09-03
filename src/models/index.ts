@@ -16,7 +16,7 @@ import { FreelancerLocation } from './FreelancerLocation';
 import { JobPhoto } from './JobPhoto'
 import { Withdrawal } from './Withdrawal'
 import { JobShift } from './JobShift'
-import { AgencyCategoryRate } from './AgencyCategoryRate'
+import { SupermarketCategoryRate } from './SupermarketCategoryRate'
 import { Order } from './Order'
 import { OrderItem } from './OrderItem'
 import { SupermarketMember } from './SupermarketMember'
@@ -94,12 +94,12 @@ OrderItem.hasMany(Job, { foreignKey: 'orderItemId', as: 'itemJobs' })
 Job.belongsTo(Order, { foreignKey: 'orderId', as: 'jobOrder' })
 Job.belongsTo(OrderItem, { foreignKey: 'orderItemId', as: 'jobOrderItem' })
 
-// Tabela de valor/hora por categoria (definida pela agência)
-Agency.hasMany(AgencyCategoryRate, { foreignKey: 'agencyId', as: 'categoryRates' })
-AgencyCategoryRate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'rateAgency' })
-AgencyCategoryRate.belongsTo(Category, { foreignKey: 'categoryId', as: 'rateCategory' })
-AgencyCategoryRate.belongsTo(Branch, { foreignKey: 'branchId', as: 'rateBranch' })
-Category.hasMany(AgencyCategoryRate, { foreignKey: 'categoryId', as: 'categoryRates' })
+// Tabela de valor/hora por função que a agência cobra de cada supermercado
+Supermarket.hasMany(SupermarketCategoryRate, { foreignKey: 'supermarketId', as: 'categoryRates' })
+SupermarketCategoryRate.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'rateSupermarket' })
+SupermarketCategoryRate.belongsTo(Category, { foreignKey: 'categoryId', as: 'rateCategory' })
+SupermarketCategoryRate.belongsTo(Branch, { foreignKey: 'branchId', as: 'rateBranch' })
+Category.hasMany(SupermarketCategoryRate, { foreignKey: 'categoryId', as: 'categoryRates' })
 
 // Fatura mensal consolidada (agência -> supermercado)
 Invoice.belongsTo(Agency, { foreignKey: 'agencyId', as: 'invoiceAgency' })
@@ -140,7 +140,7 @@ export {
   JobPhoto,
   Withdrawal,
   JobShift,
-  AgencyCategoryRate,
+  SupermarketCategoryRate,
   Order,
   OrderItem,
   SupermarketMember,

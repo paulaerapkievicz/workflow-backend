@@ -15,6 +15,10 @@ export const FreelancerCategoryResource: ResourceWithOptions = {
       category_id: {
         isVisible: { list: true, edit: true, filter: true, show: true }
       },
+      hourly_rate: {
+        type: "number",
+        isVisible: { list: true, edit: true, filter: false, show: true }
+      },
       createdAt: {
         type: "datetime",
         isVisible: { list: false, edit: false, filter: true, show: true }
@@ -24,10 +28,10 @@ export const FreelancerCategoryResource: ResourceWithOptions = {
         isVisible: { list: false, edit: false, filter: true, show: true }
       }
     },
-    editProperties: ["freelancer_id", "category_id"],
+    editProperties: ["freelancer_id", "category_id", "hourly_rate"],
     filterProperties: ["freelancer_id", "category_id", "createdAt", "updatedAt"],
-    listProperties: ["freelancer_id", "category_id"],
-    showProperties: ["id", "freelancer_id", "category_id", "createdAt", "updatedAt"]
+    listProperties: ["freelancer_id", "category_id", "hourly_rate"],
+    showProperties: ["id", "freelancer_id", "category_id", "hourly_rate", "createdAt", "updatedAt"]
   }
 };
 

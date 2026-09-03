@@ -147,6 +147,29 @@ export const jobController = {
     }
   },
 
+  // GET /agency/pending-settlement (agency) — vagas concluídas com pagamento retido (hora extra)
+  async pendingSettlement(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await jobService.pendingSettlementForAgency(agencyId))
+    } catch (error) {
+      return fail(res, error, 500)
+    }
+  },
+
+  // POST /jobs/:id/release-payment (agency) — libera o pagamento de uma vaga retida
+  async releasePayment(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      const capToContracted = req.body?.capToContracted === true || req.body?.capToContracted === 'true'
+      return res.json(await jobService.releasePayment(req.params.id, agencyId, capToContracted))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // POST /jobs/:id/no-show (agency) — registra falta do freelancer da rede
   async noShow(req: AuthRequest, res: Response) {
     try {

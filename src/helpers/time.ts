@@ -2,6 +2,12 @@
 
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
 
+/**
+ * Folga (minutos) que o check-out pode passar do turno contratado sem exigir
+ * aprovação da agência para liberar o pagamento.
+ */
+export const CHECKOUT_OVERTIME_TOLERANCE_MINUTES = 15
+
 export const minutesBetween = (start: Date | string, end: Date | string) =>
   Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000))
 

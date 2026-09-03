@@ -1,11 +1,11 @@
-// src/models/AgencyCategoryRate.ts
+// src/models/SupermarketCategoryRate.ts
 
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
-export interface AgencyCategoryRate {
+export interface SupermarketCategoryRate {
   id: string
-  agencyId: string
+  supermarketId: string
   categoryId: string
   /** Filial específica; NULL = valor padrão da rede para essa função. */
   branchId?: string | null
@@ -15,15 +15,18 @@ export interface AgencyCategoryRate {
   updatedAt: Date
 }
 
-export interface AgencyCategoryRateCreationAttributes
-  extends Optional<AgencyCategoryRate, 'id' | 'branchId' | 'active' | 'createdAt' | 'updatedAt'> {}
+export interface SupermarketCategoryRateCreationAttributes
+  extends Optional<SupermarketCategoryRate, 'id' | 'branchId' | 'active' | 'createdAt' | 'updatedAt'> {}
 
-export interface AgencyCategoryRateInstance
-  extends Model<AgencyCategoryRate, AgencyCategoryRateCreationAttributes>,
-    AgencyCategoryRate {}
+export interface SupermarketCategoryRateInstance
+  extends Model<SupermarketCategoryRate, SupermarketCategoryRateCreationAttributes>,
+    SupermarketCategoryRate {}
 
-export const AgencyCategoryRate = sequelize.define<AgencyCategoryRateInstance, AgencyCategoryRate>(
-  'AgencyCategoryRate',
+export const SupermarketCategoryRate = sequelize.define<
+  SupermarketCategoryRateInstance,
+  SupermarketCategoryRate
+>(
+  'SupermarketCategoryRate',
   {
     id: {
       allowNull: false,
@@ -31,10 +34,10 @@ export const AgencyCategoryRate = sequelize.define<AgencyCategoryRateInstance, A
       type: DataTypes.UUID,
       defaultValue: DataTypes.UUIDV4,
     },
-    agencyId: {
+    supermarketId: {
       type: DataTypes.UUID,
       allowNull: false,
-      references: { model: 'agencies', key: 'id' },
+      references: { model: 'supermarkets', key: 'id' },
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE',
     },
@@ -73,6 +76,6 @@ export const AgencyCategoryRate = sequelize.define<AgencyCategoryRateInstance, A
     },
   },
   {
-    tableName: 'agency_category_rates',
+    tableName: 'supermarket_category_rates',
   }
 )

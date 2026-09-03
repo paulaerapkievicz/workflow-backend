@@ -72,16 +72,16 @@ async function main() {
   ok(upd.status === 200 && upd.data.checkinRadius === 250 && upd.data.cancellationWindowMinutes === 45, 'settings atualizadas')
   await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 300, cancellationWindowMinutes: 30, requireCheckoutPhoto: true } })
 
-  section('Tabela de valor/hora + remove Padeiro para testar bloqueio')
+  section('Valores/hora do supermercado + remove Padeiro para testar bloqueio')
   const cats = (await req('GET', '/categories', { token: superT })).data
   const catCaixa = cats.find((c) => c.name === 'Operador de Caixa')
   const catRepositor = cats.find((c) => c.name === 'Repositor')
   const catPadeiro = cats.find((c) => c.name === 'Padeiro')
-  const rates = (await req('GET', '/agency/rates', { token: agencyT })).data
-  const rateCaixa = rates.find((r) => r.categoryId === catCaixa.id)
-  ok(Number(rateCaixa.hourlyRate) === 24, 'valor/hora Operador de Caixa = 24', rateCaixa?.hourlyRate)
-  const ratePadeiro = rates.find((r) => r.categoryId === catPadeiro.id)
-  await req('DELETE', `/agency/rates/${ratePadeiro.id}`, { token: agencyT })
+  const rates = (await req('GET', `/supermarkets/${supermarketId}/rates`, { token: agencyT })).data
+  const rateCaixa = rates.find((r) => r.categoryId === catCaixa.id && !r.branchId)
+  ok(Number(rateCaixa.hourlyRate) === 32, 'valor/hora Operador de Caixa (padrão) = 32', rateCaixa?.hourlyRate)
+  const ratePadeiro = rates.find((r) => r.categoryId === catPadeiro.id && !r.branchId)
+  await req('DELETE', `/supermarkets/${supermarketId}/rates/${ratePadeiro.id}`, { token: agencyT })
 
   section('Supermercado cria pedido (turno = dropdown)')
   const branches = (await req('GET', '/branches', { token: superT })).data
@@ -164,11 +164,11 @@ async function main() {
   section('Freelancer: disponíveis respeitam a tabela')
   const avail = (await req('GET', '/jobs/available', { token: freeT })).data
   ok(avail.some((j) => j.categoryId === catCaixa.id), 'Operador de Caixa aparece')
-  ok(!avail.some((j) => j.categoryId === catPadeiro.id), 'Padeiro NÃO aparece (sem valor/hora)')
+  ok(!avail.some((j) => j.categoryId === catPadeiro.id), 'Padeiro NÃO aparece (supermercado sem valor/hora)')
   const padeiroJob = order.orderJobs.find((j) => j.categoryId === catPadeiro.id)
   const accPad = await req('POST', `/jobs/${padeiroJob.id}/accept`, { token: freeT })
-  ok(accPad.status === 400, 'aceitar vaga sem valor/hora é bloqueado', accPad.data?.message)
-  await req('POST', '/agency/rates', { token: agencyT, body: { categoryId: catPadeiro.id, hourlyRate: 25 } })
+  ok(accPad.status === 400, 'aceitar vaga sem valor/hora do supermercado é bloqueado', accPad.data?.message)
+  await req('POST', `/supermarkets/${supermarketId}/rates`, { token: agencyT, body: { categoryId: catPadeiro.id, hourlyRate: 33 } })
 
   section('Aceite + conflito de horário')
   const job = caixaJobs[0]
@@ -213,13 +213,39 @@ async function main() {
 
   const co = await req('POST', `/jobs/${job.id}/logs/checkout`, { token: freeT, body: CENTRO })
   ok(co.status === 201 && co.data.jobCompleted === true, 'check-out conclui a vaga (turno único)')
+  ok(co.data.settlementHeld === false, 'dentro da tolerância -> pagamento liberado na hora')
   const done = (await req('GET', `/jobs/${job.id}`, { token: freeT })).data
-  ok(Math.abs(Number(done.grossAmount) - 144) < 0.5, 'valor bruto ~ R$ 144 (24/h x 6h)', done.grossAmount)
+  // supermercado paga 32/h x 6h = 192 ; colaborador recebe 20/h x 6h = 120 ; agência 72
+  ok(Math.abs(Number(done.grossAmount) - 192) < 1, 'valor pago pelo mercado ~ R$ 192 (32/h x 6h)', done.grossAmount)
 
   const freeAfter = Number((await req('GET', `/freelancers/${freelancerId}`, { token: freeT })).data.availableBalance)
   const agencyAfter = Number((await req('GET', `/agencies/${agencyId}`, { token: agencyT })).data.availableBalance)
-  ok(Math.abs((freeAfter - freeBefore) - 122.4) < 0.5, 'carteira do freelancer +122,40', freeAfter - freeBefore)
-  ok(Math.abs((agencyAfter - agencyBefore) - 21.6) < 0.5, 'carteira da agência +21,60', agencyAfter - agencyBefore)
+  ok(Math.abs((freeAfter - freeBefore) - 120) < 1, 'carteira do freelancer +120,00 (20/h x 6h)', freeAfter - freeBefore)
+  ok(Math.abs((agencyAfter - agencyBefore) - 72) < 1, 'carteira da agência +72,00 (192 - 120)', agencyAfter - agencyBefore)
+
+  section('Hora extra acima da tolerância -> pagamento retido até a agência liberar')
+  const extraJob = caixaJobs[2] // editada para o turno da tarde (12–18, 360 min contratados)
+  await req('POST', `/jobs/${extraJob.id}/accept`, { token: freeT })
+  await req('POST', `/jobs/${extraJob.id}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 10 } })
+  const fd2 = new FormData()
+  fd2.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg')
+  await fetch(`${BASE}/jobs/${extraJob.id}/photos`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fd2 })
+  // trabalhou ~7h contra 6h contratadas -> 60 min acima da tolerância de 15
+  await db.query(`UPDATE job_shifts SET check_in_at = NOW() - interval '7 hours' WHERE job_id=$1 AND status='in_progress'`, [extraJob.id])
+  const coExtra = await req('POST', `/jobs/${extraJob.id}/logs/checkout`, { token: freeT, body: CENTRO })
+  ok(coExtra.status === 201 && coExtra.data.jobCompleted === true && coExtra.data.settlementHeld === true, 'check-out com hora extra conclui a vaga mas retém o pagamento')
+  const heldJob = (await req('GET', `/jobs/${extraJob.id}`, { token: freeT })).data
+  ok(heldJob.settlementHold === true && heldJob.grossAmount == null, 'vaga concluída sem valor liquidado (retida)')
+  const pend = (await req('GET', '/agency/pending-settlement', { token: agencyT })).data
+  ok(Array.isArray(pend) && pend.some((j) => j.id === extraJob.id), 'vaga retida aparece em /agency/pending-settlement')
+  const freeMid = Number((await req('GET', `/freelancers/${freelancerId}`, { token: freeT })).data.availableBalance)
+  ok(Math.abs(freeMid - freeAfter) < 0.01, 'carteira do freelancer NÃO mexe enquanto o pagamento está retido', freeMid - freeAfter)
+  const rlz = await req('POST', `/jobs/${extraJob.id}/release-payment`, { token: agencyT })
+  ok(rlz.status === 200 && rlz.data.settlementHold === false, 'agência libera o pagamento da vaga retida')
+  const releasedJob = (await req('GET', `/jobs/${extraJob.id}`, { token: freeT })).data
+  ok(Number(releasedJob.grossAmount) > 192, 'valor liberado considera as horas reais (> 6h)', releasedJob.grossAmount)
+  const freeReleased = Number((await req('GET', `/freelancers/${freelancerId}`, { token: freeT })).data.availableBalance)
+  ok(freeReleased > freeMid, 'carteira do freelancer credita após a liberação', freeReleased - freeMid)
 
   section('Freelancer desiste da vaga (dentro / fora do prazo)')
   const repToWithdraw = order.orderJobs.find((j) => j.categoryId === catRepositor.id)

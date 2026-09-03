@@ -101,10 +101,28 @@ export const freelancerController = {
 
   async addCategory(req: Request, res: Response) {
     try {
-      const result = await freelancerService.addCategoryToFreelancer(req.params.id, req.body.categoryId);
+      const result = await freelancerService.addCategoryToFreelancer(
+        req.params.id,
+        req.body.categoryId,
+        req.body.hourlyRate
+      );
       return res.status(201).json(result);
     } catch (err) {
-      return res.status(500).json({ message: 'Erro ao adicionar categoria ao freelancer.' });
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao adicionar função ao colaborador.' });
+    }
+  },
+
+  // PUT /freelancers/:id/categories/:category_id — define o valor/hora da função
+  async setCategoryRate(req: Request, res: Response) {
+    try {
+      const result = await freelancerService.setCategoryRate(
+        req.params.id,
+        req.params.category_id,
+        req.body.hourlyRate
+      );
+      return res.json(result);
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao definir o valor/hora.' });
     }
   },
 

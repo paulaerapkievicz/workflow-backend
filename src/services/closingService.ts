@@ -29,6 +29,8 @@ function jobWhere(fIds: string[], supermarketId: string, start: Date, end: Date,
   const where: any = {
     supermarketId,
     status: 'completed',
+    // vagas com pagamento retido (hora extra) só entram no fechamento depois de liberadas
+    settlementHold: false,
     monthlyInvoiceId: null,
     freelancerId: { [Op.in]: fIds },
     completedAt: { [Op.gte]: start, [Op.lt]: end },

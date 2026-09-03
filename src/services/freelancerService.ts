@@ -48,8 +48,38 @@ export const freelancerService = {
     });
   },
 
-  async addCategoryToFreelancer(freelancerId: string, categoryId: string) {
-    return await FreelancerCategory.create({ freelancerId, categoryId });
+  /** Normaliza o valor/hora recebido (número > 0) ou retorna null. */
+  parseHourlyRate(value: unknown): number | null {
+    if (value == null || value === '') return null;
+    const n = Number(value);
+    if (!Number.isFinite(n) || n <= 0) throw new Error('Informe um valor/hora válido para a função.');
+    return n;
+  },
+
+  async addCategoryToFreelancer(freelancerId: string, categoryId: string, hourlyRate?: unknown) {
+    if (!categoryId) throw new Error('Informe a função.');
+    const rate = this.parseHourlyRate(hourlyRate);
+    const existing = await FreelancerCategory.findOne({ where: { freelancerId, categoryId } });
+    if (existing) {
+      if (rate != null) await existing.update({ hourlyRate: rate });
+      return existing;
+    }
+    return await FreelancerCategory.create({ freelancerId, categoryId, hourlyRate: rate });
+  },
+
+  /** Atualiza só o valor/hora de uma função já marcada. */
+  async setCategoryRate(freelancerId: string, categoryId: string, hourlyRate: unknown) {
+    const row = await FreelancerCategory.findOne({ where: { freelancerId, categoryId } });
+    if (!row) throw new Error('Função não está marcada para este colaborador.');
+    await row.update({ hourlyRate: this.parseHourlyRate(hourlyRate) });
+    return row;
+  },
+
+  /** Valor/hora que o colaborador recebe numa função (ou null se não precificada). */
+  async categoryRate(freelancerId: string, categoryId: string) {
+    const row = await FreelancerCategory.findOne({ where: { freelancerId, categoryId } });
+    const rate = row?.hourlyRate;
+    return rate != null && Number(rate) > 0 ? Number(rate) : null;
   },
 
   async removeCategoryFromFreelancer(freelancerId: string, categoryId: string) {

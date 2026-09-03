@@ -30,7 +30,6 @@ export const agencyService = {
     if (!a) throw new Error('Agência não encontrada.')
     return {
       id: a.id,
-      commissionPercentage: Number(a.commissionPercentage),
       checkinRadius: a.checkinRadius,
       cancellationWindowMinutes: a.cancellationWindowMinutes,
       requireCheckoutPhoto: a.requireCheckoutPhoto,
@@ -48,7 +47,6 @@ export const agencyService = {
       cancellationWindowMinutes: number
       requireCheckoutPhoto: boolean
       reviewEnabled: boolean
-      commissionPercentage: number
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
@@ -77,12 +75,6 @@ export const agencyService = {
       if (!Number.isFinite(n) || n < 0) throw new Error('Preço do uniforme inválido.')
       patch.uniformPrice = n
     }
-    if (data.commissionPercentage != null) {
-      const n = Number(data.commissionPercentage)
-      if (!Number.isFinite(n) || n < 0 || n > 100) throw new Error('Comissão deve ficar entre 0 e 100%.')
-      patch.commissionPercentage = n
-    }
-
     await a.update(patch)
     return this.getSettings(agencyId)
   },

@@ -15,7 +15,6 @@ import { paymentController } from './controllers/paymentController';
 import { withdrawalController } from './controllers/withdrawalController';
 import { reviewController } from './controllers/reviewController';
 import { orderController } from './controllers/orderController';
-import { agencyRateController } from './controllers/agencyRateController';
 import { closingController } from './controllers/closingController';
 import { billingController } from './controllers/billingController';
 import { onboardingController } from './controllers/onboardingController';
@@ -60,6 +59,11 @@ router.put('/supermarket-members/:id', authorize('supermarket', 'agency'), super
 router.delete('/supermarket-members/:id', authorize('supermarket', 'agency'), supermarketController.deleteMember);
 router.put('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.update);
 router.delete('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.delete);
+// Valores/hora por função que a agência cobra de cada supermercado (definidos no cadastro do supermercado)
+router.get('/supermarkets/:id/rates', authorize('supermarket', 'agency', 'admin'), supermarketController.listRates);
+router.post('/supermarkets/:id/rates', authorize('agency', 'admin'), supermarketController.saveRate);
+router.put('/supermarkets/:id/rates/:rateId', authorize('agency', 'admin'), supermarketController.updateRate);
+router.delete('/supermarkets/:id/rates/:rateId', authorize('agency', 'admin'), supermarketController.removeRate);
 
 // ----- Filiais -----
 router.get('/branches', branchController.index);
@@ -88,19 +92,16 @@ router.delete('/freelancers/:id', authorize('agency', 'admin'), freelancerContro
 router.get('/freelancers/:id/categories', freelancerController.listCategories);
 router.get('/freelancers/:id/reviews', reviewController.getByFreelancerId);
 router.post('/freelancers/:id/categories', authorize('agency', 'freelancer', 'admin'), freelancerController.addCategory);
+router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'admin'), freelancerController.setCategoryRate);
 router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'freelancer', 'admin'), freelancerController.removeCategory);
 
 // ----- Categorias (escrita: admin) -----
 router.post('/categories', authorize('admin'), categoryController.create);
 router.delete('/categories/:id', authorize('admin'), categoryController.delete);
 
-// ----- Configurações e tabela de valor/hora (agência) -----
+// ----- Configurações da agência -----
 router.get('/agency/settings', authorize('agency'), agencyController.getSettings);
 router.put('/agency/settings', authorize('agency'), agencyController.updateSettings);
-router.get('/agency/rates', authorize('agency'), agencyRateController.index);
-router.post('/agency/rates', authorize('agency'), agencyRateController.create);
-router.put('/agency/rates/:id', authorize('agency'), agencyRateController.update);
-router.delete('/agency/rates/:id', authorize('agency'), agencyRateController.remove);
 
 // ----- Pedidos (carrinho de vagas do supermercado) -----
 router.get('/orders', authorize('supermarket', 'agency', 'admin'), orderController.index);
@@ -148,6 +149,8 @@ router.post('/jobs/:id/cancel', authorize('supermarket'), jobController.cancel);
 router.post('/jobs/:id/accept', authorize('freelancer'), jobController.accept);
 router.post('/jobs/:id/withdraw', authorize('freelancer'), jobController.withdraw);
 router.post('/jobs/:id/release', authorize('agency'), jobController.release);
+router.get('/agency/pending-settlement', authorize('agency'), jobController.pendingSettlement);
+router.post('/jobs/:id/release-payment', authorize('agency'), jobController.releasePayment);
 router.post('/jobs/:id/no-show', authorize('agency'), jobController.noShow);
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
 router.get('/jobs/:id/review', reviewController.getByJob);

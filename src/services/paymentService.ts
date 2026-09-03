@@ -9,7 +9,8 @@ import { Agency } from '../models/Agency'
 import { Invoice } from '../models/Invoice'
 import { JobShift } from '../models/JobShift'
 import { Role } from '../middlewares/auth'
-import { agencyRateService } from './agencyRateService'
+import { supermarketRateService } from './supermarketRateService'
+import { freelancerService } from './freelancerService'
 import { round2 } from '../helpers/time'
 
 const paymentIncludes = [
@@ -77,8 +78,10 @@ export const paymentService = {
     return json
   },
 
-  // Liberação automática no check-out: valor = R$/hora da agência × horas trabalhadas.
-  // Credita as duas carteiras na hora; a fatura ao supermercado sai no fechamento mensal.
+  // Liquidação da vaga: o supermercado paga (R$/hora do supermercado por função) e o
+  // colaborador recebe (R$/hora do colaborador por função), ambos proporcionais às horas
+  // trabalhadas. A diferença fica com a agência. Credita as carteiras na hora; a fatura ao
+  // supermercado sai no fechamento mensal.
   async settleForJob(job: JobInstance) {
     const existing = await Payment.findOne({ where: { jobId: job.id } })
     if (existing) return existing
@@ -86,12 +89,22 @@ export const paymentService = {
     if (!job.freelancerId) throw new Error('Vaga sem freelancer atribuído.')
     const freelancer = await Freelancer.findByPk(job.freelancerId)
     if (!freelancer) throw new Error('Freelancer não encontrado.')
-    if (!freelancer.agencyId) throw new Error('Freelancer sem agência: não é possível precificar a vaga.')
+    if (!freelancer.agencyId) throw new Error('Freelancer sem agência: não é possível liquidar a vaga.')
     const agency = await Agency.findByPk(freelancer.agencyId)
     if (!agency) throw new Error('Agência não encontrada.')
 
-    const rate = await agencyRateService.activeRate(agency.id, job.categoryId, job.branchId)
-    if (!rate) throw new Error('Agência sem valor/hora cadastrado para esta função nesta loja.')
+    const supermarketRate = await supermarketRateService.activeRate(
+      job.supermarketId,
+      job.categoryId,
+      job.branchId
+    )
+    if (!supermarketRate) {
+      throw new Error('O supermercado não tem valor/hora cadastrado para esta função nesta loja.')
+    }
+    const freelancerRate = await freelancerService.categoryRate(freelancer.id, job.categoryId)
+    if (freelancerRate == null) {
+      throw new Error('O colaborador não tem valor/hora cadastrado para esta função.')
+    }
 
     let workedMinutes = job.workedMinutes ?? 0
     if (!workedMinutes) {
@@ -99,10 +112,9 @@ export const paymentService = {
       workedMinutes = shifts.reduce((acc, s) => acc + (s.workedMinutes ?? 0), 0)
     }
 
-    const gross = round2((Number(rate.hourlyRate) * workedMinutes) / 60)
-    const pct = Number(agency.commissionPercentage) || 0
-    const agencyAmount = round2((gross * pct) / 100)
-    const freelancerAmount = round2(gross - agencyAmount)
+    const supermarketAmount = round2((Number(supermarketRate.hourlyRate) * workedMinutes) / 60)
+    const freelancerAmount = round2((freelancerRate * workedMinutes) / 60)
+    const agencyAmount = round2(supermarketAmount - freelancerAmount)
     const now = new Date()
 
     return sequelize.transaction(async (t) => {
@@ -110,8 +122,8 @@ export const paymentService = {
         {
           jobId: job.id,
           freelancerId: freelancer.id,
-          amount: gross,
-          grossAmount: gross,
+          amount: supermarketAmount,
+          grossAmount: supermarketAmount,
           agencyAmount,
           freelancerAmount,
           status: 'settled',
@@ -121,7 +133,16 @@ export const paymentService = {
         { transaction: t }
       )
 
-      await job.update({ grossAmount: gross, paymentAmount: gross, workedMinutes }, { transaction: t })
+      await job.update(
+        {
+          grossAmount: supermarketAmount,
+          paymentAmount: supermarketAmount,
+          workedMinutes,
+          settlementHold: false,
+          settlementApprovedAt: job.settlementApprovedAt ?? now,
+        },
+        { transaction: t }
+      )
       await freelancer.increment('availableBalance', { by: freelancerAmount, transaction: t })
       await agency.increment('availableBalance', { by: agencyAmount, transaction: t })
 

@@ -12,7 +12,7 @@ import { FreelancerLocation } from '../models/FreelancerLocation'
 import { paymentService } from './paymentService'
 import { orderService } from './orderService'
 import { distanceInMeters } from '../helpers/geo'
-import { minutesBetween } from '../helpers/time'
+import { minutesBetween, CHECKOUT_OVERTIME_TOLERANCE_MINUTES } from '../helpers/time'
 
 export interface GeoInput {
   latitude?: number | string | null
@@ -142,14 +142,25 @@ export const jobLogService = {
 
     const shifts = await JobShift.findAll({ where: { jobId } })
     let completed = false
+    let settlementHeld = false
     if (shifts.every((s) => ['done', 'missed'].includes(s.status))) {
       const totalWorked = shifts.reduce((acc, s) => acc + (s.workedMinutes ?? 0), 0)
-      await job.update({ status: 'completed', workedMinutes: totalWorked, completedAt: now })
-      await paymentService.settleForJob(await job.reload())
+      // Passou da tolerância sobre o turno contratado -> pagamento retido até a agência liberar.
+      const contracted = job.contractedMinutes ?? 0
+      settlementHeld = contracted > 0 && totalWorked > contracted + CHECKOUT_OVERTIME_TOLERANCE_MINUTES
+      await job.update({
+        status: 'completed',
+        workedMinutes: totalWorked,
+        completedAt: now,
+        settlementHold: settlementHeld,
+      })
+      if (!settlementHeld) {
+        await paymentService.settleForJob(await job.reload())
+      }
       await orderService.syncStatus(job.orderId)
       completed = true
       // check-out encerra o rastreamento em tempo real (a vaga sai do "ao vivo").
     }
-    return { log, shift: await shift.reload(), jobCompleted: completed }
+    return { log, shift: await shift.reload(), jobCompleted: completed, settlementHeld }
   },
 }

@@ -34,6 +34,9 @@ export interface Job {
   contractedMinutes?: number | null
   workedMinutes?: number | null
   completedAt?: Date | null
+  /** Vaga concluída com horas acima da tolerância — pagamento retido até a agência liberar. */
+  settlementHold: boolean
+  settlementApprovedAt?: Date | null
   photosRequired: boolean
   agencyReviewEnabled: boolean
   /** Overrides de configuração por vaga — NULL = usa o padrão da agência. */
@@ -61,6 +64,8 @@ export interface JobCreationAttributes
     | 'contractedMinutes'
     | 'workedMinutes'
     | 'completedAt'
+    | 'settlementHold'
+    | 'settlementApprovedAt'
     | 'photosRequired'
     | 'agencyReviewEnabled'
     | 'checkinRadius'
@@ -188,6 +193,15 @@ export const Job = sequelize.define<JobInstance, Job>(
       allowNull: true
     },
     completedAt: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    settlementHold: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    settlementApprovedAt: {
       type: DataTypes.DATE,
       allowNull: true
     },

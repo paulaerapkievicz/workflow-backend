@@ -16,9 +16,11 @@ import { OrderItem } from '../models/OrderItem'
 import { FreelancerContract } from '../models/FreelancerContract'
 import { UserInstance } from '../models/User'
 import { Agency } from '../models/Agency'
+import { SupermarketCategoryRate } from '../models/SupermarketCategoryRate'
 import { profileService } from './profileService'
 import { orderService, OrderContext } from './orderService'
-import { agencyRateService } from './agencyRateService'
+import { supermarketRateService } from './supermarketRateService'
+import { freelancerService } from './freelancerService'
 import { paymentService } from './paymentService'
 import { minutesBetween } from '../helpers/time'
 import { resolveShifts } from '../helpers/shifts'
@@ -256,41 +258,44 @@ export const jobService = {
     if (!freelancer.agencyId) return []
     if (await onboardingBlockReason(freelancer)) return []
 
-    // O freelancer só vê vagas das funções marcadas no perfil dele pela agência.
+    // O freelancer só vê vagas das funções que a agência marcou no perfil dele
+    // E já precificou (valor/hora do colaborador para aquela função).
     const marked = await FreelancerCategory.findAll({
       where: { freelancerId: freelancer.id },
-      attributes: ['categoryId'],
+      attributes: ['categoryId', 'hourlyRate'],
     })
-    const markedIds = marked.map((m) => m.categoryId)
-    if (!markedIds.length) return []
-
-    // …e que a agência do freelancer precifica (valor/hora ativo), específico da loja ou padrão.
-    const rates = await agencyRateService.listForAgency(freelancer.agencyId)
-    const defaultPriced = new Set(
-      rates.filter((r) => r.active && !r.branchId).map((r) => r.categoryId)
-    )
-    const branchPriced = new Set(
-      rates.filter((r) => r.active && r.branchId).map((r) => `${r.categoryId}|${r.branchId}`)
-    )
-    const isPriced = (categoryId: string, branchId?: string | null) =>
-      (branchId != null && branchPriced.has(`${categoryId}|${branchId}`)) || defaultPriced.has(categoryId)
-
-    const eligibleCategories = markedIds.filter(
-      (id) => defaultPriced.has(id) || [...branchPriced].some((k) => k.startsWith(`${id}|`))
-    )
-    if (!eligibleCategories.length) return []
+    const pricedCategoryIds = marked
+      .filter((m) => m.hourlyRate != null && Number(m.hourlyRate) > 0)
+      .map((m) => m.categoryId)
+    if (!pricedCategoryIds.length) return []
 
     const where: any = {
       status: 'pending',
       freelancerId: null,
-      categoryId: { [Op.in]: eligibleCategories },
+      categoryId: { [Op.in]: pricedCategoryIds },
     }
     const jobs = await Job.findAll({ where, include: jobIncludes, order: [['startTime', 'ASC']] })
+    if (!jobs.length) return []
+
+    // …e cujo supermercado tem valor/hora ativo para a função (específico da loja ou padrão).
+    const supermarketIds = [...new Set(jobs.map((j) => j.supermarketId))]
+    const rates = await SupermarketCategoryRate.findAll({
+      where: { supermarketId: { [Op.in]: supermarketIds }, active: true },
+    })
+    const defaultPriced = new Set(
+      rates.filter((r) => !r.branchId).map((r) => `${r.supermarketId}|${r.categoryId}`)
+    )
+    const branchPriced = new Set(
+      rates.filter((r) => r.branchId).map((r) => `${r.supermarketId}|${r.categoryId}|${r.branchId}`)
+    )
+    const isPriced = (supermarketId: string, categoryId: string, branchId?: string | null) =>
+      (branchId != null && branchPriced.has(`${supermarketId}|${categoryId}|${branchId}`)) ||
+      defaultPriced.has(`${supermarketId}|${categoryId}`)
 
     // Filtra pelo preço da loja da vaga + não mostra vagas cujo último turno já terminou.
     const now = Date.now()
     return jobs.filter((job) => {
-      if (!isPriced(job.categoryId, job.branchId)) return false
+      if (!isPriced(job.supermarketId, job.categoryId, job.branchId)) return false
       const shifts = (job as any).shifts ?? []
       if (!shifts.length) return new Date(job.endTime).getTime() > now
       return shifts.some((s: any) => new Date(s.endTime).getTime() > now)
@@ -436,10 +441,19 @@ export const jobService = {
       throw new Error('Esta vaga não está mais disponível.')
     }
 
-    // A vaga só pode ser assumida se a agência tiver valor/hora para a função nessa loja.
-    const rate = await agencyRateService.activeRate(freelancer.agencyId, job.categoryId, job.branchId)
-    if (!rate) {
-      throw new Error('Sua agência ainda não definiu um valor/hora para esta função nesta loja.')
+    // A vaga só pode ser assumida se houver valor/hora do colaborador para a função
+    // E valor/hora que o supermercado paga pela função nessa loja.
+    const freelancerRate = await freelancerService.categoryRate(freelancer.id, job.categoryId)
+    if (freelancerRate == null) {
+      throw new Error('Sua agência ainda não definiu o seu valor/hora para esta função.')
+    }
+    const supermarketRate = await supermarketRateService.activeRate(
+      job.supermarketId,
+      job.categoryId,
+      job.branchId
+    )
+    if (!supermarketRate) {
+      throw new Error('O supermercado ainda não tem um valor/hora para esta função nesta loja.')
     }
 
     // Um freelancer só pode ter uma vaga por período — sem sobreposição de horário.
@@ -538,6 +552,42 @@ export const jobService = {
     await freelancer.update({ blockedUntil })
 
     await cancelJobByAgency(job, freelancer.id, 'no-show', reason.trim())
+    return this.findById(id)
+  },
+
+  /** Vagas concluídas da rede da agência com pagamento retido (hora extra acima da tolerância). */
+  async pendingSettlementForAgency(agencyId: string) {
+    const freelancers = await Freelancer.findAll({ where: { agencyId }, attributes: ['id'] })
+    const ids = freelancers.map((f) => f.id)
+    if (!ids.length) return []
+    return Job.findAll({
+      where: { settlementHold: true, freelancerId: { [Op.in]: ids } },
+      include: jobIncludes,
+      order: [['completedAt', 'ASC']],
+    })
+  },
+
+  /**
+   * A agência libera o pagamento de uma vaga retida por hora extra.
+   * `capToContracted` = paga/cobra só o tempo contratado (ignora o excedente).
+   */
+  async releasePayment(id: string, agencyId: string, capToContracted = false) {
+    const job = await Job.findByPk(id)
+    if (!job) throw new Error('Vaga não encontrada.')
+    if (!job.settlementHold) {
+      throw new Error('Esta vaga não está aguardando liberação de pagamento.')
+    }
+    const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
+    if (!freelancer || freelancer.agencyId !== agencyId) {
+      throw new Error('Este colaborador não pertence à sua agência.')
+    }
+
+    const patch: any = { settlementApprovedAt: new Date() }
+    if (capToContracted && job.contractedMinutes != null) {
+      patch.workedMinutes = Math.min(job.workedMinutes ?? 0, job.contractedMinutes)
+    }
+    await job.update(patch)
+    await paymentService.settleForJob(await job.reload())
     return this.findById(id)
   },
 

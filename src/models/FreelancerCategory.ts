@@ -9,12 +9,14 @@ export interface FreelancerCategory {
   id: string
   freelancerId: string
   categoryId: string
+  /** Valor/hora que o colaborador recebe nessa função (definido pela agência). NULL = ainda não precificada. */
+  hourlyRate?: number | null
   createdAt: Date
   updatedAt: Date
 }
 
 export interface FreelancerCategoryCreationAttributes
-  extends Optional<FreelancerCategory, 'id' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<FreelancerCategory, 'id' | 'hourlyRate' | 'createdAt' | 'updatedAt'> {}
 
 export interface FreelancerCategoryInstance
   extends Model<FreelancerCategory, FreelancerCategoryCreationAttributes>,
@@ -48,6 +50,10 @@ export const FreelancerCategory = sequelize.define<FreelancerCategoryInstance, F
       },
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE'
+    },
+    hourlyRate: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true
     },
     createdAt: {
       allowNull: false,

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import { supermarketService } from '../services/supermarketService';
+import { supermarketRateService } from '../services/supermarketRateService';
 import { profileService } from '../services/profileService';
 import { sequelize } from '../database';
 import { User } from '../models/User';
@@ -163,6 +164,48 @@ export const supermarketController = {
       return res.json({ message: 'Gerente removido.' });
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro.' });
+    }
+  },
+
+  // GET /supermarkets/:id/rates — valores/hora por função que a agência cobra deste supermercado
+  async listRates(req: AuthRequest, res: Response) {
+    try {
+      if (req.user!.role === 'supermarket') {
+        const ctx = await profileService.supermarketContextForUser(req.user!);
+        if (!ctx || ctx.supermarketId !== req.params.id) {
+          return res.status(403).json({ message: 'Sem permissão para ver estes valores.' });
+        }
+      }
+      return res.json(await supermarketRateService.listForSupermarket(req.params.id));
+    } catch (error) {
+      return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' });
+    }
+  },
+
+  // POST /supermarkets/:id/rates — cria/atualiza um valor/hora (função + loja opcional)
+  async saveRate(req: AuthRequest, res: Response) {
+    try {
+      return res.status(201).json(await supermarketRateService.upsert(req.params.id, req.body));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao salvar valor.' });
+    }
+  },
+
+  // PUT /supermarkets/:id/rates/:rateId — ajusta valor/hora ou situação
+  async updateRate(req: AuthRequest, res: Response) {
+    try {
+      return res.json(await supermarketRateService.update(req.params.rateId, req.params.id, req.body));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar valor.' });
+    }
+  },
+
+  // DELETE /supermarkets/:id/rates/:rateId
+  async removeRate(req: AuthRequest, res: Response) {
+    try {
+      return res.json(await supermarketRateService.remove(req.params.rateId, req.params.id));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao remover valor.' });
     }
   },
 
