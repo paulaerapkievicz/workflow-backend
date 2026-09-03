@@ -23,10 +23,11 @@ import { paymentService } from './paymentService'
 import { minutesBetween } from '../helpers/time'
 import { resolveShifts } from '../helpers/shifts'
 
+const BR_TZ = 'America/Sao_Paulo'
 const fmtWindow = (a: Date | string, b: Date | string) => {
   const d = (x: Date | string) =>
-    new Date(x).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
-  return `${d(a)}–${new Date(b).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+    new Date(x).toLocaleString('pt-BR', { timeZone: BR_TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return `${d(a)}–${new Date(b).toLocaleTimeString('pt-BR', { timeZone: BR_TZ, hour: '2-digit', minute: '2-digit' })}`
 }
 
 const jobIncludes = [
@@ -83,7 +84,11 @@ async function applyJobEdit(job: any, data: any, t: Transaction) {
     patch.categoryId = data.categoryId
   }
 
-  const date = data.date ?? (job.startTime ? new Date(job.startTime).toISOString().slice(0, 10) : null)
+  const date =
+    data.date ??
+    (job.startTime
+      ? new Date(job.startTime).toLocaleDateString('en-CA', { timeZone: BR_TZ }) // YYYY-MM-DD em Brasília
+      : null)
   const reshift =
     data.shifts != null ||
     data.shiftPeriod != null ||

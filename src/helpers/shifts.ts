@@ -46,7 +46,9 @@ export function resolveShift(
     throw new Error(`Horário fora do turno ${bounds.label} (${bounds.start}–${bounds.end}).`)
   }
 
-  const base = new Date(`${date}T00:00:00`)
+  // Fuso de Brasília fixo (sem horário de verão desde 2019) — a hora digitada
+  // pelo supermercado é sempre horário local, independente do fuso do servidor.
+  const base = new Date(`${date}T00:00:00-03:00`)
   return {
     startTime: new Date(base.getTime() + s * 60000),
     endTime: new Date(base.getTime() + e * 60000),

@@ -4,10 +4,10 @@
   "description": "",
   "main": "src/server.ts",
   "scripts": {
-    "dev": "ts-node-dev --transpile-only --ignore-watch node_modules src/server.ts",
+    "dev": "cross-env TZ=America/Sao_Paulo ts-node-dev --transpile-only --ignore-watch node_modules src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "node scripts/prod-start.js",
-    "start:noMigrate": "node dist/server.js",
+    "start": "cross-env TZ=America/Sao_Paulo node scripts/prod-start.js",
+    "start:noMigrate": "cross-env TZ=America/Sao_Paulo node dist/server.js",
     "seed:prod": "cross-env NODE_ENV=production sequelize db:seed:all",
     "typecheck": "tsc --noEmit",
     "migrate": "sequelize db:migrate",

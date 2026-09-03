@@ -1,6 +1,9 @@
 // Start de produção: roda as migrations e sobe o servidor.
 // Se a migration falhar, loga e sobe o servidor mesmo assim — assim o host
 // de deploy não fica em 502 e o erro real aparece nos logs.
+// App single-fuso (Brasil). Garante o fuso mesmo se o host não passar TZ.
+process.env.TZ = process.env.TZ || 'America/Sao_Paulo';
+
 const { execSync } = require('child_process');
 
 function run(label, cmd) {
