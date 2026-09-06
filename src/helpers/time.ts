@@ -8,6 +8,12 @@ export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 10
  */
 export const CHECKOUT_OVERTIME_TOLERANCE_MINUTES = 15
 
+/**
+ * Antecedência máxima (minutos) com que o colaborador pode bater o check-in antes
+ * do horário de início do turno. Atraso não é bloqueado — só a entrada muito adiantada.
+ */
+export const CHECKIN_EARLY_TOLERANCE_MINUTES = 30
+
 export const minutesBetween = (start: Date | string, end: Date | string) =>
   Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000))
 

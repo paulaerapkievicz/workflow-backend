@@ -4,7 +4,9 @@ import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
 export interface OrderItemShiftTemplate {
+  /** @deprecated use `nominalPeriod` — mantido para linhas antigas. */
   shiftPeriod?: string | null
+  nominalPeriod?: string | null
   startTime: string
   endTime: string
   label?: string | null

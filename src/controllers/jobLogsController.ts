@@ -70,4 +70,24 @@ export const jobLogsController = {
       return fail(res, error)
     }
   },
+
+  async breakStart(req: AuthRequest, res: Response) {
+    try {
+      const freelancer = await requireFreelancer(req, res)
+      if (!freelancer) return
+      return res.status(201).json(await jobLogService.openBreak(req.params.id, freelancer, 'freelancer', req.body ?? {}))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  async breakEnd(req: AuthRequest, res: Response) {
+    try {
+      const freelancer = await requireFreelancer(req, res)
+      if (!freelancer) return
+      return res.status(201).json(await jobLogService.closeBreak(req.params.id, freelancer, 'freelancer', req.body ?? {}))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
 }

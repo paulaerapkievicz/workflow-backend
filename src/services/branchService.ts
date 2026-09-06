@@ -75,6 +75,15 @@ export const branchService = {
     return branch.update(patch);
   },
 
+  async approveForAgency(id: string, agencyId: string, approvedBy: string) {
+    const branch = await Branch.findByPk(id);
+    if (!branch) throw new Error('Filial não encontrada.');
+    const market = await Supermarket.findByPk(branch.supermarketId);
+    if (!market || market.agencyId !== agencyId) throw new Error('Esta filial não pertence a um cliente da sua agência.');
+    if (branch.serviceStatus === 'approved') throw new Error('Esta filial já está aprovada.');
+    return branch.update({ serviceStatus: 'approved', approvedAt: new Date(), approvedBy });
+  },
+
   async delete(id: string) {
     const branch = await Branch.findByPk(id);
     if (!branch) throw new Error('Filial não encontrada.');

@@ -4,6 +4,7 @@ import { Op } from 'sequelize'
 import { JobLog } from '../models/JobLog'
 import { Job } from '../models/Job'
 import { JobShift } from '../models/JobShift'
+import { JobShiftBreak } from '../models/JobShiftBreak'
 import { JobPhoto } from '../models/JobPhoto'
 import { Branch } from '../models/Branch'
 import { Freelancer, FreelancerInstance } from '../models/Freelancer'
@@ -12,7 +13,26 @@ import { FreelancerLocation } from '../models/FreelancerLocation'
 import { paymentService } from './paymentService'
 import { orderService } from './orderService'
 import { distanceInMeters } from '../helpers/geo'
-import { minutesBetween, CHECKOUT_OVERTIME_TOLERANCE_MINUTES } from '../helpers/time'
+import {
+  minutesBetween,
+  CHECKOUT_OVERTIME_TOLERANCE_MINUTES,
+  CHECKIN_EARLY_TOLERANCE_MINUTES,
+} from '../helpers/time'
+
+/** Pausa/intervalo no ponto está habilitado para esta vaga? (override da vaga → padrão da agência) */
+export function resolveBreaksEnabled(job: { breaksEnabled?: boolean | null }, agency: any): boolean {
+  return job.breaksEnabled ?? agency?.breaksEnabled ?? false
+}
+
+/** Soma dos minutos das pausas já fechadas de um turno. */
+export async function sumClosedBreakMinutes(jobShiftId: string): Promise<number> {
+  const breaks = await JobShiftBreak.findAll({ where: { jobShiftId, endAt: { [Op.ne]: null } } })
+  return breaks.reduce((acc, b) => acc + minutesBetween(b.startAt, b.endAt as Date), 0)
+}
+
+const BR_TZ = 'America/Sao_Paulo'
+const hhmmBR = (d: Date | string) =>
+  new Date(d).toLocaleTimeString('pt-BR', { timeZone: BR_TZ, hour: '2-digit', minute: '2-digit' })
 
 export interface GeoInput {
   latitude?: number | string | null
@@ -100,6 +120,17 @@ export const jobLogService = {
     })
     if (!shift) throw new Error('Todos os turnos desta vaga já passaram.')
 
+    // O check-in não pode ser feito muito antes do horário do turno — só atraso é tolerado.
+    const earliestCheckIn = new Date(
+      new Date(shift.startTime).getTime() - CHECKIN_EARLY_TOLERANCE_MINUTES * 60000
+    )
+    if (now < earliestCheckIn) {
+      throw new Error(
+        `Ainda não é hora do check-in. O turno começa às ${hhmmBR(shift.startTime)} — ` +
+          `a entrada pode ser registrada a partir de ${CHECKIN_EARLY_TOLERANCE_MINUTES} min antes.`
+      )
+    }
+
     const log = await JobLog.create({
       jobId, freelancerId: freelancer.id, jobShiftId: shift.id,
       eventType: 'check-in', timestamp: now, latitude, longitude, accuracy,
@@ -125,13 +156,19 @@ export const jobLogService = {
     const shift = await JobShift.findOne({ where: { jobId, status: 'in_progress' } })
     if (!shift) throw new Error('Nenhum turno em andamento. Faça o check-in primeiro.')
 
+    const openBreak = await JobShiftBreak.findOne({ where: { jobShiftId: shift.id, endAt: null } })
+    if (openBreak) throw new Error('Retome o ponto (fim da pausa) antes de finalizar o turno.')
+
     if (job.requireCheckoutPhoto ?? agency?.requireCheckoutPhoto) {
       const photos = await JobPhoto.count({ where: { jobId } })
       if (photos === 0) throw new Error('Anexe ao menos uma foto de comprovação antes do check-out.')
     }
 
     const now = new Date()
-    const workedMinutes = shift.checkInAt ? minutesBetween(shift.checkInAt, now) : 0
+    const breakMinutes = await sumClosedBreakMinutes(shift.id)
+    const workedMinutes = shift.checkInAt
+      ? Math.max(0, minutesBetween(shift.checkInAt, now) - breakMinutes)
+      : 0
 
     const log = await JobLog.create({
       jobId, freelancerId: freelancer.id, jobShiftId: shift.id,
@@ -162,5 +199,85 @@ export const jobLogService = {
       // check-out encerra o rastreamento em tempo real (a vaga sai do "ao vivo").
     }
     return { log, shift: await shift.reload(), jobCompleted: completed, settlementHeld }
+  },
+
+  /**
+   * Abre uma pausa/intervalo no turno em andamento. `startedBy` = 'freelancer' (o próprio)
+   * ou 'agency' (registrando no lugar dele). A vaga precisa ter o recurso de pausa habilitado.
+   */
+  async openBreak(
+    jobId: string,
+    freelancer: FreelancerInstance,
+    startedBy: 'freelancer' | 'agency',
+    geo?: GeoInput
+  ) {
+    const job = await Job.findByPk(jobId)
+    if (!job) throw new Error('Vaga não encontrada.')
+    if (job.freelancerId !== freelancer.id) throw new Error('Esta vaga não está atribuída a este colaborador.')
+    const agency = freelancer.agencyId ? await Agency.findByPk(freelancer.agencyId) : null
+    if (!resolveBreaksEnabled(job, agency)) {
+      throw new Error('A pausa/intervalo no ponto não está habilitada para esta vaga.')
+    }
+    if (job.status !== 'in_progress') throw new Error('Só é possível pausar o ponto durante um turno em andamento.')
+
+    const shift = await JobShift.findOne({ where: { jobId, status: 'in_progress' } })
+    if (!shift) throw new Error('Nenhum turno em andamento para pausar.')
+    const already = await JobShiftBreak.findOne({ where: { jobShiftId: shift.id, endAt: null } })
+    if (already) throw new Error('Já existe uma pausa aberta neste turno.')
+
+    const now = new Date()
+    const g = geo && geo.latitude != null && geo.longitude != null ? parseGeo(geo) : null
+    const brk = await JobShiftBreak.create({
+      jobShiftId: shift.id,
+      jobId,
+      freelancerId: freelancer.id,
+      startAt: now,
+      startedBy,
+    })
+    await JobLog.create({
+      jobId,
+      freelancerId: freelancer.id,
+      jobShiftId: shift.id,
+      eventType: 'break-start',
+      timestamp: now,
+      reason: startedBy === 'agency' ? 'Pausa registrada pela agência.' : null,
+      latitude: g?.latitude ?? null,
+      longitude: g?.longitude ?? null,
+      accuracy: g?.accuracy ?? null,
+    })
+    return { break: brk, shift: await shift.reload() }
+  },
+
+  /** Fecha a pausa aberta do turno em andamento (retomar o ponto). */
+  async closeBreak(
+    jobId: string,
+    freelancer: FreelancerInstance,
+    startedBy: 'freelancer' | 'agency',
+    geo?: GeoInput
+  ) {
+    const job = await Job.findByPk(jobId)
+    if (!job) throw new Error('Vaga não encontrada.')
+    if (job.freelancerId !== freelancer.id) throw new Error('Esta vaga não está atribuída a este colaborador.')
+
+    const shift = await JobShift.findOne({ where: { jobId, status: 'in_progress' } })
+    if (!shift) throw new Error('Nenhum turno em andamento.')
+    const brk = await JobShiftBreak.findOne({ where: { jobShiftId: shift.id, endAt: null } })
+    if (!brk) throw new Error('Não há pausa aberta para retomar.')
+
+    const now = new Date()
+    const g = geo && geo.latitude != null && geo.longitude != null ? parseGeo(geo) : null
+    await brk.update({ endAt: now })
+    await JobLog.create({
+      jobId,
+      freelancerId: freelancer.id,
+      jobShiftId: shift.id,
+      eventType: 'break-end',
+      timestamp: now,
+      reason: startedBy === 'agency' ? 'Pausa encerrada pela agência.' : null,
+      latitude: g?.latitude ?? null,
+      longitude: g?.longitude ?? null,
+      accuracy: g?.accuracy ?? null,
+    })
+    return { break: await brk.reload(), shift: await shift.reload() }
   },
 }

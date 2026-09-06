@@ -47,14 +47,25 @@ export const jobController = {
     }
   },
 
-  // GET /jobs/:id
+  // GET /jobs/:id — escopado pelo papel (mesmas regras de GET /jobs)
   async show(req: AuthRequest, res: Response) {
     try {
-      const job = await jobService.findById(req.params.id)
+      const job = await jobService.findByIdForUser(req.params.id, req.user!)
       if (!job) return res.status(404).json({ message: 'Vaga não encontrada.' })
       return res.json(job)
     } catch (error) {
       return fail(res, error, 500)
+    }
+  },
+
+  // GET /jobs/:id/freelancer-profile — dados do colaborador alocado (supermercado)
+  async freelancerProfile(req: AuthRequest, res: Response) {
+    try {
+      const supermarketId = await profileService.supermarketIdForUser(req.user!)
+      if (!supermarketId) return res.status(403).json({ message: 'Supermercado não encontrado.' })
+      return res.json(await jobService.freelancerProfileForSupermarket(req.params.id, supermarketId))
+    } catch (error) {
+      return fail(res, error)
     }
   },
 
@@ -176,6 +187,63 @@ export const jobController = {
       const agencyId = await profileService.agencyIdForUser(req.user!)
       if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
       return res.json(await jobService.registerNoShow(req.params.id, agencyId, req.body.reason))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /jobs/:id/force-checkout (agency) — encerra o turno em andamento no lugar do freelancer
+  async forceCheckout(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await jobService.forceCheckoutByAgency(req.params.id, agencyId, req.body?.reason))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /jobs/:id/reassign (agency) — troca o colaborador alocado na vaga
+  async reassign(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      if (!req.body?.freelancerId) return res.status(400).json({ message: 'Informe o novo colaborador.' })
+      return res.json(
+        await jobService.reassignByAgency(req.params.id, agencyId, req.body.freelancerId, req.body?.reason)
+      )
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // PUT /agency/jobs/:id/timesheet (agency) — corrige horário/ponto de uma vaga aceita/em andamento/concluída
+  async correctTimesheet(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await jobService.correctTimesheetByAgency(req.params.id, agencyId, req.body ?? {}))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /agency/jobs/:id/break-start | break-end (agency) — pausa/retoma o ponto no lugar do colaborador
+  async breakStart(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.status(201).json(await jobService.breakByAgency(req.params.id, agencyId, 'start'))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  async breakEnd(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.status(201).json(await jobService.breakByAgency(req.params.id, agencyId, 'end'))
     } catch (error) {
       return fail(res, error)
     }

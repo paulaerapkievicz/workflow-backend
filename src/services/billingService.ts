@@ -72,6 +72,9 @@ export const billingService = {
       workedMinutes: i.workedMinutes ?? 0,
       totalAmount: Number(i.totalAmount),
       status: i.status,
+      paymentUrl: i.paymentUrl ?? null,
+      paymentRef: i.paymentRef ?? null,
+      paidAt: i.paidAt ?? null,
       createdAt: i.createdAt,
     }))
 

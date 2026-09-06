@@ -33,24 +33,24 @@ module.exports = {
     const free2User = { id: uid(), name: 'Pedro Freelancer', email: 'free2@email.com', password_hash: passwordHash, role: 'freelancer', phone: '(11) 90000-0004', birth_date: null, ...ts };
     await queryInterface.bulkInsert('users', [adminUser, superUser, agencyUser, free1User, free2User]);
 
-    // ---- Supermercado + filiais ----
-    const supermarket = { id: uid(), owner_id: superUser.id, name: 'Mercado Central', cnpj: '11222333000144', address: 'Av. Principal, 1000 - São Paulo/SP', phone: '(11) 3000-0000', ...ts };
+    // ---- Agência ----
+    // Vaga concluída (Padeiro, 4h): supermercado paga 33/h = 132 ; colaborador recebe 19/h = 76 ; agência 56.
+    const agencyAmountPaid = 56.0;
+    const freelancerAmountPaid = 76.0;
+    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', cnpj: '55666777000188', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 4000-0000', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: false, ...ts };
+    await queryInterface.bulkInsert('agencies', [agency]);
+    await queryInterface.bulkInsert('commissions', [{ id: uid(), agency_id: agency.id, percentage: 15, ...ts }]);
+
+    // ---- Supermercado (cliente da agência acima) + filiais ----
+    const supermarket = { id: uid(), owner_id: superUser.id, agency_id: agency.id, name: 'Mercado Central', cnpj: '11222333000144', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0000', ...ts };
     await queryInterface.bulkInsert('supermarkets', [supermarket]);
     await queryInterface.bulkInsert('supermarket_members', [
       { id: uid(), supermarket_id: supermarket.id, user_id: superUser.id, branch_id: null, can_submit_orders: true, can_approve_orders: true, is_owner: true, ...ts },
     ]);
 
-    const branchCentro = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Centro', address: 'Rua do Centro, 50 - Centro, São Paulo/SP', phone: '(11) 3000-0001', latitude: -23.550520, longitude: -46.633308, geocoded_at: now(), geocode_query: 'Rua do Centro, 50 - Centro, São Paulo/SP', ...ts };
-    const branchZonaSul = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Zona Sul', address: 'Av. Sul, 2500 - Santo Amaro, São Paulo/SP', phone: '(11) 3000-0002', latitude: -23.650000, longitude: -46.700000, geocoded_at: now(), geocode_query: 'Av. Sul, 2500 - Santo Amaro, São Paulo/SP', ...ts };
+    const branchCentro = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Centro', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0001', latitude: -28.269151, longitude: -52.374602, geocoded_at: now(), geocode_query: 'Rua Dirceu Sander, 719, Passo Fundo RS', service_status: 'approved', ...ts };
+    const branchZonaSul = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Zona Sul', address: 'Rua Uruguai, 1200 - Centro, Passo Fundo RS', phone: '(54) 3000-0002', latitude: -28.262500, longitude: -52.406800, geocoded_at: now(), geocode_query: 'Rua Uruguai, 1200 - Centro, Passo Fundo RS', service_status: 'approved', ...ts };
     await queryInterface.bulkInsert('branches', [branchCentro, branchZonaSul]);
-
-    // ---- Agência ----
-    // Vaga concluída (Padeiro, 4h): supermercado paga 33/h = 132 ; colaborador recebe 19/h = 76 ; agência 56.
-    const agencyAmountPaid = 56.0;
-    const freelancerAmountPaid = 76.0;
-    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', cnpj: '55666777000188', address: 'Rua das Agências, 300', phone: '(11) 4000-0000', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: false, ...ts };
-    await queryInterface.bulkInsert('agencies', [agency]);
-    await queryInterface.bulkInsert('commissions', [{ id: uid(), agency_id: agency.id, percentage: 15, ...ts }]);
 
     // ---- Valores/hora que a agência cobra do supermercado, por função ----
     const superRate = (catIndex, hourly, branchId = null) => ({
@@ -80,6 +80,7 @@ module.exports = {
       freeCat(free1.id, 1, 20.0), // Operador de Caixa
       freeCat(free1.id, 4, 19.0), // Padeiro
       freeCat(free2.id, 1, 20.0), // Operador de Caixa
+      freeCat(free2.id, 2, 21.0), // Fiscal de Loja (vaga em andamento do seed)
       freeCat(free2.id, 4, 19.0), // Padeiro (vaga concluída do seed)
     ]);
 
@@ -158,7 +159,7 @@ module.exports = {
       'withdrawals', 'job_photos', 'invoices', 'payments', 'job_logs', 'job_shifts',
       'freelancer_locations', 'jobs', 'order_items', 'orders', 'supermarket_category_rates',
       'freelancer_categories', 'reviews', 'commissions', 'supermarket_members',
-      'freelancers', 'branches', 'agencies', 'supermarkets', 'categories', 'sessions', 'users',
+      'freelancers', 'branches', 'supermarkets', 'agencies', 'categories', 'sessions', 'users',
     ]) {
       await queryInterface.bulkDelete(table, null, {});
     }

@@ -3,11 +3,14 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 import { User } from './User'
+import { Agency } from './Agency'
 
 export interface Supermarket {
   id: string
   ownerId: string
+  agencyId: string
   name: string
+  legalName?: string | null
   cnpj: string
   address: string
   phone?: string
@@ -16,7 +19,7 @@ export interface Supermarket {
 }
 
 export interface SupermarketCreationAttributes
-  extends Optional<Supermarket, 'id' | 'phone' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<Supermarket, 'id' | 'legalName' | 'phone' | 'createdAt' | 'updatedAt'> {}
 
 export interface SupermarketInstance
   extends Model<Supermarket, SupermarketCreationAttributes>,
@@ -39,9 +42,23 @@ export const Supermarket = sequelize.define<SupermarketInstance, Supermarket>('S
     onUpdate: 'CASCADE',
     onDelete: 'CASCADE'
   },
+  agencyId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    references: {
+      model: 'agencies',
+      key: 'id'
+    },
+    onUpdate: 'CASCADE',
+    onDelete: 'RESTRICT'
+  },
   name: {
     type: DataTypes.STRING,
     allowNull: false
+  },
+  legalName: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   cnpj: {
     type: DataTypes.STRING,
@@ -69,3 +86,4 @@ export const Supermarket = sequelize.define<SupermarketInstance, Supermarket>('S
 
 // Adicionamos a associação no index.ts
 Supermarket.belongsTo(User, { foreignKey: 'ownerId', as: 'owner' })
+Supermarket.belongsTo(Agency, { foreignKey: 'agencyId', as: 'agency' })

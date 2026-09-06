@@ -1,10 +1,25 @@
 import { Response } from 'express'
 import { closingService } from '../services/closingService'
+import { closingPdfService } from '../services/closingPdfService'
 import { profileService } from '../services/profileService'
 import { AuthRequest } from '../middlewares/auth'
 
 function fail(res: Response, err: unknown, code = 400) {
   return res.status(code).json({ message: err instanceof Error ? err.message : 'Erro inesperado.' })
+}
+
+/** Só a agência dona do fechamento ou o supermercado que o recebeu podem vê-lo. */
+async function assertCanViewClosing(req: AuthRequest, closing: any): Promise<boolean> {
+  if (req.user!.role === 'admin') return true
+  if (req.user!.role === 'agency') {
+    const agencyId = await profileService.agencyIdForUser(req.user!)
+    return !!agencyId && closing.agencyId === agencyId
+  }
+  if (req.user!.role === 'supermarket') {
+    const supermarketId = await profileService.supermarketIdForUser(req.user!)
+    return !!supermarketId && closing.supermarketId === supermarketId
+  }
+  return false
 }
 
 export const closingController = {
@@ -59,7 +74,27 @@ export const closingController = {
     try {
       const closing = await closingService.findById(req.params.id)
       if (!closing) return res.status(404).json({ message: 'Fechamento não encontrado.' })
+      if (!(await assertCanViewClosing(req, closing))) {
+        return res.status(404).json({ message: 'Fechamento não encontrado.' })
+      }
       return res.json(closing)
+    } catch (error) {
+      return fail(res, error, 500)
+    }
+  },
+
+  // GET /closings/:id/pdf
+  async pdf(req: AuthRequest, res: Response) {
+    try {
+      const closing = await closingService.findById(req.params.id)
+      if (!closing) return res.status(404).json({ message: 'Fechamento não encontrado.' })
+      if (!(await assertCanViewClosing(req, closing))) {
+        return res.status(404).json({ message: 'Fechamento não encontrado.' })
+      }
+      const doc = closingPdfService.buildClosingPdf(closing)
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', `attachment; filename="fechamento-${closing.referenceMonth}.pdf"`)
+      doc.pipe(res)
     } catch (error) {
       return fail(res, error, 500)
     }

@@ -21,6 +21,7 @@ const monthlyIncludes = [
       { model: Category, as: 'jobCategory' },
       { model: Branch, as: 'jobBranch' },
       { model: Freelancer, as: 'assignedFreelancer' },
+      { model: JobShift, as: 'shifts' },
     ],
   },
 ]

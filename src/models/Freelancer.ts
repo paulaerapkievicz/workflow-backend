@@ -12,6 +12,7 @@ export interface Freelancer {
   email: string
   phone?: string
   document?: string | null
+  profilePhotoUrl?: string | null
   skills?: string
   registrationStatus: 'pending' | 'approved' | 'rejected'
   availableBalance: number
@@ -31,6 +32,7 @@ export interface FreelancerCreationAttributes
     | 'userId'
     | 'phone'
     | 'document'
+    | 'profilePhotoUrl'
     | 'skills'
     | 'registrationStatus'
     | 'availableBalance'
@@ -85,6 +87,10 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
     type: DataTypes.STRING
   },
   document: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  profilePhotoUrl: {
     type: DataTypes.STRING,
     allowNull: true
   },

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { branchService } from '../services/branchService';
 import { profileService } from '../services/profileService';
+import { Supermarket } from '../models/Supermarket';
 import { AuthRequest } from '../middlewares/auth';
 
 export const branchController = {
@@ -41,16 +42,39 @@ export const branchController = {
   async create(req: AuthRequest, res: Response) {
     try {
       let supermarketId = req.body.supermarketId;
+      // Filial cadastrada pelo próprio supermercado nasce pendente até a agência aprovar
+      // o atendimento; cadastrada pela agência (ou admin) já nasce liberada.
+      let serviceStatus: 'approved' | 'pending' = 'approved';
+
       if (req.user && req.user.role === 'supermarket') {
         supermarketId = await profileService.supermarketIdForUser(req.user);
         if (!supermarketId) {
           return res.status(400).json({ message: 'Cadastre o supermercado antes de criar filiais.' });
         }
+        serviceStatus = 'pending';
+      } else if (req.user && req.user.role === 'agency') {
+        const agencyId = await profileService.agencyIdForUser(req.user);
+        const market = await Supermarket.findByPk(supermarketId);
+        if (!agencyId || !market || market.agencyId !== agencyId) {
+          return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+        }
       }
-      const branch = await branchService.create({ ...req.body, supermarketId });
+      const branch = await branchService.create({ ...req.body, supermarketId, serviceStatus });
       return res.status(201).json(branch);
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao criar filial.' });
+    }
+  },
+
+  // POST /branches/:id/approve — agência aprova o atendimento de uma filial cadastrada pelo supermercado
+  async approve(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+      const branch = await branchService.approveForAgency(req.params.id, agencyId, req.user!.id);
+      return res.json(branch);
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao aprovar filial.' });
     }
   },
 

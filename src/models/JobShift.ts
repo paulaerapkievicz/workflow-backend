@@ -13,6 +13,8 @@ export interface JobShift {
   startTime: Date
   endTime: Date
   label?: string | null
+  /** Período nominal (manha|tarde|noite|madrugada) — só rótulo/filtro, não limita o horário. */
+  nominalPeriod?: string | null
   status: JobShiftStatus
   checkInAt?: Date | null
   checkOutAt?: Date | null
@@ -27,6 +29,7 @@ export interface JobShiftCreationAttributes
     | 'id'
     | 'position'
     | 'label'
+    | 'nominalPeriod'
     | 'status'
     | 'checkInAt'
     | 'checkOutAt'
@@ -65,6 +68,10 @@ export const JobShift = sequelize.define<JobShiftInstance, JobShift>('JobShift',
     allowNull: false
   },
   label: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  nominalPeriod: {
     type: DataTypes.STRING,
     allowNull: true
   },

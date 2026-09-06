@@ -6,11 +6,13 @@
  *   node scripts/smoke-flow.mjs
  */
 import pg from 'pg'
+import crypto from 'crypto'
 import 'dotenv/config'
 
 const BASE = process.env.BASE_URL || 'http://localhost:3334'
-const CENTRO = { latitude: -23.55052, longitude: -46.633308 } // = Filial Centro no seed
-const FAR = { latitude: -23.4, longitude: -46.4 }
+const CENTRO = { latitude: -28.269151, longitude: -52.374602 } // = Filial Centro no seed (Rua Dirceu Sander, 719, Passo Fundo RS)
+const FAR = { latitude: -28.32, longitude: -52.44 } // ~8 km da Filial Centro
+const TEST_ADDRESS = 'Rua Dirceu Sander, 719, Passo Fundo RS'
 
 let pass = 0
 let fail = 0
@@ -48,6 +50,17 @@ const db = new pg.Client({
 const yyyymm = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 const dateInDays = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
 
+// Traz o próximo turno pendente da vaga para "agora" — as vagas de teste são criadas para
+// amanhã, mas o check-in real só é aceito perto do horário do turno (tolerância de 30 min).
+const startShiftNow = (jobId) =>
+  db.query(
+    `UPDATE job_shifts SET start_time = NOW() - interval '5 minutes',
+       end_time = GREATEST(end_time, NOW() + interval '30 minutes')
+     WHERE job_id = $1 AND status = 'pending'
+       AND position = (SELECT MIN(position) FROM job_shifts WHERE job_id = $1 AND status = 'pending')`,
+    [jobId]
+  )
+
 async function main() {
   await db.connect()
 
@@ -72,7 +85,7 @@ async function main() {
   ok(upd.status === 200 && upd.data.checkinRadius === 250 && upd.data.cancellationWindowMinutes === 45, 'settings atualizadas')
   await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 300, cancellationWindowMinutes: 30, requireCheckoutPhoto: true } })
 
-  section('Valores/hora do supermercado + remove Padeiro para testar bloqueio')
+  section('Valores/hora do supermercado')
   const cats = (await req('GET', '/categories', { token: superT })).data
   const catCaixa = cats.find((c) => c.name === 'Operador de Caixa')
   const catRepositor = cats.find((c) => c.name === 'Repositor')
@@ -81,7 +94,17 @@ async function main() {
   const rateCaixa = rates.find((r) => r.categoryId === catCaixa.id && !r.branchId)
   ok(Number(rateCaixa.hourlyRate) === 32, 'valor/hora Operador de Caixa (padrão) = 32', rateCaixa?.hourlyRate)
   const ratePadeiro = rates.find((r) => r.categoryId === catPadeiro.id && !r.branchId)
-  await req('DELETE', `/supermarkets/${supermarketId}/rates/${ratePadeiro.id}`, { token: agencyT })
+  // O valor/hora do Padeiro só é removido DEPOIS do pedido criado (mais abaixo) — a criação
+  // do pedido agora exige valor/hora configurado pra cada função (orderService.normalizeItems).
+
+  // Item 1: função do colaborador não pode ser salva sem valor/hora.
+  const catFiscal = cats.find((c) => c.name === 'Fiscal de Loja') // função que o seed NÃO dá à Joana
+  const noRateCat = await req('POST', `/freelancers/${freelancerId}/categories`, { token: agencyT, body: { categoryId: catFiscal.id } })
+  ok(noRateCat.status === 400 && /valor\/hora/i.test(noRateCat.data?.message || ''), 'função do colaborador sem valor/hora é recusada com mensagem clara', noRateCat.data?.message)
+  const withRateCat = await req('POST', `/freelancers/${freelancerId}/categories`, { token: agencyT, body: { categoryId: catFiscal.id, hourlyRate: 21 } })
+  ok(withRateCat.status === 201, 'função do colaborador com valor/hora é aceita', withRateCat.data)
+  // restaura o estado do seed (Joana não exerce Fiscal de Loja) pra não afetar asserções adiante
+  await req('DELETE', `/freelancers/${freelancerId}/categories/${catFiscal.id}`, { token: agencyT })
 
   section('Supermercado cria pedido (turno = dropdown)')
   const branches = (await req('GET', '/branches', { token: superT })).data
@@ -162,6 +185,9 @@ async function main() {
   ok(del.status === 200, 'vaga pendente removida')
 
   section('Freelancer: disponíveis respeitam a tabela')
+  // Remove o valor/hora do Padeiro agora que a vaga já existe — testa que ela para de
+  // aparecer/ser aceitável, não que ela nunca pôde ser criada.
+  await req('DELETE', `/supermarkets/${supermarketId}/rates/${ratePadeiro.id}`, { token: agencyT })
   const avail = (await req('GET', '/jobs/available', { token: freeT })).data
   ok(avail.some((j) => j.categoryId === catCaixa.id), 'Operador de Caixa aparece')
   ok(!avail.some((j) => j.categoryId === catPadeiro.id), 'Padeiro NÃO aparece (supermercado sem valor/hora)')
@@ -184,6 +210,9 @@ async function main() {
   }
 
   section('Check-in por turno + geolocalização (raio da agência)')
+  const earlyCi = await req('POST', `/jobs/${job.id}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 10 } })
+  ok(earlyCi.status === 400 && /não é hora do check-in/i.test(earlyCi.data?.message || ''), 'check-in muito antes do turno recusado', earlyCi.data?.message)
+  await startShiftNow(job.id)
   const noGeo = await req('POST', `/jobs/${job.id}/logs/checkin`, { token: freeT, body: {} })
   ok(noGeo.status === 400, 'check-in sem localização recusado')
   const farGeo = await req('POST', `/jobs/${job.id}/logs/checkin`, { token: freeT, body: FAR })
@@ -226,6 +255,7 @@ async function main() {
   section('Hora extra acima da tolerância -> pagamento retido até a agência liberar')
   const extraJob = caixaJobs[2] // editada para o turno da tarde (12–18, 360 min contratados)
   await req('POST', `/jobs/${extraJob.id}/accept`, { token: freeT })
+  await startShiftNow(extraJob.id)
   await req('POST', `/jobs/${extraJob.id}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 10 } })
   const fd2 = new FormData()
   fd2.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg')
@@ -263,6 +293,277 @@ async function main() {
   const rel = await req('POST', `/jobs/${repToWithdraw.id}/release`, { token: agencyT })
   ok(rel.status === 200 && rel.data.status === 'pending', 'agência libera -> volta a pending')
 
+  section('Ações da agência sobre a vaga (força checkout / trocar colaborador)')
+  const free2T = await login('free2@email.com')
+  const free2Id = (await req('GET', '/auth/me', { token: free2T })).data.profile.id
+
+  // Nota: o seed já deixa Joana com uma vaga "noite" (18–24) aceita — por isso as vagas de
+  // teste aqui usam tarde/madrugada/manhã, que ficam livres pra ela nesse ponto do fluxo.
+  const actOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [
+        { categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, shiftPeriod: 'tarde', date: day }, // A: reassign sem trabalho
+        { categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, shiftPeriod: 'tarde', date: day }, // D: pra testar conflito de horário
+        { categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, shiftPeriod: 'madrugada', date: day }, // B: força checkout
+        {
+          categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day, // C: reassign com trabalho parcial
+          shifts: [
+            { shiftPeriod: 'madrugada', startTime: '01:00', endTime: '02:00' },
+            { shiftPeriod: 'manha', startTime: '09:00', endTime: '10:00' },
+          ],
+        },
+      ],
+    },
+  })
+  ok(actOrder.status === 201, 'vagas de teste criadas', actOrder.status === 201 ? undefined : actOrder.data)
+  const tardeJobs = actOrder.data.orderJobs.filter((j) => j.shiftPeriod === 'tarde')
+  const jobA = tardeJobs[0]
+  const jobD = tardeJobs[1]
+  const madrugadaJobs = actOrder.data.orderJobs.filter((j) => j.shiftPeriod === 'madrugada')
+  const jobB = madrugadaJobs.find((j) => (j.shifts?.length ?? 1) === 1)
+  const jobC = madrugadaJobs.find((j) => (j.shifts?.length ?? 1) === 2)
+
+  // --- Trocar colaborador (sem trabalho ainda) ---
+  const acceptA = await req('POST', `/jobs/${jobA.id}/accept`, { token: freeT })
+  ok(acceptA.status === 200, 'vaga A aceita antes do reassign', acceptA.data)
+  const reassignA = await req('POST', `/jobs/${jobA.id}/reassign`, { token: agencyT, body: { freelancerId: free2Id, reason: 'teste' } })
+  ok(
+    reassignA.status === 200 && reassignA.data.freelancerId === free2Id && reassignA.data.status === 'accepted',
+    'reassign sem trabalho: troca direta pro novo colaborador',
+    reassignA.data
+  )
+  const jobAForOldFreelancer = await req('GET', `/jobs/${jobA.id}`, { token: freeT })
+  ok(jobAForOldFreelancer.status === 404, 'freelancer antigo perde acesso à vaga depois da troca')
+
+  // --- Reassign respeita conflito de horário do novo colaborador ---
+  await req('POST', `/jobs/${jobD.id}/accept`, { token: freeT })
+  const reassignClash = await req('POST', `/jobs/${jobD.id}/reassign`, { token: agencyT, body: { freelancerId: free2Id } })
+  ok(
+    reassignClash.status === 400 && /já tem uma vaga/.test(reassignClash.data?.message || ''),
+    'reassign bloqueado se o novo colaborador já tem vaga aceita no mesmo horário',
+    reassignClash.data?.message
+  )
+
+  // --- Reassign exige valor/hora do novo colaborador na função da vaga ---
+  const repOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catRepositor.id, branchId: branchCentro.id, quantity: 1, shiftPeriod: 'madrugada', date: day }] },
+  })
+  const repReassignJob = repOrder.data.orderJobs[0]
+  await req('POST', `/jobs/${repReassignJob.id}/accept`, { token: freeT }) // Joana tem Repositor
+  const reassignNoRate = await req('POST', `/jobs/${repReassignJob.id}/reassign`, { token: agencyT, body: { freelancerId: free2Id } })
+  ok(
+    reassignNoRate.status === 400 && /valor\/hora/.test(reassignNoRate.data?.message || ''),
+    'reassign bloqueado se o novo colaborador não tem valor/hora na função da vaga (Pedro não faz Repositor)',
+    reassignNoRate.data?.message
+  )
+  await req('POST', `/jobs/${repReassignJob.id}/withdraw`, { token: freeT }) // libera a agenda da Joana pros testes seguintes
+
+  // --- Checkout forçado pela agência ---
+  await req('POST', `/jobs/${jobB.id}/accept`, { token: freeT })
+  const forceNoReason = await req('POST', `/jobs/${jobB.id}/force-checkout`, { token: agencyT, body: {} })
+  ok(forceNoReason.status === 400, 'checkout forçado exige motivo')
+  const forceBeforeCheckin = await req('POST', `/jobs/${jobB.id}/force-checkout`, { token: agencyT, body: { reason: 'teste' } })
+  ok(forceBeforeCheckin.status === 400, 'checkout forçado só em vaga em andamento (ainda não fez check-in)', forceBeforeCheckin.data?.message)
+  await startShiftNow(jobB.id)
+  await req('POST', `/jobs/${jobB.id}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 10 } })
+  const forced = await req('POST', `/jobs/${jobB.id}/force-checkout`, { token: agencyT, body: { reason: 'app do colaborador travou' } })
+  ok(
+    forced.status === 200 && forced.data.status === 'completed',
+    'checkout forçado conclui a vaga sem exigir foto/geofence do colaborador',
+    forced.data
+  )
+  ok((forced.data.jobLogs ?? []).some((l) => l.eventType === 'forced-checkout'), 'log registra o evento forced-checkout')
+
+  // --- Trocar colaborador com trabalho parcial já feito (2 turnos, 1º concluído) ---
+  await req('POST', `/jobs/${jobC.id}/accept`, { token: freeT })
+  await startShiftNow(jobC.id)
+  await req('POST', `/jobs/${jobC.id}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 10 } })
+  await db.query(`UPDATE job_shifts SET check_in_at = check_in_at - interval '1 hour' WHERE job_id=$1 AND status='in_progress'`, [jobC.id])
+  const fdC = new FormData()
+  fdC.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg')
+  await fetch(`${BASE}/jobs/${jobC.id}/photos`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fdC })
+  const coC = await req('POST', `/jobs/${jobC.id}/logs/checkout`, { token: freeT, body: CENTRO })
+  ok(coC.status === 201 && coC.data.jobCompleted === false, '1º turno da vaga C encerrado, vaga segue em andamento (2º turno pendente)', coC.data)
+
+  const reassignC = await req('POST', `/jobs/${jobC.id}/reassign`, { token: agencyT, body: { freelancerId: free2Id, reason: '2º turno com outro colaborador' } })
+  ok(
+    reassignC.status === 200 && reassignC.data.freelancerId === free2Id && reassignC.data.status === 'accepted',
+    'reassign com trabalho parcial: vaga nova (restante) já sai atribuída ao novo colaborador',
+    reassignC.data
+  )
+  ok(reassignC.data.id !== jobC.id, 'reassign com trabalho parcial cria uma vaga nova pro restante (não reaproveita a original)')
+  const originalC = (await req('GET', `/jobs/${jobC.id}`, { token: agencyT })).data
+  ok(
+    originalC.status === 'canceled' && Number(originalC.workedMinutes) > 0,
+    'vaga original fecha como canceled com as horas do 1º turno liquidadas pro freelancer antigo',
+    originalC
+  )
+
+  section('Turnos personalizáveis (janela livre, cruza meia-noite, múltiplos turnos)')
+  // Turno contínuo 22:00 -> 06:00 (atravessa a meia-noite): 8h contratadas, fim no dia seguinte.
+  const nightOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [{ startTime: '22:00', endTime: '06:00', nominalPeriod: 'noite' }],
+      }],
+    },
+  })
+  ok(nightOrder.status === 201, 'pedido com turno que cruza a meia-noite aceito', nightOrder.data?.message)
+  const nightJob = nightOrder.data.orderJobs[0]
+  ok(Number(nightJob.contractedMinutes) === 480, 'turno 22:00–06:00 = 480 min contratados', nightJob.contractedMinutes)
+  ok(
+    new Date(nightJob.endTime).getTime() - new Date(nightJob.startTime).getTime() === 8 * 3600 * 1000,
+    'fim da vaga cai no dia seguinte (janela de 8h)',
+  )
+
+  const overlap = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [
+          { startTime: '10:00', endTime: '14:00' },
+          { startTime: '13:00', endTime: '16:00' },
+        ],
+      }],
+    },
+  })
+  ok(overlap.status === 400 && /sobrepor/.test(overlap.data?.message || ''), 'turnos que se sobrepõem são recusados', overlap.data?.message)
+
+  const gapOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [
+          { startTime: '10:00', endTime: '12:00' },
+          { startTime: '15:00', endTime: '18:00' },
+        ],
+      }],
+    },
+  })
+  ok(gapOrder.status === 201, 'pedido com 2 turnos e intervalo entre eles aceito')
+  const gapJob = gapOrder.data.orderJobs[0]
+  ok((gapJob.shifts?.length ?? 0) === 2 && Number(gapJob.contractedMinutes) === 300, '2 turnos, 5h contratadas (intervalo não conta)', gapJob.contractedMinutes)
+
+  section('Pausar / retomar o ponto (intervalo escolhido pelo colaborador)')
+  // Libera todas as vagas aceitas/em andamento do Pedro pra ele ficar livre nos testes a seguir.
+  for (const j of (await req('GET', '/jobs', { token: agencyT })).data
+    .filter((j) => j.freelancerId === free2Id && ['accepted', 'in_progress'].includes(j.status))) {
+    await req('POST', `/jobs/${j.id}/release`, { token: agencyT })
+  }
+
+  // Vaga com pausa habilitada por override no item do pedido.
+  const breakOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day, breaksEnabled: true,
+        shifts: [{ startTime: '13:00', endTime: '19:00', nominalPeriod: 'tarde' }],
+      }],
+    },
+  })
+  const breakJob = breakOrder.data.orderJobs[0]
+  await req('POST', `/jobs/${breakJob.id}/accept`, { token: free2T })
+  await startShiftNow(breakJob.id)
+  await req('POST', `/jobs/${breakJob.id}/logs/checkin`, { token: free2T, body: { ...CENTRO, accuracy: 10 } })
+  await db.query(`UPDATE job_shifts SET check_in_at = NOW() - interval '4 hours' WHERE job_id=$1 AND status='in_progress'`, [breakJob.id])
+
+  const brkStart = await req('POST', `/jobs/${breakJob.id}/logs/break-start`, { token: free2T, body: CENTRO })
+  ok(brkStart.status === 201, 'colaborador pausa o ponto', brkStart.data?.message)
+  const coDuringBreak = await req('POST', `/jobs/${breakJob.id}/logs/checkout`, { token: free2T, body: CENTRO })
+  ok(coDuringBreak.status === 400 && /pausa/.test(coDuringBreak.data?.message || ''), 'check-out recusado com pausa aberta', coDuringBreak.data?.message)
+  await db.query(`UPDATE job_shift_breaks SET start_at = NOW() - interval '30 minutes' WHERE job_id=$1 AND end_at IS NULL`, [breakJob.id])
+  const brkEnd = await req('POST', `/jobs/${breakJob.id}/logs/break-end`, { token: free2T, body: CENTRO })
+  ok(brkEnd.status === 201, 'colaborador retoma o ponto')
+
+  const fdBrk = new FormData()
+  fdBrk.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg')
+  await fetch(`${BASE}/jobs/${breakJob.id}/photos`, { method: 'POST', headers: { Authorization: `Bearer ${free2T}` }, body: fdBrk })
+  const coBrk = await req('POST', `/jobs/${breakJob.id}/logs/checkout`, { token: free2T, body: CENTRO })
+  ok(coBrk.status === 201, 'check-out depois de retomar', coBrk.data?.message)
+  const brkDone = (await req('GET', `/jobs/${breakJob.id}`, { token: free2T })).data
+  // ~4h de turno − 30 min de pausa ≈ 210 min
+  ok(Math.abs(Number(brkDone.workedMinutes) - 210) <= 3, 'minutos trabalhados descontam a pausa (~210)', brkDone.workedMinutes)
+
+  // Pausa desabilitada: recusada.
+  const noBreakOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day, shifts: [{ startTime: '08:00', endTime: '12:00' }] }] },
+  })
+  const noBreakJob = noBreakOrder.data.orderJobs[0]
+  await req('POST', `/jobs/${noBreakJob.id}/accept`, { token: free2T })
+  await startShiftNow(noBreakJob.id)
+  await req('POST', `/jobs/${noBreakJob.id}/logs/checkin`, { token: free2T, body: { ...CENTRO, accuracy: 10 } })
+  const brkDisabled = await req('POST', `/jobs/${noBreakJob.id}/logs/break-start`, { token: free2T, body: CENTRO })
+  ok(brkDisabled.status === 400 && /não está habilitada/.test(brkDisabled.data?.message || ''), 'pausa recusada quando não habilitada na vaga', brkDisabled.data?.message)
+  await req('POST', `/jobs/${noBreakJob.id}/force-checkout`, { token: agencyT, body: { reason: 'fim do teste' } })
+
+  section('Colaborador desiste da vaga em andamento (item 7)')
+  const quitOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [
+          { startTime: '08:00', endTime: '12:00' },
+          { startTime: '14:00', endTime: '18:00' },
+        ],
+      }],
+    },
+  })
+  const quitJob = quitOrder.data.orderJobs[0]
+  await req('POST', `/jobs/${quitJob.id}/accept`, { token: free2T })
+  await startShiftNow(quitJob.id)
+  await req('POST', `/jobs/${quitJob.id}/logs/checkin`, { token: free2T, body: { ...CENTRO, accuracy: 10 } })
+  await db.query(`UPDATE job_shifts SET check_in_at = NOW() - interval '2 hours' WHERE job_id=$1 AND status='in_progress'`, [quitJob.id])
+  const quitBefore = Number((await req('GET', `/freelancers/${free2Id}`, { token: free2T })).data.availableBalance)
+  const quit = await req('POST', `/jobs/${quitJob.id}/withdraw`, { token: free2T, body: { reason: 'emergência' } })
+  ok(quit.status === 200 && quit.data.status === 'canceled' && Math.abs(Number(quit.data.workedMinutes) - 120) <= 3, 'desistência em andamento fecha a vaga com as horas já feitas', quit.data?.workedMinutes)
+  const quitAfter = Number((await req('GET', `/freelancers/${free2Id}`, { token: free2T })).data.availableBalance)
+  ok(Math.abs((quitAfter - quitBefore) - 40) <= 1, 'colaborador que saiu recebe as ~2h trabalhadas (20/h -> +40)', quitAfter - quitBefore)
+  const restante = (await req('GET', '/jobs', { token: agencyT })).data
+    .find((j) => j.orderId === quitJob.orderId && j.status === 'pending' && /restante/i.test(j.title || ''))
+  ok(!!restante && (restante.shifts?.length ?? 0) >= 2, 'restante da vaga volta pro pool como vaga pendente', restante && { title: restante.title, shifts: restante.shifts?.length })
+  await req('POST', `/jobs/${restante.id}/accept`, { token: free2T })
+  ok(true, 'outro colaborador consegue aceitar o restante')
+  await req('POST', `/jobs/${restante.id}/release`, { token: agencyT }) // cleanup
+
+  section('Agência corrige horário e ponto da vaga')
+  // Remarca um turno ainda pendente de uma vaga aceita.
+  const schedOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day, shifts: [{ startTime: '14:00', endTime: '18:00' }] }] },
+  })
+  const schedJob = schedOrder.data.orderJobs[0]
+  await req('POST', `/jobs/${schedJob.id}/accept`, { token: free2T })
+  const schedShiftId = (await req('GET', `/jobs/${schedJob.id}`, { token: agencyT })).data.shifts[0].id
+  const newStart = new Date(`${day}T15:00:00-03:00`).toISOString()
+  const newEnd = new Date(`${day}T20:00:00-03:00`).toISOString()
+  const resched = await req('PUT', `/agency/jobs/${schedJob.id}/timesheet`, {
+    token: agencyT,
+    body: { reason: 'erro de lançamento', shifts: [{ shiftId: schedShiftId, startTime: newStart, endTime: newEnd }] },
+  })
+  ok(resched.status === 200 && Number(resched.data.contractedMinutes) === 300, 'agência remarca turno pendente (4h -> 5h)', resched.data?.contractedMinutes)
+  await req('POST', `/jobs/${schedJob.id}/release`, { token: agencyT }) // cleanup
+
+  // Corrige o ponto de uma vaga JÁ LIQUIDADA -> reajusta pagamento + carteiras.
+  const settledJob = brkDone // a vaga do teste de pausa, já concluída e liquidada
+  const payBefore = Number((await req('GET', `/freelancers/${free2Id}`, { token: free2T })).data.availableBalance)
+  const settledShift = (await req('GET', `/jobs/${settledJob.id}`, { token: agencyT })).data.shifts[0]
+  const laterCheckout = new Date(new Date(settledShift.checkOutAt).getTime() + 60 * 60 * 1000).toISOString()
+  const fix = await req('PUT', `/agency/jobs/${settledJob.id}/timesheet`, {
+    token: agencyT,
+    body: { reason: 'colaborador saiu 1h depois', shifts: [{ shiftId: settledShift.id, checkOutAt: laterCheckout }] },
+  })
+  ok(fix.status === 200 && Number(fix.data.workedMinutes) > Number(settledJob.workedMinutes), 'correção de ponto aumenta os minutos trabalhados', { was: settledJob.workedMinutes, now: fix.data?.workedMinutes })
+  const payAfter = Number((await req('GET', `/freelancers/${free2Id}`, { token: free2T })).data.availableBalance)
+  ok(payAfter > payBefore, 'carteira do colaborador é reajustada após a correção da vaga já paga', payAfter - payBefore)
+
   section('Fechamento mensal: por matriz e prévia por loja')
   const ref = yyyymm()
   await db.query(`UPDATE jobs SET completed_at = NOW() WHERE status='completed' AND supermarket_id=$1 AND monthly_invoice_id IS NULL`, [supermarketId])
@@ -271,9 +572,21 @@ async function main() {
   const prevLojaSul = (await req('GET', `/closings/preview?supermarketId=${supermarketId}&referenceMonth=${ref}&branchId=${branchSul.id}`, { token: agencyT })).data
   ok(prevLojaSul.totals.totalJobs === 0, 'prévia por loja (Zona Sul) vazia — vagas foram na Centro', prevLojaSul.totals?.totalJobs)
 
+  // Item 3: nome com acentos + caractere exótico não pode quebrar o PDF do fechamento.
+  await db.query(`UPDATE freelancers SET name = $1 WHERE id = $2`, ['João Conceição — Açaí 😀', free2Id])
+
   const close = await req('POST', '/closings', { token: agencyT, body: { supermarketId, referenceMonth: ref } })
   ok(close.status === 201 && close.data.type === 'monthly' && close.data.branchId == null, 'fechamento da matriz criado')
   ok(Number(close.data.totalAmount) > 0, 'fatura mensal com valor', close.data?.totalAmount)
+
+  const pdfRes = await fetch(`${BASE}/closings/${close.data.id}/pdf`, { headers: { Authorization: `Bearer ${agencyT}` } })
+  const pdfBuf = Buffer.from(await pdfRes.arrayBuffer())
+  ok(
+    pdfRes.ok && /pdf/i.test(pdfRes.headers.get('content-type') || '') && pdfBuf.length > 800 && pdfBuf.slice(0, 5).toString() === '%PDF-',
+    'PDF do fechamento gera mesmo com nome acentuado + emoji (pendência 3)',
+    { status: pdfRes.status, type: pdfRes.headers.get('content-type'), bytes: pdfBuf.length }
+  )
+  await db.query(`UPDATE freelancers SET name = 'Pedro Freelancer' WHERE id = $1`, [free2Id])
 
   section('Faturamento do supermercado (dados + filtros)')
   const billing = (await req('GET', '/billing/summary', { token: superT })).data
@@ -284,6 +597,9 @@ async function main() {
 
   const payInv = await req('POST', `/invoices/${close.data.id}/pay`, { token: superT })
   ok(payInv.status === 200 && payInv.data.status === 'paid', 'supermercado paga a fatura mensal')
+  // Item 11: rota de confirmação do pagamento via gateway (no-op quando já está paga).
+  const syncInv = await req('POST', `/invoices/${close.data.id}/sync-payment`, { token: superT })
+  ok(syncInv.status === 200 && syncInv.data.status === 'paid', 'rota de confirmação de pagamento da fatura responde', syncInv.data?.status)
 
   section('Relatório do freelancer')
   const report = (await req('GET', '/reports/freelancer', { token: freeT })).data
@@ -315,8 +631,113 @@ async function main() {
   ok(availOk.length > 0, 'onboarding aprovado: vagas voltam a aparecer', availOk.length)
   await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: false } })
 
+  section('Convites da agência (supermercado e freelancer)')
+  const inviteMarketRes = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'supermarket' } })
+  ok(inviteMarketRes.status === 201 && !!inviteMarketRes.data.token, 'convite de supermercado gerado')
+  const inviteMarketToken = inviteMarketRes.data.token
+  const previewMarket = await req('GET', `/invites/${inviteMarketToken}`)
+  ok(previewMarket.status === 200 && previewMarket.data.agencyName === 'Agência Prime', 'prévia pública do convite traz o nome da agência', previewMarket.data)
+  const regMarket = await req('POST', '/auth/register', {
+    body: {
+      name: 'Dono Mercado Convidado', email: `mercado-convite-${Date.now()}@email.com`, password: '123456',
+      inviteToken: inviteMarketToken,
+      profile: { companyName: 'Mercado Convidado', cnpj: `${Date.now()}`.slice(0, 14), address: 'Rua Convite, 1' },
+    },
+  })
+  ok(regMarket.status === 201 && regMarket.data.profile.agencyId === agencyId, 'supermercado cadastrado via convite já nasce vinculado à agência', regMarket.data)
+  const reuseMarket = await req('POST', '/auth/register', {
+    body: {
+      name: 'Outro', email: `outro-${Date.now()}@email.com`, password: '123456', inviteToken: inviteMarketToken,
+      profile: { companyName: 'X', cnpj: `${Date.now() + 1}`.slice(0, 14), address: 'Rua X' },
+    },
+  })
+  ok(reuseMarket.status === 400, 'convite de supermercado não pode ser reaproveitado', reuseMarket.data)
+  const openMarketReg = await req('POST', '/auth/register', {
+    body: { name: 'Sem convite', email: `semconvite-${Date.now()}@email.com`, password: '123456', role: 'supermarket',
+      profile: { companyName: 'X', cnpj: `${Date.now() + 2}`.slice(0, 14), address: 'Rua Y' } },
+  })
+  ok(openMarketReg.status === 400, 'autocadastro aberto de supermercado (sem convite) é recusado', openMarketReg.data)
+
+  const inviteFreeRes = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'freelancer' } })
+  const regFree = await req('POST', '/auth/register', {
+    body: {
+      name: 'Colaborador Convidado', email: `colab-convite-${Date.now()}@email.com`, password: '123456',
+      inviteToken: inviteFreeRes.data.token, profile: { document: '00011122233' },
+    },
+  })
+  ok(
+    regFree.status === 201 && regFree.data.profile.registrationStatus === 'approved' && regFree.data.profile.agencyId === agencyId,
+    'colaborador cadastrado via convite já nasce aprovado e vinculado à agência',
+    regFree.data
+  )
+  const inviteLeaderRes = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'leader' } })
+  ok(inviteLeaderRes.status === 400, 'convite de líder ainda é recusado (feature futura)', inviteLeaderRes.data)
+
+  section('Filial cadastrada pelo supermercado fica pendente até a agência aprovar')
+  const newBranch = await req('POST', '/branches', {
+    token: superT,
+    body: { name: 'Filial Nova', address: TEST_ADDRESS, latitude: CENTRO.latitude, longitude: CENTRO.longitude },
+  })
+  ok(newBranch.status === 201 && newBranch.data.serviceStatus === 'pending', 'filial criada pelo supermercado nasce pendente', newBranch.data.serviceStatus)
+  const countsPending = await req('GET', '/agency/pending-counts', { token: agencyT })
+  ok(countsPending.status === 200 && countsPending.data.branchesToApprove >= 1, 'filial pendente entra em pending-counts da agência', countsPending.data)
+  const blockedOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: newBranch.data.id, quantity: 1, shiftPeriod: 'manha', date: day }] },
+  })
+  ok(blockedOrder.status === 400 && /aprovada/i.test(blockedOrder.data?.message || ''), 'pedido bloqueado pra filial ainda não aprovada', blockedOrder.data?.message)
+  const approveBranch = await req('POST', `/branches/${newBranch.data.id}/approve`, { token: agencyT })
+  ok(approveBranch.status === 200 && approveBranch.data.serviceStatus === 'approved', 'agência aprova o atendimento da filial')
+  const countsAfter = await req('GET', '/agency/pending-counts', { token: agencyT })
+  ok(countsAfter.status === 200 && countsAfter.data.branchesToApprove === 0, 'pending-counts zera depois da aprovação', countsAfter.data)
+  // Precisa de valor/hora pra essa loja+função antes do pedido passar (mesma regra de sempre).
+  await req('POST', `/supermarkets/${supermarketId}/rates`, {
+    token: agencyT, body: { categoryId: catCaixa.id, branchId: newBranch.data.id, hourlyRate: 32 },
+  })
+  const unblockedOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: newBranch.data.id, quantity: 1, shiftPeriod: 'manha', date: day }] },
+  })
+  ok(unblockedOrder.status === 201, 'pedido passa a funcionar depois da aprovação', unblockedOrder.data)
+
+  section('Isolamento entre agências — sem pool aberto')
+  const otherAgencyEmail = `outra-agencia-${Date.now()}@email.com`
+  const otherAgencyReg = await req('POST', '/auth/register', {
+    body: {
+      name: 'Outra Agência', email: otherAgencyEmail, password: '123456', role: 'agency',
+      profile: { companyName: 'Agência Rival', cnpj: `${Date.now() + 3}`.slice(0, 14), address: 'Rua Rival, 1' },
+    },
+  })
+  const otherAgencyT = await login(otherAgencyEmail)
+  const otherAgencyId = otherAgencyReg.data.profile.id
+  const jobsForOtherAgency = (await req('GET', '/jobs', { token: otherAgencyT })).data
+  ok(Array.isArray(jobsForOtherAgency) && jobsForOtherAgency.length === 0, 'agência nova não vê nenhuma vaga da Agência Prime', jobsForOtherAgency.length)
+
+  const otherFreeEmail = `outro-free-${Date.now()}@email.com`
+  await req('PUT', '/agency/settings', { token: otherAgencyT, body: { allowSelfRegistration: true } })
+  const otherFreeReg = await req('POST', '/auth/register', {
+    body: {
+      name: 'Freelancer Rival', email: otherFreeEmail, password: '123456', role: 'freelancer',
+      profile: { agencyId: otherAgencyId, document: '99988877766' },
+    },
+  })
+  ok(otherFreeReg.status === 201, 'freelancer da agência rival cadastrado')
+  await db.query(`UPDATE freelancers SET registration_status = 'approved' WHERE email = $1`, [otherFreeEmail])
+  await db.query(
+    `INSERT INTO freelancer_categories (id, freelancer_id, category_id, hourly_rate, created_at, updated_at)
+     VALUES ($1, (SELECT id FROM freelancers WHERE email = $2), $3, 20, NOW(), NOW())`,
+    [crypto.randomUUID(), otherFreeEmail, catCaixa.id]
+  )
+  const otherFreeT = await login(otherFreeEmail)
+  const availOtherAgency = (await req('GET', '/jobs/available', { token: otherFreeT })).data
+  ok(
+    Array.isArray(availOtherAgency) && availOtherAgency.length === 0,
+    'freelancer da agência rival não vê vagas do Mercado Central (cliente de outra agência)',
+    availOtherAgency.length
+  )
+
   section('Geocodificação (tolerante a rede)')
-  const geo = await req('POST', '/branches/geocode', { token: superT, body: { address: 'Avenida Paulista, 1578, São Paulo' } })
+  const geo = await req('POST', '/branches/geocode', { token: superT, body: { address: TEST_ADDRESS } })
   ok(geo.status === 200 || geo.status === 400, `geocode respondeu (${geo.status})`, geo.status === 200 ? { lat: geo.data.latitude } : geo.data?.message)
 
   console.log(`\n----------\n${pass} passaram, ${fail} falharam`)
