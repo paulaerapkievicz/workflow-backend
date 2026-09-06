@@ -34,6 +34,7 @@ export const agencyService = {
       cancellationWindowMinutes: a.cancellationWindowMinutes,
       requireCheckoutPhoto: a.requireCheckoutPhoto,
       reviewEnabled: a.reviewEnabled,
+      breaksEnabled: a.breaksEnabled,
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
@@ -47,6 +48,7 @@ export const agencyService = {
       cancellationWindowMinutes: number
       requireCheckoutPhoto: boolean
       reviewEnabled: boolean
+      breaksEnabled: boolean
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
@@ -68,6 +70,7 @@ export const agencyService = {
     }
     if (data.requireCheckoutPhoto != null) patch.requireCheckoutPhoto = data.requireCheckoutPhoto === true
     if (data.reviewEnabled != null) patch.reviewEnabled = data.reviewEnabled === true
+    if (data.breaksEnabled != null) patch.breaksEnabled = data.breaksEnabled === true
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true
     if (data.allowSelfRegistration != null) patch.allowSelfRegistration = data.allowSelfRegistration === true
     if (data.uniformPrice != null) {

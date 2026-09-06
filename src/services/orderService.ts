@@ -4,11 +4,13 @@ import { Order } from '../models/Order'
 import { OrderItem, OrderItemShiftTemplate } from '../models/OrderItem'
 import { Job } from '../models/Job'
 import { JobShift } from '../models/JobShift'
+import { JobShiftBreak } from '../models/JobShiftBreak'
 import { JobLog } from '../models/JobLog'
 import { Branch } from '../models/Branch'
 import { Category } from '../models/Category'
 import { Supermarket } from '../models/Supermarket'
 import { Freelancer } from '../models/Freelancer'
+import { SupermarketCategoryRate } from '../models/SupermarketCategoryRate'
 import { minutesBetween } from '../helpers/time'
 import { resolveShifts, ResolvedShift, ShiftPeriod } from '../helpers/shifts'
 import { UserInstance } from '../models/User'
@@ -32,7 +34,7 @@ const orderIncludes = [
     model: Job,
     as: 'orderJobs',
     include: [
-      { model: JobShift, as: 'shifts' },
+      { model: JobShift, as: 'shifts', include: [{ model: JobShiftBreak, as: 'breaks' }] },
       { model: Category, as: 'jobCategory' },
       { model: Freelancer, as: 'assignedFreelancer' },
       { model: JobLog, as: 'jobLogs' },
@@ -47,19 +49,28 @@ interface NormalizedItem {
   branchName: string
   title: string
   quantity: number
-  /** Turno principal (primeiro do dia) — mantido para compatibilidade / filtros. */
+  /** Período nominal do primeiro turno — mantido para compatibilidade / filtros. */
   shiftPeriod: ShiftPeriod
   /** Um ou mais turnos da vaga, já resolvidos e ordenados por horário. */
   shifts: ResolvedShift[]
   /** Início do primeiro turno e fim do último — janela total da vaga. */
   startTime: Date
   endTime: Date
+  /** Override por vaga do recurso de pausa/intervalo — null = usa o padrão da agência. */
+  breaksEnabled: boolean | null
 }
 
 /** Aceita o formato novo (`shifts: [...]`) e o legado (`shiftPeriod`/`startTime`/`endTime`). */
 function rawShiftsOf(item: any) {
   if (Array.isArray(item?.shifts) && item.shifts.length) return item.shifts
   return [{ shiftPeriod: item?.shiftPeriod, startTime: item?.startTime, endTime: item?.endTime }]
+}
+
+/** Normaliza um booleano opcional de override: true/false explícito, ou null (usa o padrão). */
+function optionalBool(v: unknown): boolean | null {
+  if (v === true || v === 'true') return true
+  if (v === false || v === 'false') return false
+  return null
 }
 
 async function normalizeItems(rawItems: any[], supermarketId: string): Promise<NormalizedItem[]> {
@@ -73,6 +84,17 @@ async function normalizeItems(rawItems: any[], supermarketId: string): Promise<N
   const branches = await Branch.findAll({ where: { id: { [Op.in]: branchIds } } })
   const branchById = new Map(branches.map((b) => [b.id, b]))
 
+  // Só é possível lançar vaga para uma função que a agência já precificou para este
+  // supermercado (valor/hora específico da loja ou padrão da rede) — senão a vaga nunca
+  // apareceria para nenhum freelancer (ver jobService.availableForFreelancer).
+  const rates = await SupermarketCategoryRate.findAll({
+    where: { supermarketId, active: true, categoryId: { [Op.in]: categoryIds } },
+  })
+  const defaultPriced = new Set(rates.filter((r) => !r.branchId).map((r) => r.categoryId))
+  const branchPriced = new Set(rates.filter((r) => r.branchId).map((r) => `${r.categoryId}|${r.branchId}`))
+  const isPriced = (categoryId: string, branchId: string) =>
+    branchPriced.has(`${categoryId}|${branchId}`) || defaultPriced.has(categoryId)
+
   return rawItems.map((it, idx) => {
     const ctx = `Item ${idx + 1}`
     const category = catById.get(it?.categoryId)
@@ -80,7 +102,13 @@ async function normalizeItems(rawItems: any[], supermarketId: string): Promise<N
     const branch = branchById.get(it?.branchId)
     if (!branch) throw new Error(`${ctx}: informe a filial da vaga.`)
     if (branch.supermarketId !== supermarketId) throw new Error(`${ctx}: filial inválida para o seu supermercado.`)
+    if (branch.serviceStatus !== 'approved') throw new Error(`${ctx}: esta filial ainda não foi aprovada pela agência para receber pedidos.`)
     if (!it?.date) throw new Error(`${ctx}: informe a data.`)
+    if (!isPriced(category.id, branch.id)) {
+      throw new Error(
+        `${ctx}: a função "${category.name}" ainda não tem valor/hora configurado para esta loja. Peça para a agência configurar em Supermercados → "Valores/hora" antes de lançar vagas para essa função — sem isso a vaga não aparece para nenhum freelancer.`
+      )
+    }
 
     const quantity = Math.trunc(Number(it.quantity) || 0)
     if (quantity < 1) throw new Error(`${ctx}: a quantidade precisa ser ao menos 1.`)
@@ -107,6 +135,7 @@ async function normalizeItems(rawItems: any[], supermarketId: string): Promise<N
       shifts,
       startTime: shifts[0].startTime,
       endTime: shifts[shifts.length - 1].endTime,
+      breaksEnabled: optionalBool(it?.breaksEnabled),
     }
   })
 }
@@ -129,6 +158,7 @@ async function createJobsForItems(
         shiftPeriod: item.shiftPeriod,
         shifts: item.shifts.map((s) => ({
           shiftPeriod: s.shiftPeriod,
+          nominalPeriod: s.shiftPeriod,
           startTime: s.startTime.toISOString(),
           endTime: s.endTime.toISOString(),
           label: s.label,
@@ -157,13 +187,21 @@ async function createJobsForItems(
           startTime: item.startTime,
           endTime: item.endTime,
           contractedMinutes,
+          breaksEnabled: item.breaksEnabled,
         },
         { transaction: t }
       )
       for (let position = 0; position < item.shifts.length; position++) {
         const s = item.shifts[position]
         await JobShift.create(
-          { jobId: job.id, position, startTime: s.startTime, endTime: s.endTime, label: s.label },
+          {
+            jobId: job.id,
+            position,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            label: s.label,
+            nominalPeriod: s.shiftPeriod,
+          },
           { transaction: t }
         )
       }

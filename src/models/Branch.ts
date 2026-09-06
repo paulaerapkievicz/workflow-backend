@@ -14,6 +14,9 @@ export interface Branch {
   longitude?: number | null
   geocodedAt?: Date | null
   geocodeQuery?: string | null
+  serviceStatus: 'approved' | 'pending'
+  approvedAt?: Date | null
+  approvedBy?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -21,7 +24,17 @@ export interface Branch {
 export interface BranchCreationAttributes
   extends Optional<
     Branch,
-    'id' | 'phone' | 'latitude' | 'longitude' | 'geocodedAt' | 'geocodeQuery' | 'createdAt' | 'updatedAt'
+    | 'id'
+    | 'phone'
+    | 'latitude'
+    | 'longitude'
+    | 'geocodedAt'
+    | 'geocodeQuery'
+    | 'serviceStatus'
+    | 'approvedAt'
+    | 'approvedBy'
+    | 'createdAt'
+    | 'updatedAt'
   > {}
 
 export interface BranchInstance extends Model<Branch, BranchCreationAttributes>, Branch {}
@@ -69,6 +82,26 @@ export const Branch = sequelize.define<BranchInstance, Branch>('Branch', {
   geocodeQuery: {
     type: DataTypes.STRING,
     allowNull: true
+  },
+  serviceStatus: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'approved',
+    validate: { isIn: [['approved', 'pending']] }
+  },
+  approvedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  approvedBy: {
+    type: DataTypes.UUID,
+    allowNull: true,
+    references: {
+      model: 'users',
+      key: 'id'
+    },
+    onUpdate: 'CASCADE',
+    onDelete: 'SET NULL'
   },
   createdAt: {
     allowNull: false,

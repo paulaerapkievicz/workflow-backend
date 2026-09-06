@@ -11,6 +11,7 @@ import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
 import { jwtService } from '../services/jwtService'
 import { profileService } from '../services/profileService'
+import { inviteService } from '../services/inviteService'
 import { AuthRequest, Role } from '../middlewares/auth'
 
 /** Serializa o perfil e anexa contexto extra por papel (permissões do supermercado, onboarding do colaborador). */
@@ -64,14 +65,32 @@ function publicUser(user: User) {
 export const authController = {
   // POST /auth/register
   async register(req: Request, res: Response) {
-    const { name, email, password, phone, role } = req.body ?? {}
+    const { name, email, password, phone, inviteToken } = req.body ?? {}
+    let { role } = req.body ?? {}
     const profile = req.body?.profile ?? {}
+
+    // Um convite manda no papel do cadastro — ignora o que veio do cliente, pra um
+    // `role` adulterado não furar a intenção do convite gerado pela agência.
+    let invite: import('../models/Invite').InviteInstance | null = null
+    if (inviteToken) {
+      try {
+        invite = await inviteService.findActiveByToken(inviteToken)
+      } catch (err) {
+        return res.status(400).json({ message: err instanceof Error ? err.message : 'Convite inválido.' })
+      }
+      role = invite.role
+    }
 
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: 'Informe nome, e-mail, senha e perfil.' })
     }
     if (!VALID_ROLES.includes(role) || role === 'admin') {
       return res.status(400).json({ message: 'Perfil inválido para cadastro.' })
+    }
+    // Supermercado não tem mais autocadastro aberto — precisa ser convidado por uma agência,
+    // porque todo supermercado nasce vinculado a exatamente uma agência (Supermarket.agencyId).
+    if (role === 'supermarket' && !invite) {
+      return res.status(400).json({ message: 'Cadastro de supermercado requer um convite da agência.' })
     }
 
     const exists = await User.findOne({ where: { email } })
@@ -91,8 +110,17 @@ export const authController = {
         let createdProfile: any = null
 
         if (role === 'supermarket') {
+          // `invite` está garantido pela checagem acima.
           createdProfile = await Supermarket.create(
-            { ownerId: user.id, name: profile.companyName, cnpj: profile.cnpj, address: profile.address, phone: phone ?? undefined },
+            {
+              ownerId: user.id,
+              agencyId: invite!.agencyId,
+              name: profile.companyName,
+              legalName: profile.legalName ?? undefined,
+              cnpj: profile.cnpj,
+              address: profile.address,
+              phone: phone ?? undefined,
+            },
             { transaction: t }
           )
           await SupermarketMember.create(
@@ -114,15 +142,22 @@ export const authController = {
           )
           await Commission.create({ agencyId: createdProfile.id, percentage: pct }, { transaction: t })
         } else if (role === 'freelancer') {
-          // Autocadastro só é permitido se a agência escolhida abriu essa porta.
-          const agencyId = profile.agencyId ?? null
-          if (!agencyId) {
-            throw new Error('Selecione a agência para se cadastrar.')
-          }
-          const agency = await Agency.findByPk(agencyId, { transaction: t })
-          if (!agency) throw new Error('Agência não encontrada.')
-          if (!agency.allowSelfRegistration) {
-            throw new Error('Esta agência não está aceitando novos cadastros. Peça um convite à agência.')
+          let agencyId: string
+          if (invite) {
+            // Convite direcionado: a agência já vetou esse colaborador ao gerar o link.
+            agencyId = invite.agencyId
+          } else {
+            // Autocadastro aberto — só permitido se a agência escolhida abriu essa porta,
+            // e fica pendente até a agência aprovar manualmente.
+            agencyId = profile.agencyId ?? null
+            if (!agencyId) {
+              throw new Error('Selecione a agência para se cadastrar.')
+            }
+            const agency = await Agency.findByPk(agencyId, { transaction: t })
+            if (!agency) throw new Error('Agência não encontrada.')
+            if (!agency.allowSelfRegistration) {
+              throw new Error('Esta agência não está aceitando novos cadastros. Peça um convite à agência.')
+            }
           }
           createdProfile = await Freelancer.create(
             {
@@ -133,10 +168,14 @@ export const authController = {
               phone: phone ?? undefined,
               document: profile.document ?? undefined,
               skills: profile.skills ?? undefined,
-              registrationStatus: 'pending',
+              registrationStatus: invite ? 'approved' : 'pending',
             },
             { transaction: t }
           )
+        }
+
+        if (invite) {
+          await inviteService.markUsed(invite, t)
         }
 
         return { user, profile: createdProfile }

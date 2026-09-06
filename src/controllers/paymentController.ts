@@ -75,6 +75,17 @@ export const paymentController = {
     }
   },
 
+  // POST /invoices/:id/sync-payment (supermarket) — confirma o pagamento consultando o gateway
+  async invoiceSyncPayment(req: AuthRequest, res: Response) {
+    try {
+      const supermarketId = await profileService.supermarketIdForUser(req.user!)
+      if (!supermarketId) return res.status(403).json({ message: 'Supermercado não encontrado.' })
+      return res.json(await paymentService.syncInvoicePayment(req.params.id, supermarketId))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // PUT /payments/:id/cancel (admin)
   async cancel(req: AuthRequest, res: Response) {
     try {

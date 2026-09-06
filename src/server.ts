@@ -72,3 +72,4 @@ import('./adminjs')
     console.log(`🎛️ AdminJS mounted at ${adminJs.options.rootPath}`);
   })
   .catch(err => console.error('❌ Falha ao montar o AdminJS:', err));
+

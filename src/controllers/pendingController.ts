@@ -6,6 +6,8 @@ import { Order } from '../models/Order'
 import { Freelancer } from '../models/Freelancer'
 import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
+import { Supermarket } from '../models/Supermarket'
+import { Branch } from '../models/Branch'
 
 export const pendingController = {
   // GET /supermarket/pending-counts
@@ -33,10 +35,23 @@ export const pendingController = {
         where: { agencyId, registrationStatus: 'pending' },
       })
 
+      // Filiais que os supermercados-clientes cadastraram e ainda aguardam a agência aprovar o atendimento.
+      const clientMarkets = await Supermarket.findAll({ where: { agencyId }, attributes: ['id'] })
+      const marketIds = clientMarkets.map((m) => m.id)
+      const branchesToApprove = marketIds.length
+        ? await Branch.count({ where: { supermarketId: marketIds, serviceStatus: 'pending' } })
+        : 0
+
       const freelancers = await Freelancer.findAll({ where: { agencyId }, attributes: ['id'] })
       const ids = freelancers.map((f) => f.id)
       if (!ids.length) {
-        return res.json({ uniformsToShip: 0, selfiesToReview: 0, contractsPending: 0, registrationsToApprove })
+        return res.json({
+          uniformsToShip: 0,
+          selfiesToReview: 0,
+          contractsPending: 0,
+          registrationsToApprove,
+          branchesToApprove,
+        })
       }
 
       const [uniformsToShip, selfiesToReview, contractsDone] = await Promise.all([
@@ -49,6 +64,7 @@ export const pendingController = {
         selfiesToReview,
         contractsPending: Math.max(0, ids.length - contractsDone),
         registrationsToApprove,
+        branchesToApprove,
       })
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' })

@@ -48,19 +48,50 @@ export const freelancerController = {
     }
   },
 
-  async index(req: Request, res: Response) {
+  // POST /freelancer/profile-photo (multipart, campo "photo") — o próprio colaborador envia a foto de perfil
+  async uploadProfilePhoto(req: AuthRequest, res: Response) {
     try {
-      const freelancers = await freelancerService.getAllFreelancers();
-      return res.json(freelancers);
+      const freelancer = await profileService.freelancerForUser(req.user!);
+      if (!freelancer) return res.status(400).json({ message: 'Perfil de colaborador não encontrado.' });
+      if (!req.file) return res.status(400).json({ message: 'Envie a foto de perfil.' });
+      const updated = await freelancerService.setProfilePhoto(freelancer.id, `/uploads/${req.file.filename}`);
+      return res.json(updated);
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao enviar foto de perfil.' });
+    }
+  },
+
+  // GET /freelancers — admin vê todos; agência vê só os da própria rede.
+  async index(req: AuthRequest, res: Response) {
+    try {
+      if (req.user!.role === 'admin') {
+        return res.json(await freelancerService.getAllFreelancers());
+      }
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+      return res.json(await freelancerService.getFreelancersForAgency(agencyId));
     } catch (err) {
       return res.status(500).json({ message: 'Erro ao listar freelancers.' });
     }
   },
 
-  async show(req: Request, res: Response) {
+  // GET /freelancers/:id — admin vê qualquer um; agência só os da própria rede; freelancer só o próprio.
+  async show(req: AuthRequest, res: Response) {
     try {
       const freelancer = await freelancerService.getFreelancerById(req.params.id);
       if (!freelancer) return res.status(404).json({ message: 'Freelancer não encontrado.' });
+
+      if (req.user!.role === 'agency') {
+        const agencyId = await profileService.agencyIdForUser(req.user!);
+        if (!agencyId || freelancer.agencyId !== agencyId) {
+          return res.status(403).json({ message: 'Este colaborador não pertence à sua agência.' });
+        }
+      } else if (req.user!.role === 'freelancer') {
+        const own = await profileService.freelancerForUser(req.user!);
+        if (!own || own.id !== freelancer.id) {
+          return res.status(403).json({ message: 'Você só pode ver o seu próprio perfil.' });
+        }
+      }
 
       return res.json(freelancer);
     } catch (err) {

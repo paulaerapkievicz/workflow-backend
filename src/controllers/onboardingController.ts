@@ -3,6 +3,7 @@ import { AuthRequest } from '../middlewares/auth'
 import { profileService } from '../services/profileService'
 import { freelancerContractService } from '../services/freelancerContractService'
 import { uniformService } from '../services/uniformService'
+import { paymentService } from '../services/paymentService'
 
 function fail(res: Response, err: unknown, code = 400) {
   return res.status(code).json({ message: err instanceof Error ? err.message : 'Erro inesperado.' })
@@ -130,10 +131,17 @@ export const onboardingController = {
 
   // POST /payments/mercadopago/webhook  (público)
   async mercadoPagoWebhook(req: AuthRequest, res: Response) {
+    const body = req.body ?? {}
+    // Um webhook só, vários domínios — cada handler ignora o que não é dele (pelo external_reference).
     try {
-      await uniformService.handleWebhook(req.body ?? {})
+      await uniformService.handleWebhook(body)
     } catch (err) {
-      console.error('[mercadopago webhook]', err)
+      console.error('[mercadopago webhook] uniform', err)
+    }
+    try {
+      await paymentService.handleInvoiceWebhook(body)
+    } catch (err) {
+      console.error('[mercadopago webhook] invoice', err)
     }
     return res.status(200).json({ received: true })
   },

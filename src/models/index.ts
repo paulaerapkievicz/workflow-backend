@@ -16,12 +16,14 @@ import { FreelancerLocation } from './FreelancerLocation';
 import { JobPhoto } from './JobPhoto'
 import { Withdrawal } from './Withdrawal'
 import { JobShift } from './JobShift'
+import { JobShiftBreak } from './JobShiftBreak'
 import { SupermarketCategoryRate } from './SupermarketCategoryRate'
 import { Order } from './Order'
 import { OrderItem } from './OrderItem'
 import { SupermarketMember } from './SupermarketMember'
 import { FreelancerContract } from './FreelancerContract'
 import { UniformOrder } from './UniformOrder'
+import { Invite } from './Invite'
 
 // Definição de relacionamentos
 User.hasOne(Supermarket, { foreignKey: 'ownerId', as: 'ownedSupermarket' })
@@ -42,6 +44,8 @@ Branch.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'parentSupermar
 Branch.hasMany(Job, { foreignKey: 'branchId', as: 'branchJobs' })
 
 Agency.hasMany(Freelancer, { foreignKey: 'agencyId', as: 'agencyFreelancers' })
+Agency.hasMany(Supermarket, { foreignKey: 'agencyId', as: 'agencySupermarkets' })
+Agency.hasMany(Invite, { foreignKey: 'agencyId', as: 'agencyInvites' })
 
 Freelancer.belongsTo(Agency, { foreignKey: 'agencyId', as: 'affiliatedAgency' })
 Freelancer.belongsTo(User, { foreignKey: 'userId', as: 'freelancerUser' })
@@ -80,6 +84,13 @@ Invoice.belongsTo(Payment, { foreignKey: 'paymentId', as: 'invoicePayment' })
 
 Job.hasMany(JobShift, { foreignKey: 'jobId', as: 'shifts' })
 JobShift.belongsTo(Job, { foreignKey: 'jobId', as: 'shiftJob' })
+
+// Pausas/intervalos dentro de um turno
+JobShift.hasMany(JobShiftBreak, { foreignKey: 'jobShiftId', as: 'breaks' })
+JobShiftBreak.belongsTo(JobShift, { foreignKey: 'jobShiftId', as: 'breakShift' })
+Job.hasMany(JobShiftBreak, { foreignKey: 'jobId', as: 'jobBreaks' })
+JobShiftBreak.belongsTo(Job, { foreignKey: 'jobId', as: 'breakJob' })
+JobShiftBreak.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'breakFreelancer' })
 
 // Pedidos (carrinho) -> vagas
 Order.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'orderSupermarket' })
@@ -140,10 +151,12 @@ export {
   JobPhoto,
   Withdrawal,
   JobShift,
+  JobShiftBreak,
   SupermarketCategoryRate,
   Order,
   OrderItem,
   SupermarketMember,
   FreelancerContract,
   UniformOrder,
+  Invite,
 }

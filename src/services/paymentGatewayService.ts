@@ -23,33 +23,49 @@ function client() {
 
 export const paymentGatewayService = {
   get configured() {
-    return !!process.env.MP_ACCESS_TOKEN
+    // Nos testes automatizados não chamamos o Mercado Pago de verdade — os fluxos de
+    // pagamento caem no caminho de baixa manual (mesma abordagem do uniforme na suíte).
+    return !!process.env.MP_ACCESS_TOKEN && process.env.NODE_ENV !== 'test'
   },
 
-  /** Cria uma preferência de checkout (Checkout Pro) para o kit uniforme. */
-  async createUniformCheckout(params: { uniformOrderId: string; amount: number; buyerEmail?: string }) {
+  /**
+   * Cria uma preferência de checkout (Checkout Pro) genérica.
+   * `reference` vira o `external_reference` do pagamento — use um prefixo por domínio
+   * (`uniform:`, `invoice:`) pra o webhook saber a quem confirmar.
+   * `returnPath` é a rota do front pra onde o usuário volta depois de pagar.
+   */
+  async createCheckout(params: {
+    reference: string
+    title: string
+    amount: number
+    buyerEmail?: string
+    returnPath: string
+    returnKey?: string
+  }) {
     const pref = new Preference(client())
-    const back = `${FRONTEND_BASE_URL}/freelancer/onboarding`
+    const frontendBaseUrl = FRONTEND_BASE_URL.split(',')[0].trim()
+    const back = `${frontendBaseUrl}${params.returnPath}`
+    const key = params.returnKey ?? 'pagamento'
     const webhookPublic = isPublicUrl(APP_BASE_URL)
-    const backPublic = isPublicUrl(FRONTEND_BASE_URL)
+    const backPublic = isPublicUrl(frontendBaseUrl)
     const res = await pref.create({
       body: {
         items: [
           {
-            id: params.uniformOrderId,
-            title: 'Kit uniforme',
+            id: params.reference,
+            title: params.title,
             quantity: 1,
             unit_price: Number(params.amount),
             currency_id: 'BRL',
           },
         ],
         payer: params.buyerEmail ? { email: params.buyerEmail } : undefined,
-        external_reference: params.uniformOrderId,
+        external_reference: params.reference,
         // O redirect de volta funciona no navegador do usuário mesmo em localhost.
         back_urls: {
-          success: `${back}?uniform=success`,
-          failure: `${back}?uniform=failure`,
-          pending: `${back}?uniform=pending`,
+          success: `${back}?${key}=success`,
+          failure: `${back}?${key}=failure`,
+          pending: `${back}?${key}=pending`,
         },
         // `auto_return` e `notification_url` são validados pelo MP e exigem URL pública.
         ...(backPublic ? { auto_return: 'approved' as const } : {}),
@@ -62,6 +78,18 @@ export const paymentGatewayService = {
       preferenceId: res.id as string,
       checkoutUrl: (res.sandbox_init_point || res.init_point) as string,
     }
+  },
+
+  /** Cria uma preferência de checkout (Checkout Pro) para o kit uniforme. */
+  async createUniformCheckout(params: { uniformOrderId: string; amount: number; buyerEmail?: string }) {
+    return this.createCheckout({
+      reference: params.uniformOrderId,
+      title: 'Kit uniforme',
+      amount: params.amount,
+      buyerEmail: params.buyerEmail,
+      returnPath: '/freelancer/onboarding',
+      returnKey: 'uniform',
+    })
   },
 
   /** Consulta um pagamento pelo id (usado pelo webhook). */

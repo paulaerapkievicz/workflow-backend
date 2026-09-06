@@ -24,6 +24,10 @@ export const freelancerService = {
     return await Freelancer.findByPk(id);
   },
 
+  async getFreelancersForAgency(agencyId: string) {
+    return await Freelancer.findAll({ where: { agencyId } });
+  },
+
   async updateFreelancer(id: string, data: any) {
     const freelancer = await Freelancer.findByPk(id);
     if (!freelancer) return null;
@@ -34,6 +38,13 @@ export const freelancerService = {
       if (data[field] !== undefined) patch[field] = data[field];
     }
     return await freelancer.update(patch);
+  },
+
+  async setProfilePhoto(freelancerId: string, url: string) {
+    const freelancer = await Freelancer.findByPk(freelancerId);
+    if (!freelancer) throw new Error('Colaborador não encontrado.');
+    await freelancer.update({ profilePhotoUrl: url });
+    return freelancer;
   },
 
   async deleteFreelancer(id: string) {
@@ -48,11 +59,19 @@ export const freelancerService = {
     });
   },
 
-  /** Normaliza o valor/hora recebido (número > 0) ou retorna null. */
-  parseHourlyRate(value: unknown): number | null {
-    if (value == null || value === '') return null;
+  /**
+   * Normaliza o valor/hora recebido (número > 0). Sempre obrigatório: uma função sem
+   * valor/hora não pode ser salva — o colaborador não enxergaria vagas dessa função e
+   * ninguém seria avisado do cadastro incompleto.
+   */
+  parseHourlyRate(value: unknown): number {
+    if (value == null || value === '') {
+      throw new Error('Defina o valor/hora que o colaborador recebe nesta função antes de salvar.');
+    }
     const n = Number(value);
-    if (!Number.isFinite(n) || n <= 0) throw new Error('Informe um valor/hora válido para a função.');
+    if (!Number.isFinite(n) || n <= 0) {
+      throw new Error('Informe um valor/hora válido para a função (um número maior que zero).');
+    }
     return n;
   },
 
@@ -61,7 +80,7 @@ export const freelancerService = {
     const rate = this.parseHourlyRate(hourlyRate);
     const existing = await FreelancerCategory.findOne({ where: { freelancerId, categoryId } });
     if (existing) {
-      if (rate != null) await existing.update({ hourlyRate: rate });
+      await existing.update({ hourlyRate: rate });
       return existing;
     }
     return await FreelancerCategory.create({ freelancerId, categoryId, hourlyRate: rate });

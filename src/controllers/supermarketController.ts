@@ -10,9 +10,18 @@ import { SupermarketMember } from '../models/SupermarketMember';
 import { Branch } from '../models/Branch';
 import { AuthRequest } from '../middlewares/auth';
 
-/** Pode gerenciar a equipe: agência OU dono do supermercado. */
+/** A agência só gerencia/vê os supermercados que são clientes dela. */
+async function assertAgencyOwnsSupermarket(req: AuthRequest, supermarketId: string): Promise<boolean> {
+  if (req.user!.role === 'admin') return true;
+  const agencyId = await profileService.agencyIdForUser(req.user!);
+  if (!agencyId) return false;
+  const market = await Supermarket.findByPk(supermarketId);
+  return !!market && market.agencyId === agencyId;
+}
+
+/** Pode gerenciar a equipe: agência dona do supermercado OU dono do supermercado. */
 async function canManageTeam(req: AuthRequest, supermarketId: string): Promise<boolean> {
-  if (req.user!.role === 'agency') return true;
+  if (req.user!.role === 'agency') return assertAgencyOwnsSupermarket(req, supermarketId);
   const ctx = await profileService.supermarketContextForUser(req.user!);
   return !!ctx && ctx.supermarketId === supermarketId && ctx.isOwner;
 }
@@ -38,7 +47,7 @@ export const supermarketController = {
           { transaction: t }
         );
         const market = await Supermarket.create(
-          { ownerId: user.id, name, cnpj, address, phone: phone ?? undefined },
+          { ownerId: user.id, agencyId, name, cnpj, address, phone: phone ?? undefined },
           { transaction: t }
         );
         await SupermarketMember.create(
@@ -175,6 +184,8 @@ export const supermarketController = {
         if (!ctx || ctx.supermarketId !== req.params.id) {
           return res.status(403).json({ message: 'Sem permissão para ver estes valores.' });
         }
+      } else if (req.user!.role === 'agency' && !(await assertAgencyOwnsSupermarket(req, req.params.id))) {
+        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
       }
       return res.json(await supermarketRateService.listForSupermarket(req.params.id));
     } catch (error) {
@@ -185,6 +196,9 @@ export const supermarketController = {
   // POST /supermarkets/:id/rates — cria/atualiza um valor/hora (função + loja opcional)
   async saveRate(req: AuthRequest, res: Response) {
     try {
+      if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
+        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+      }
       return res.status(201).json(await supermarketRateService.upsert(req.params.id, req.body));
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao salvar valor.' });
@@ -194,6 +208,9 @@ export const supermarketController = {
   // PUT /supermarkets/:id/rates/:rateId — ajusta valor/hora ou situação
   async updateRate(req: AuthRequest, res: Response) {
     try {
+      if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
+        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+      }
       return res.json(await supermarketRateService.update(req.params.rateId, req.params.id, req.body));
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar valor.' });
@@ -203,6 +220,9 @@ export const supermarketController = {
   // DELETE /supermarkets/:id/rates/:rateId
   async removeRate(req: AuthRequest, res: Response) {
     try {
+      if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
+        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+      }
       return res.json(await supermarketRateService.remove(req.params.rateId, req.params.id));
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao remover valor.' });

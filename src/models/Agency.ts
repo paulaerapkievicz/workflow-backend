@@ -17,6 +17,7 @@ export interface Agency {
   cancellationWindowMinutes: number
   requireCheckoutPhoto: boolean
   reviewEnabled: boolean
+  breaksEnabled: boolean
   onboardingRequired: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
@@ -35,6 +36,7 @@ export interface AgencyCreationAttributes
     | 'cancellationWindowMinutes'
     | 'requireCheckoutPhoto'
     | 'reviewEnabled'
+    | 'breaksEnabled'
     | 'onboardingRequired'
     | 'uniformPrice'
     | 'allowSelfRegistration'
@@ -103,6 +105,11 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     defaultValue: true
   },
   reviewEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  breaksEnabled: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false

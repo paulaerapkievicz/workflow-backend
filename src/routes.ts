@@ -19,6 +19,7 @@ import { closingController } from './controllers/closingController';
 import { billingController } from './controllers/billingController';
 import { onboardingController } from './controllers/onboardingController';
 import { pendingController } from './controllers/pendingController';
+import { inviteController } from './controllers/inviteController';
 import { ensureAuth, authorize } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
@@ -32,6 +33,7 @@ router.post('/auth/login', authController.login);
 router.get('/categories', categoryController.index);
 router.get('/categories/:id', categoryController.show);
 router.get('/agencies', agencyController.index);
+router.get('/invites/:token', inviteController.show);
 
 // Webhook do Mercado Pago (chamado pelo provedor, sem token)
 router.post('/payments/mercadopago/webhook', onboardingController.mercadoPagoWebhook);
@@ -72,6 +74,7 @@ router.get('/branches/:id', branchController.show);
 router.post('/branches', authorize('supermarket', 'agency', 'admin'), branchController.create);
 router.put('/branches/:id', authorize('supermarket', 'agency', 'admin'), branchController.update);
 router.delete('/branches/:id', authorize('supermarket', 'agency', 'admin'), branchController.delete);
+router.post('/branches/:id/approve', authorize('agency'), branchController.approve);
 
 // ----- Agências -----
 router.get('/agencies/:id', agencyController.show);
@@ -80,12 +83,12 @@ router.put('/agencies/:id', authorize('agency', 'admin'), agencyController.updat
 router.delete('/agencies/:id', authorize('agency', 'admin'), agencyController.delete);
 
 // ----- Freelancers -----
-router.get('/freelancers', freelancerController.index);
+router.get('/freelancers', authorize('agency', 'admin'), freelancerController.index);
 router.post('/agency/freelancers', authorize('agency'), freelancerController.createForMyAgency);
 router.get('/agency/pending-freelancers', authorize('agency'), freelancerController.listPendingForMyAgency);
 router.post('/agency/freelancers/:id/approve', authorize('agency'), freelancerController.approveFreelancer);
 router.post('/agency/freelancers/:id/reject', authorize('agency'), freelancerController.rejectFreelancer);
-router.get('/freelancers/:id', freelancerController.show);
+router.get('/freelancers/:id', authorize('agency', 'freelancer', 'admin'), freelancerController.show);
 router.post('/freelancers', authorize('agency', 'admin'), freelancerController.create);
 router.put('/freelancers/:id', authorize('agency', 'freelancer', 'admin'), freelancerController.update);
 router.delete('/freelancers/:id', authorize('agency', 'admin'), freelancerController.delete);
@@ -102,6 +105,7 @@ router.delete('/categories/:id', authorize('admin'), categoryController.delete);
 // ----- Configurações da agência -----
 router.get('/agency/settings', authorize('agency'), agencyController.getSettings);
 router.put('/agency/settings', authorize('agency'), agencyController.updateSettings);
+router.post('/agency/invites', authorize('agency'), inviteController.create);
 
 // ----- Pedidos (carrinho de vagas do supermercado) -----
 router.get('/orders', authorize('supermarket', 'agency', 'admin'), orderController.index);
@@ -117,6 +121,7 @@ router.get('/closings', authorize('agency', 'supermarket'), closingController.in
 router.get('/closings/preview', authorize('agency'), closingController.preview);
 router.post('/closings', authorize('agency'), closingController.create);
 router.get('/closings/:id', authorize('agency', 'supermarket', 'admin'), closingController.show);
+router.get('/closings/:id/pdf', authorize('agency', 'supermarket', 'admin'), closingController.pdf);
 
 // ----- Faturamento e relatórios -----
 router.get('/billing/summary', authorize('supermarket'), billingController.summary);
@@ -130,6 +135,7 @@ router.post('/freelancer/uniform', authorize('freelancer'), onboardingController
 router.post('/freelancer/uniform/:id/sync', authorize('freelancer'), onboardingController.syncUniform);
 router.post('/freelancer/uniform/:id/received', authorize('freelancer'), onboardingController.confirmReceived);
 router.post('/freelancer/uniform/:id/selfie', authorize('freelancer'), upload.single('photo'), onboardingController.submitSelfie);
+router.post('/freelancer/profile-photo', authorize('freelancer'), upload.single('photo'), freelancerController.uploadProfilePhoto);
 router.get('/agency/uniforms', authorize('agency'), onboardingController.listForAgency);
 router.get('/agency/pending-counts', authorize('agency'), pendingController.agency);
 router.get('/supermarket/pending-counts', authorize('supermarket'), pendingController.supermarket);
@@ -141,6 +147,7 @@ router.get('/jobs', jobController.index);
 router.get('/jobs/available', authorize('freelancer'), jobController.available);
 router.get('/jobs/live', authorize('agency', 'supermarket'), jobController.live);
 router.get('/jobs/:id', jobController.show);
+router.get('/jobs/:id/freelancer-profile', authorize('supermarket'), jobController.freelancerProfile);
 router.post('/jobs', authorize('supermarket'), jobController.create);
 router.put('/jobs/:id', authorize('supermarket'), jobController.update);
 router.put('/agency/jobs/:id', authorize('agency'), jobController.updateByAgency);
@@ -152,6 +159,11 @@ router.post('/jobs/:id/release', authorize('agency'), jobController.release);
 router.get('/agency/pending-settlement', authorize('agency'), jobController.pendingSettlement);
 router.post('/jobs/:id/release-payment', authorize('agency'), jobController.releasePayment);
 router.post('/jobs/:id/no-show', authorize('agency'), jobController.noShow);
+router.post('/jobs/:id/force-checkout', authorize('agency'), jobController.forceCheckout);
+router.post('/jobs/:id/reassign', authorize('agency'), jobController.reassign);
+router.put('/agency/jobs/:id/timesheet', authorize('agency'), jobController.correctTimesheet);
+router.post('/agency/jobs/:id/break-start', authorize('agency'), jobController.breakStart);
+router.post('/agency/jobs/:id/break-end', authorize('agency'), jobController.breakEnd);
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
 router.get('/jobs/:id/review', reviewController.getByJob);
 
@@ -162,6 +174,8 @@ router.get('/freelancers/:id/logs', jobLogsController.findByFreelancer);
 router.get('/job_logs/status', jobLogsController.findByStatus);
 router.post('/jobs/:id/logs/checkin', authorize('freelancer'), jobLogsController.checkIn);
 router.post('/jobs/:id/logs/checkout', authorize('freelancer'), jobLogsController.checkOut);
+router.post('/jobs/:id/logs/break-start', authorize('freelancer'), jobLogsController.breakStart);
+router.post('/jobs/:id/logs/break-end', authorize('freelancer'), jobLogsController.breakEnd);
 
 // ----- Fotos de comprovação -----
 router.get('/jobs/:id/photos', jobPhotoController.listByJob);
@@ -180,6 +194,7 @@ router.put('/payments/:id/cancel', authorize('admin'), paymentController.cancel)
 // ----- Faturas (supermercado → agência) -----
 router.get('/invoices/mine', authorize('supermarket'), paymentController.myInvoices);
 router.post('/invoices/:id/pay', authorize('supermarket'), paymentController.invoicePay);
+router.post('/invoices/:id/sync-payment', authorize('supermarket'), paymentController.invoiceSyncPayment);
 router.get('/invoices', authorize('supermarket', 'admin'), invoiceController.index);
 router.get('/invoices/supermarket/:supermarketId', authorize('supermarket', 'admin'), invoiceController.getBySupermarket);
 router.get('/invoices/:id', authorize('supermarket', 'admin'), invoiceController.show);

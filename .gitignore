@@ -9,3 +9,7 @@ public/uploads/*
 
 # stray Next.js build artifacts
 .next
+
+# dev/test server logs (runtime)
+.devserver.log
+.testserver.log
