@@ -10,7 +10,10 @@ export const withdrawalController = {
   // POST /withdrawals (freelancer | agency)
   async create(req: AuthRequest, res: Response) {
     try {
-      const withdrawal = await withdrawalService.request(req.user!, Number(req.body.amount))
+      const withdrawal = await withdrawalService.request(req.user!, Number(req.body.amount), {
+        key: req.body?.pixKey,
+        keyType: req.body?.pixKeyType,
+      })
       return res.status(201).json(withdrawal)
     } catch (error) {
       return fail(res, error)
@@ -21,6 +24,15 @@ export const withdrawalController = {
   async mine(req: AuthRequest, res: Response) {
     try {
       return res.json(await withdrawalService.listForUser(req.user!))
+    } catch (error) {
+      return fail(res, error, 500)
+    }
+  },
+
+  // GET /withdrawals (admin) — lista pra baixa manual (com nome do beneficiário + chave Pix)
+  async index(req: AuthRequest, res: Response) {
+    try {
+      return res.json(await withdrawalService.listAll(typeof req.query.status === 'string' ? req.query.status : undefined))
     } catch (error) {
       return fail(res, error, 500)
     }

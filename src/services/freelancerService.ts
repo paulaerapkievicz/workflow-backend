@@ -1,8 +1,10 @@
+import { Op } from 'sequelize';
 import { sequelize } from '../database';
 import { Freelancer } from '../models/Freelancer';
 import { FreelancerCategory } from '../models/FreelancerCategory';
 import { Category } from '../models/Category';
 import { User } from '../models/User';
+import { AgencyActor } from '../helpers/agencyScope';
 
 export const freelancerService = {
   async createFreelancer(data: any) {
@@ -24,8 +26,10 @@ export const freelancerService = {
     return await Freelancer.findByPk(id);
   },
 
-  async getFreelancersForAgency(agencyId: string) {
-    return await Freelancer.findAll({ where: { agencyId } });
+  async getFreelancersForAgency(agencyId: string, actor?: AgencyActor | null) {
+    const where: any = { agencyId };
+    if (actor?.scopeFreelancerIds) where.id = { [Op.in]: actor.scopeFreelancerIds };
+    return await Freelancer.findAll({ where });
   },
 
   async updateFreelancer(id: string, data: any) {
@@ -109,11 +113,10 @@ export const freelancerService = {
   },
 
   // ----- Autocadastro: aprovação pela agência -----
-  async listPendingForAgency(agencyId: string) {
-    return Freelancer.findAll({
-      where: { agencyId, registrationStatus: 'pending' },
-      order: [['createdAt', 'DESC']],
-    });
+  async listPendingForAgency(agencyId: string, actor?: AgencyActor | null) {
+    const where: any = { agencyId, registrationStatus: 'pending' };
+    if (actor?.scopeFreelancerIds) where.id = { [Op.in]: actor.scopeFreelancerIds };
+    return Freelancer.findAll({ where, order: [['createdAt', 'DESC']] });
   },
 
   async approveRegistration(id: string, agencyId: string) {

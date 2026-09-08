@@ -2,7 +2,11 @@ import { Supermarket } from '../models/Supermarket'
 import { Agency } from '../models/Agency'
 import { Freelancer } from '../models/Freelancer'
 import { SupermarketMember } from '../models/SupermarketMember'
+import { AgencyMember } from '../models/AgencyMember'
+import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer'
+import { AgencyMemberBranch } from '../models/AgencyMemberBranch'
 import { UserInstance } from '../models/User'
+import { AgencyActor } from '../helpers/agencyScope'
 
 export interface SupermarketContext {
   supermarketId: string
@@ -37,9 +41,45 @@ export const profileService = {
           where: { userId: user.id },
           include: [{ model: Agency, as: 'affiliatedAgency' }],
         })
+      case 'leader':
+        return AgencyMember.findOne({
+          where: { userId: user.id },
+          include: [{ model: Agency, as: 'memberAgency' }],
+        })
       default:
         return null
     }
+  },
+
+  /**
+   * Contexto de atuação pela agência (dono ou líder). Devolve `null` quando o usuário não
+   * está ligado a nenhuma agência (ou o líder foi desativado).
+   */
+  async agencyContextForUser(user: Pick<UserInstance, 'id' | 'role'>): Promise<AgencyActor | null> {
+    if (user.role === 'agency') {
+      const a = await Agency.findOne({ where: { ownerId: user.id } })
+      return a
+        ? { agencyId: a.id, isOwner: true, memberId: null, scopeFreelancerIds: null, scopeBranchIds: null }
+        : null
+    }
+    if (user.role === 'leader') {
+      const m = await AgencyMember.findOne({ where: { userId: user.id, active: true } })
+      if (!m) return null
+      const [fr, br] = await Promise.all([
+        AgencyMemberFreelancer.findAll({ where: { agencyMemberId: m.id }, attributes: ['freelancerId'] }),
+        AgencyMemberBranch.findAll({ where: { agencyMemberId: m.id }, attributes: ['branchId'] }),
+      ])
+      const freelancerIds = fr.map((x) => x.freelancerId)
+      const branchIds = br.map((x) => x.branchId)
+      return {
+        agencyId: m.agencyId,
+        isOwner: false,
+        memberId: m.id,
+        scopeFreelancerIds: freelancerIds.length ? freelancerIds : null,
+        scopeBranchIds: branchIds.length ? branchIds : null,
+      }
+    }
+    return null
   },
 
   async supermarketIdForUser(user: Pick<UserInstance, 'id' | 'role'>) {
@@ -77,7 +117,13 @@ export const profileService = {
 
   async agencyIdForUser(user: Pick<UserInstance, 'id' | 'role'>) {
     const a = await Agency.findOne({ where: { ownerId: user.id } })
-    return a?.id ?? null
+    if (a) return a.id
+    // Líder resolve para a agência dele — rotas financeiras seguem barradas no authorize('agency').
+    if (user.role === 'leader') {
+      const m = await AgencyMember.findOne({ where: { userId: user.id, active: true } })
+      return m?.agencyId ?? null
+    }
+    return null
   },
 
   async freelancerForUser(user: Pick<UserInstance, 'id' | 'role'>) {

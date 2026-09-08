@@ -2,7 +2,7 @@ import { NextFunction, Request, Response } from 'express'
 import { jwtService } from '../services/jwtService'
 import { User, UserInstance } from '../models/User'
 
-export type Role = 'admin' | 'supermarket' | 'freelancer' | 'agency'
+export type Role = 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader'
 
 export interface AuthRequest extends Request {
   user?: UserInstance

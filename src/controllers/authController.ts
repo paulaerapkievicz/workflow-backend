@@ -7,6 +7,7 @@ import { Agency } from '../models/Agency'
 import { Freelancer } from '../models/Freelancer'
 import { Commission } from '../models/Commission'
 import { SupermarketMember } from '../models/SupermarketMember'
+import { AgencyMember } from '../models/AgencyMember'
 import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
 import { jwtService } from '../services/jwtService'
@@ -22,6 +23,20 @@ async function profileWithContext(user: { id: string; role: Role }) {
   if (user.role === 'supermarket') {
     const membership = await profileService.supermarketContextForUser(user)
     return { ...(profile as any).toJSON(), membership }
+  }
+
+  if (user.role === 'leader') {
+    const m = profile as any
+    return {
+      id: m.id,
+      role: 'leader',
+      agencyId: m.agencyId,
+      agencyName: m.memberAgency?.name ?? null,
+      active: m.active,
+      payType: m.payType ?? null,
+      payAmount: m.payAmount != null ? Number(m.payAmount) : null,
+      availableBalance: Number(m.availableBalance ?? 0),
+    }
   }
 
   if (user.role === 'freelancer') {
@@ -84,7 +99,11 @@ export const authController = {
     if (!name || !email || !password || !role) {
       return res.status(400).json({ message: 'Informe nome, e-mail, senha e perfil.' })
     }
-    if (!VALID_ROLES.includes(role) || role === 'admin') {
+    // 'leader' só é aceito quando vem de um convite de líder gerado pela agência.
+    if (role === 'leader' && !invite) {
+      return res.status(400).json({ message: 'Cadastro de líder requer um convite da agência.' })
+    }
+    if (role !== 'leader' && (!VALID_ROLES.includes(role) || role === 'admin')) {
       return res.status(400).json({ message: 'Perfil inválido para cadastro.' })
     }
     // Supermercado não tem mais autocadastro aberto — precisa ser convidado por uma agência,
@@ -169,6 +188,19 @@ export const authController = {
               document: profile.document ?? undefined,
               skills: profile.skills ?? undefined,
               registrationStatus: invite ? 'approved' : 'pending',
+            },
+            { transaction: t }
+          )
+        } else if (role === 'leader') {
+          // `invite` está garantido pela checagem acima. O pagamento vem do convite;
+          // o escopo é definido depois pelo dono na tela de Equipe.
+          createdProfile = await AgencyMember.create(
+            {
+              agencyId: invite!.agencyId,
+              userId: user.id,
+              active: true,
+              payType: invite!.payType ?? null,
+              payAmount: invite!.payAmount != null ? Number(invite!.payAmount) : null,
             },
             { transaction: t }
           )

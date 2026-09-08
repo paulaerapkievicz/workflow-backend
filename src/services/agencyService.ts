@@ -35,6 +35,7 @@ export const agencyService = {
       requireCheckoutPhoto: a.requireCheckoutPhoto,
       reviewEnabled: a.reviewEnabled,
       breaksEnabled: a.breaksEnabled,
+      breakLimitMinutes: a.breakLimitMinutes ?? null,
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
@@ -49,6 +50,7 @@ export const agencyService = {
       requireCheckoutPhoto: boolean
       reviewEnabled: boolean
       breaksEnabled: boolean
+      breakLimitMinutes: number | string | null
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
@@ -71,6 +73,17 @@ export const agencyService = {
     if (data.requireCheckoutPhoto != null) patch.requireCheckoutPhoto = data.requireCheckoutPhoto === true
     if (data.reviewEnabled != null) patch.reviewEnabled = data.reviewEnabled === true
     if (data.breaksEnabled != null) patch.breaksEnabled = data.breaksEnabled === true
+    if (data.breakLimitMinutes !== undefined) {
+      if (data.breakLimitMinutes == null || data.breakLimitMinutes === '') {
+        patch.breakLimitMinutes = null
+      } else {
+        const n = Math.trunc(Number(data.breakLimitMinutes))
+        if (!Number.isFinite(n) || n < 1 || n > 480) {
+          throw new Error('Limite de pausa por turno deve ficar entre 1 e 480 minutos (ou vazio para sem limite).')
+        }
+        patch.breakLimitMinutes = n
+      }
+    }
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true
     if (data.allowSelfRegistration != null) patch.allowSelfRegistration = data.allowSelfRegistration === true
     if (data.uniformPrice != null) {

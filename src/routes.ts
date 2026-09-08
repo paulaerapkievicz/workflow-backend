@@ -20,6 +20,7 @@ import { billingController } from './controllers/billingController';
 import { onboardingController } from './controllers/onboardingController';
 import { pendingController } from './controllers/pendingController';
 import { inviteController } from './controllers/inviteController';
+import { agencyMemberController } from './controllers/agencyMemberController';
 import { ensureAuth, authorize } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
@@ -83,34 +84,44 @@ router.put('/agencies/:id', authorize('agency', 'admin'), agencyController.updat
 router.delete('/agencies/:id', authorize('agency', 'admin'), agencyController.delete);
 
 // ----- Freelancers -----
-router.get('/freelancers', authorize('agency', 'admin'), freelancerController.index);
-router.post('/agency/freelancers', authorize('agency'), freelancerController.createForMyAgency);
-router.get('/agency/pending-freelancers', authorize('agency'), freelancerController.listPendingForMyAgency);
-router.post('/agency/freelancers/:id/approve', authorize('agency'), freelancerController.approveFreelancer);
-router.post('/agency/freelancers/:id/reject', authorize('agency'), freelancerController.rejectFreelancer);
-router.get('/freelancers/:id', authorize('agency', 'freelancer', 'admin'), freelancerController.show);
+router.get('/freelancers', authorize('agency', 'leader', 'admin'), freelancerController.index);
+router.post('/agency/freelancers', authorize('agency', 'leader'), freelancerController.createForMyAgency);
+router.get('/agency/pending-freelancers', authorize('agency', 'leader'), freelancerController.listPendingForMyAgency);
+router.post('/agency/freelancers/:id/approve', authorize('agency', 'leader'), freelancerController.approveFreelancer);
+router.post('/agency/freelancers/:id/reject', authorize('agency', 'leader'), freelancerController.rejectFreelancer);
+router.get('/freelancers/:id', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.show);
 router.post('/freelancers', authorize('agency', 'admin'), freelancerController.create);
-router.put('/freelancers/:id', authorize('agency', 'freelancer', 'admin'), freelancerController.update);
+router.put('/freelancers/:id', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.update);
 router.delete('/freelancers/:id', authorize('agency', 'admin'), freelancerController.delete);
 router.get('/freelancers/:id/categories', freelancerController.listCategories);
 router.get('/freelancers/:id/reviews', reviewController.getByFreelancerId);
-router.post('/freelancers/:id/categories', authorize('agency', 'freelancer', 'admin'), freelancerController.addCategory);
-router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'admin'), freelancerController.setCategoryRate);
-router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'freelancer', 'admin'), freelancerController.removeCategory);
+router.post('/freelancers/:id/categories', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.addCategory);
+router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'admin'), freelancerController.setCategoryRate);
+router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.removeCategory);
 
 // ----- Categorias (escrita: admin) -----
 router.post('/categories', authorize('admin'), categoryController.create);
 router.delete('/categories/:id', authorize('admin'), categoryController.delete);
 
 // ----- Configurações da agência -----
-router.get('/agency/settings', authorize('agency'), agencyController.getSettings);
+router.get('/agency/settings', authorize('agency', 'leader'), agencyController.getSettings);
 router.put('/agency/settings', authorize('agency'), agencyController.updateSettings);
-router.post('/agency/invites', authorize('agency'), inviteController.create);
+router.post('/agency/invites', authorize('agency', 'leader'), inviteController.create);
+
+// ----- Líderes de agência (gestão pelo dono) -----
+router.get('/agency/members', authorize('agency'), agencyMemberController.index);
+router.post('/agency/members', authorize('agency'), agencyMemberController.create);
+router.put('/agency/members/:id', authorize('agency'), agencyMemberController.update);
+router.put('/agency/members/:id/scope', authorize('agency'), agencyMemberController.setScope);
+router.delete('/agency/members/:id', authorize('agency'), agencyMemberController.remove);
+router.post('/agency/members/:id/payments', authorize('agency'), agencyMemberController.registerPayment);
+// Carteira do próprio líder
+router.get('/leader/wallet', authorize('leader'), agencyMemberController.myWallet);
 
 // ----- Pedidos (carrinho de vagas do supermercado) -----
-router.get('/orders', authorize('supermarket', 'agency', 'admin'), orderController.index);
+router.get('/orders', authorize('supermarket', 'agency', 'leader', 'admin'), orderController.index);
 router.post('/orders', authorize('supermarket'), orderController.create);
-router.get('/orders/:id', authorize('supermarket', 'agency', 'admin'), orderController.show);
+router.get('/orders/:id', authorize('supermarket', 'agency', 'leader', 'admin'), orderController.show);
 router.post('/orders/:id/items', authorize('supermarket'), orderController.addItems);
 router.post('/orders/:id/approve', authorize('supermarket'), orderController.approve);
 router.post('/orders/:id/reject', authorize('supermarket'), orderController.reject);
@@ -137,7 +148,7 @@ router.post('/freelancer/uniform/:id/received', authorize('freelancer'), onboard
 router.post('/freelancer/uniform/:id/selfie', authorize('freelancer'), upload.single('photo'), onboardingController.submitSelfie);
 router.post('/freelancer/profile-photo', authorize('freelancer'), upload.single('photo'), freelancerController.uploadProfilePhoto);
 router.get('/agency/uniforms', authorize('agency'), onboardingController.listForAgency);
-router.get('/agency/pending-counts', authorize('agency'), pendingController.agency);
+router.get('/agency/pending-counts', authorize('agency', 'leader'), pendingController.agency);
 router.get('/supermarket/pending-counts', authorize('supermarket'), pendingController.supermarket);
 router.post('/agency/uniforms/:id/ship', authorize('agency'), onboardingController.shipUniform);
 router.post('/agency/uniforms/:id/review', authorize('agency'), onboardingController.reviewUniform);
@@ -145,25 +156,25 @@ router.post('/agency/uniforms/:id/review', authorize('agency'), onboardingContro
 // ----- Vagas -----
 router.get('/jobs', jobController.index);
 router.get('/jobs/available', authorize('freelancer'), jobController.available);
-router.get('/jobs/live', authorize('agency', 'supermarket'), jobController.live);
+router.get('/jobs/live', authorize('agency', 'leader', 'supermarket'), jobController.live);
 router.get('/jobs/:id', jobController.show);
 router.get('/jobs/:id/freelancer-profile', authorize('supermarket'), jobController.freelancerProfile);
 router.post('/jobs', authorize('supermarket'), jobController.create);
 router.put('/jobs/:id', authorize('supermarket'), jobController.update);
-router.put('/agency/jobs/:id', authorize('agency'), jobController.updateByAgency);
+router.put('/agency/jobs/:id', authorize('agency', 'leader'), jobController.updateByAgency);
 router.delete('/jobs/:id', authorize('supermarket'), jobController.delete);
 router.post('/jobs/:id/cancel', authorize('supermarket'), jobController.cancel);
 router.post('/jobs/:id/accept', authorize('freelancer'), jobController.accept);
 router.post('/jobs/:id/withdraw', authorize('freelancer'), jobController.withdraw);
-router.post('/jobs/:id/release', authorize('agency'), jobController.release);
+router.post('/jobs/:id/release', authorize('agency', 'leader'), jobController.release);
 router.get('/agency/pending-settlement', authorize('agency'), jobController.pendingSettlement);
 router.post('/jobs/:id/release-payment', authorize('agency'), jobController.releasePayment);
-router.post('/jobs/:id/no-show', authorize('agency'), jobController.noShow);
-router.post('/jobs/:id/force-checkout', authorize('agency'), jobController.forceCheckout);
-router.post('/jobs/:id/reassign', authorize('agency'), jobController.reassign);
-router.put('/agency/jobs/:id/timesheet', authorize('agency'), jobController.correctTimesheet);
-router.post('/agency/jobs/:id/break-start', authorize('agency'), jobController.breakStart);
-router.post('/agency/jobs/:id/break-end', authorize('agency'), jobController.breakEnd);
+router.post('/jobs/:id/no-show', authorize('agency', 'leader'), jobController.noShow);
+router.post('/jobs/:id/force-checkout', authorize('agency', 'leader'), jobController.forceCheckout);
+router.post('/jobs/:id/reassign', authorize('agency', 'leader'), jobController.reassign);
+router.put('/agency/jobs/:id/timesheet', authorize('agency', 'leader'), jobController.correctTimesheet);
+router.post('/agency/jobs/:id/break-start', authorize('agency', 'leader'), jobController.breakStart);
+router.post('/agency/jobs/:id/break-end', authorize('agency', 'leader'), jobController.breakEnd);
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
 router.get('/jobs/:id/review', reviewController.getByJob);
 
@@ -203,8 +214,9 @@ router.put('/invoices/:id', authorize('admin'), invoiceController.update);
 router.delete('/invoices/:id', authorize('admin'), invoiceController.delete);
 
 // ----- Saques -----
-router.post('/withdrawals', authorize('freelancer', 'agency'), withdrawalController.create);
-router.get('/withdrawals/mine', authorize('freelancer', 'agency'), withdrawalController.mine);
+router.post('/withdrawals', authorize('freelancer', 'agency', 'leader'), withdrawalController.create);
+router.get('/withdrawals/mine', authorize('freelancer', 'agency', 'leader'), withdrawalController.mine);
+router.get('/withdrawals', authorize('admin'), withdrawalController.index);
 router.post('/withdrawals/:id/process', authorize('admin'), withdrawalController.process);
 
 export { router };

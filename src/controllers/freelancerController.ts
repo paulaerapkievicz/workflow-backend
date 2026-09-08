@@ -5,7 +5,42 @@ import { profileService } from '../services/profileService';
 import { sequelize } from '../database';
 import { User } from '../models/User';
 import { Freelancer } from '../models/Freelancer';
+import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer';
 import { AuthRequest } from '../middlewares/auth';
+import { inFreelancerScope } from '../helpers/agencyScope';
+
+/**
+ * Garante que o usuário (agência dona OU líder) pode gerenciar aquele colaborador:
+ * mesma agência + (para líder) dentro do escopo. Admin e o próprio colaborador passam direto.
+ * Devolve o colaborador carregado, ou responde 403/404 e devolve null.
+ */
+async function loadManageableFreelancer(req: AuthRequest, res: Response, id: string) {
+  const freelancer = await freelancerService.getFreelancerById(id);
+  if (!freelancer) {
+    res.status(404).json({ message: 'Colaborador não encontrado.' });
+    return null;
+  }
+  const role = req.user!.role;
+  if (role === 'admin') return freelancer;
+  if (role === 'freelancer') {
+    const own = await profileService.freelancerForUser(req.user!);
+    if (!own || own.id !== freelancer.id) {
+      res.status(403).json({ message: 'Você só pode gerenciar o seu próprio perfil.' });
+      return null;
+    }
+    return freelancer;
+  }
+  const actor = await profileService.agencyContextForUser(req.user!);
+  if (!actor || freelancer.agencyId !== actor.agencyId) {
+    res.status(403).json({ message: 'Este colaborador não pertence à sua agência.' });
+    return null;
+  }
+  if (!inFreelancerScope(actor, freelancer.id)) {
+    res.status(403).json({ message: 'Este colaborador está fora do seu grupo de trabalho.' });
+    return null;
+  }
+  return freelancer;
+}
 
 export const freelancerController = {
   async create(req: Request, res: Response) {
@@ -17,11 +52,11 @@ export const freelancerController = {
     }
   },
 
-  // POST /agency/freelancers — agência cadastra um freelancer (usuário + perfil) na própria agência
+  // POST /agency/freelancers — agência (ou líder) cadastra um colaborador na própria agência
   async createForMyAgency(req: AuthRequest, res: Response) {
     try {
-      const agencyId = await profileService.agencyIdForUser(req.user!);
-      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+      const actor = await profileService.agencyContextForUser(req.user!);
+      if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' });
 
       const { name, email, password, phone, skills } = req.body ?? {};
       if (!name || !email || !password) {
@@ -36,10 +71,18 @@ export const freelancerController = {
           { name, email, passwordHash, role: 'freelancer', phone: phone ?? null },
           { transaction: t }
         );
-        return Freelancer.create(
-          { userId: user.id, agencyId, name, email, phone: phone ?? undefined, skills: skills ?? undefined },
+        const created = await Freelancer.create(
+          { userId: user.id, agencyId: actor.agencyId, name, email, phone: phone ?? undefined, skills: skills ?? undefined },
           { transaction: t }
         );
+        // Líder com escopo restrito: o colaborador que ele cadastra entra no escopo dele.
+        if (actor.memberId && actor.scopeFreelancerIds) {
+          await AgencyMemberFreelancer.create(
+            { agencyMemberId: actor.memberId, freelancerId: created.id },
+            { transaction: t }
+          );
+        }
+        return created;
       });
 
       return res.status(201).json(freelancer);
@@ -61,50 +104,37 @@ export const freelancerController = {
     }
   },
 
-  // GET /freelancers — admin vê todos; agência vê só os da própria rede.
+  // GET /freelancers — admin vê todos; agência/líder vê só a rede (líder: só o escopo dele).
   async index(req: AuthRequest, res: Response) {
     try {
       if (req.user!.role === 'admin') {
         return res.json(await freelancerService.getAllFreelancers());
       }
-      const agencyId = await profileService.agencyIdForUser(req.user!);
-      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
-      return res.json(await freelancerService.getFreelancersForAgency(agencyId));
+      const actor = await profileService.agencyContextForUser(req.user!);
+      if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' });
+      return res.json(await freelancerService.getFreelancersForAgency(actor.agencyId, actor));
     } catch (err) {
       return res.status(500).json({ message: 'Erro ao listar freelancers.' });
     }
   },
 
-  // GET /freelancers/:id — admin vê qualquer um; agência só os da própria rede; freelancer só o próprio.
+  // GET /freelancers/:id — admin qualquer um; agência/líder só a rede/escopo; freelancer só o próprio.
   async show(req: AuthRequest, res: Response) {
     try {
-      const freelancer = await freelancerService.getFreelancerById(req.params.id);
-      if (!freelancer) return res.status(404).json({ message: 'Freelancer não encontrado.' });
-
-      if (req.user!.role === 'agency') {
-        const agencyId = await profileService.agencyIdForUser(req.user!);
-        if (!agencyId || freelancer.agencyId !== agencyId) {
-          return res.status(403).json({ message: 'Este colaborador não pertence à sua agência.' });
-        }
-      } else if (req.user!.role === 'freelancer') {
-        const own = await profileService.freelancerForUser(req.user!);
-        if (!own || own.id !== freelancer.id) {
-          return res.status(403).json({ message: 'Você só pode ver o seu próprio perfil.' });
-        }
-      }
-
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
       return res.json(freelancer);
     } catch (err) {
       return res.status(500).json({ message: 'Erro ao buscar freelancer.' });
     }
   },
 
-  async update(req: Request, res: Response) {
+  async update(req: AuthRequest, res: Response) {
     try {
-      const updatedFreelancer = await freelancerService.updateFreelancer(req.params.id, req.body);
-      if (!updatedFreelancer) return res.status(404).json({ message: 'Freelancer não encontrado.' });
-
-      return res.json(updatedFreelancer);
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
+      const updated = await freelancerService.updateFreelancer(req.params.id, req.body);
+      return res.json(updated);
     } catch (err) {
       return res.status(500).json({ message: 'Erro ao atualizar freelancer.' });
     }
@@ -130,8 +160,10 @@ export const freelancerController = {
     }
   },
 
-  async addCategory(req: Request, res: Response) {
+  async addCategory(req: AuthRequest, res: Response) {
     try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
       const result = await freelancerService.addCategoryToFreelancer(
         req.params.id,
         req.body.categoryId,
@@ -144,8 +176,10 @@ export const freelancerController = {
   },
 
   // PUT /freelancers/:id/categories/:category_id — define o valor/hora da função
-  async setCategoryRate(req: Request, res: Response) {
+  async setCategoryRate(req: AuthRequest, res: Response) {
     try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
       const result = await freelancerService.setCategoryRate(
         req.params.id,
         req.params.category_id,
@@ -157,8 +191,10 @@ export const freelancerController = {
     }
   },
 
-  async removeCategory(req: Request, res: Response) {
+  async removeCategory(req: AuthRequest, res: Response) {
     try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
       const removed = await freelancerService.removeCategoryFromFreelancer(req.params.id, req.params.category_id);
       if (!removed) return res.status(404).json({ message: 'Relação freelancer-categoria não encontrada.' });
 
@@ -171,9 +207,9 @@ export const freelancerController = {
   // GET /agency/pending-freelancers — autocadastros aguardando aprovação da minha agência
   async listPendingForMyAgency(req: AuthRequest, res: Response) {
     try {
-      const agencyId = await profileService.agencyIdForUser(req.user!);
-      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
-      return res.json(await freelancerService.listPendingForAgency(agencyId));
+      const actor = await profileService.agencyContextForUser(req.user!);
+      if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' });
+      return res.json(await freelancerService.listPendingForAgency(actor.agencyId, actor));
     } catch (err) {
       return res.status(500).json({ message: err instanceof Error ? err.message : 'Erro ao listar cadastros pendentes.' });
     }
@@ -182,9 +218,9 @@ export const freelancerController = {
   // POST /agency/freelancers/:id/approve
   async approveFreelancer(req: AuthRequest, res: Response) {
     try {
-      const agencyId = await profileService.agencyIdForUser(req.user!);
-      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
-      return res.json(await freelancerService.approveRegistration(req.params.id, agencyId));
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
+      return res.json(await freelancerService.approveRegistration(req.params.id, freelancer.agencyId as string));
     } catch (err) {
       return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao aprovar cadastro.' });
     }
@@ -193,9 +229,9 @@ export const freelancerController = {
   // POST /agency/freelancers/:id/reject
   async rejectFreelancer(req: AuthRequest, res: Response) {
     try {
-      const agencyId = await profileService.agencyIdForUser(req.user!);
-      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
-      return res.json(await freelancerService.rejectRegistration(req.params.id, agencyId));
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
+      return res.json(await freelancerService.rejectRegistration(req.params.id, freelancer.agencyId as string));
     } catch (err) {
       return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao recusar cadastro.' });
     }

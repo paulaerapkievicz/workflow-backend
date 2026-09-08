@@ -31,7 +31,8 @@ module.exports = {
     const agencyUser = { id: uid(), name: 'Gerente da Agência', email: 'agency@email.com', password_hash: passwordHash, role: 'agency', phone: '(11) 90000-0002', birth_date: null, ...ts };
     const free1User = { id: uid(), name: 'Joana Freelancer', email: 'free1@email.com', password_hash: passwordHash, role: 'freelancer', phone: '(11) 90000-0003', birth_date: null, ...ts };
     const free2User = { id: uid(), name: 'Pedro Freelancer', email: 'free2@email.com', password_hash: passwordHash, role: 'freelancer', phone: '(11) 90000-0004', birth_date: null, ...ts };
-    await queryInterface.bulkInsert('users', [adminUser, superUser, agencyUser, free1User, free2User]);
+    const leaderUser = { id: uid(), name: 'Lucas Líder', email: 'leader@email.com', password_hash: passwordHash, role: 'leader', phone: '(54) 90000-0005', birth_date: null, ...ts };
+    await queryInterface.bulkInsert('users', [adminUser, superUser, agencyUser, free1User, free2User, leaderUser]);
 
     // ---- Agência ----
     // Vaga concluída (Padeiro, 4h): supermercado paga 33/h = 132 ; colaborador recebe 19/h = 76 ; agência 56.
@@ -82,6 +83,19 @@ module.exports = {
       freeCat(free2.id, 1, 20.0), // Operador de Caixa
       freeCat(free2.id, 2, 21.0), // Fiscal de Loja (vaga em andamento do seed)
       freeCat(free2.id, 4, 19.0), // Padeiro (vaga concluída do seed)
+    ]);
+
+    // ---- Líder da agência (escopo: Filial Centro + Joana) ----
+    const leaderMember = {
+      id: uid(), agency_id: agency.id, user_id: leaderUser.id, active: true,
+      pay_type: 'mensal', pay_amount: 2500.0, available_balance: 0, ...ts,
+    };
+    await queryInterface.bulkInsert('agency_members', [leaderMember]);
+    await queryInterface.bulkInsert('agency_member_freelancers', [
+      { id: uid(), agency_member_id: leaderMember.id, freelancer_id: free1.id, ...ts },
+    ]);
+    await queryInterface.bulkInsert('agency_member_branches', [
+      { id: uid(), agency_member_id: leaderMember.id, branch_id: branchCentro.id, ...ts },
     ]);
 
     // ---- Vagas ----
@@ -158,6 +172,7 @@ module.exports = {
     for (const table of [
       'withdrawals', 'job_photos', 'invoices', 'payments', 'job_logs', 'job_shifts',
       'freelancer_locations', 'jobs', 'order_items', 'orders', 'supermarket_category_rates',
+      'agency_member_payments', 'agency_member_freelancers', 'agency_member_branches', 'agency_members',
       'freelancer_categories', 'reviews', 'commissions', 'supermarket_members',
       'freelancers', 'branches', 'supermarkets', 'agencies', 'categories', 'sessions', 'users',
     ]) {
