@@ -46,7 +46,7 @@ module.exports = {
     const supermarket = { id: uid(), owner_id: superUser.id, agency_id: agency.id, name: 'Mercado Central', cnpj: '11222333000144', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0000', ...ts };
     await queryInterface.bulkInsert('supermarkets', [supermarket]);
     await queryInterface.bulkInsert('supermarket_members', [
-      { id: uid(), supermarket_id: supermarket.id, user_id: superUser.id, branch_id: null, can_submit_orders: true, can_approve_orders: true, can_view_invoices: true, is_owner: true, ...ts },
+      { id: uid(), supermarket_id: supermarket.id, user_id: superUser.id, can_submit_orders: true, can_approve_orders: true, can_view_invoices: true, can_pay_invoices: true, is_owner: true, ...ts },
     ]);
 
     const branchCentro = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Centro', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0001', latitude: -28.269151, longitude: -52.374602, geocoded_at: now(), geocode_query: 'Rua Dirceu Sander, 719, Passo Fundo RS', service_status: 'approved', ...ts };
@@ -173,7 +173,7 @@ module.exports = {
       'withdrawals', 'job_photos', 'invoices', 'payments', 'job_logs', 'job_shifts',
       'freelancer_locations', 'jobs', 'order_items', 'orders', 'supermarket_category_rates',
       'agency_member_payments', 'agency_member_freelancers', 'agency_member_branches', 'agency_members',
-      'freelancer_categories', 'reviews', 'commissions', 'supermarket_members',
+      'freelancer_categories', 'reviews', 'commissions', 'supermarket_member_branches', 'supermarket_members',
       'freelancers', 'branches', 'supermarkets', 'agencies', 'categories', 'sessions', 'users',
     ]) {
       await queryInterface.bulkDelete(table, null, {});

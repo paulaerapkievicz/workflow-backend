@@ -7,8 +7,36 @@ import { sequelize } from '../database';
 import { User } from '../models/User';
 import { Supermarket } from '../models/Supermarket';
 import { SupermarketMember } from '../models/SupermarketMember';
+import { SupermarketMemberBranch } from '../models/SupermarketMemberBranch';
 import { Branch } from '../models/Branch';
 import { AuthRequest } from '../middlewares/auth';
+import { Transaction } from 'sequelize';
+
+/**
+ * Substitui as filiais de escopo de um gerente. `branchIds` vazio/indefinido = rede toda
+ * (nenhuma linha). Valida que toda filial pertence ao supermercado.
+ */
+async function syncMemberBranches(
+  memberId: string,
+  supermarketId: string,
+  branchIds: unknown,
+  t: Transaction
+) {
+  const ids = Array.isArray(branchIds) ? [...new Set(branchIds.filter((x): x is string => !!x))] : [];
+  if (ids.length) {
+    const branches = await Branch.findAll({ where: { id: ids }, transaction: t });
+    if (branches.length !== ids.length || branches.some((b) => b.supermarketId !== supermarketId)) {
+      throw new Error('Uma ou mais filiais são inválidas para esta rede.');
+    }
+  }
+  await SupermarketMemberBranch.destroy({ where: { supermarketMemberId: memberId }, transaction: t });
+  if (ids.length) {
+    await SupermarketMemberBranch.bulkCreate(
+      ids.map((branchId) => ({ supermarketMemberId: memberId, branchId })),
+      { transaction: t }
+    );
+  }
+}
 
 /** A agência só gerencia/vê os supermercados que são clientes dela. */
 async function assertAgencyOwnsSupermarket(req: AuthRequest, supermarketId: string): Promise<boolean> {
@@ -54,9 +82,10 @@ export const supermarketController = {
           {
             supermarketId: market.id,
             userId: user.id,
-            branchId: null,
             canSubmitOrders: true,
             canApproveOrders: true,
+            canViewInvoices: true,
+            canPayInvoices: true,
             isOwner: true,
           },
           { transaction: t }
@@ -86,11 +115,24 @@ export const supermarketController = {
         where: { supermarketId: req.params.id },
         include: [
           { model: User, as: 'memberUser', attributes: ['id', 'name', 'email'] },
-          { model: Branch, as: 'memberBranch', attributes: ['id', 'name'] },
+          {
+            model: SupermarketMemberBranch,
+            as: 'memberBranchLinks',
+            attributes: ['branchId'],
+            include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
+          },
         ],
         order: [['isOwner', 'DESC'], ['createdAt', 'ASC']],
       });
-      return res.json(members);
+      const serialized = members.map((m) => {
+        const links: any[] = (m as any).memberBranchLinks ?? [];
+        return {
+          ...(m as any).toJSON(),
+          memberBranches: links.map((l) => l.branch).filter(Boolean),
+          branchIds: links.map((l) => l.branchId),
+        };
+      });
+      return res.json(serialized);
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' });
     }
@@ -103,18 +145,15 @@ export const supermarketController = {
       if (!(await canManageTeam(req, supermarketId))) {
         return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
       }
-      const { name, email, password, branchId, canSubmitOrders, canApproveOrders, canViewInvoices } = req.body ?? {};
+      const {
+        name, email, password, branchIds,
+        canSubmitOrders, canApproveOrders, canViewInvoices, canPayInvoices,
+      } = req.body ?? {};
       if (!name || !email || !password) {
         return res.status(400).json({ message: 'Informe nome, e-mail e senha do gerente.' });
       }
       if (await User.findOne({ where: { email } })) {
         return res.status(409).json({ message: 'E-mail já cadastrado.' });
-      }
-      if (branchId) {
-        const branch = await Branch.findByPk(branchId);
-        if (!branch || branch.supermarketId !== supermarketId) {
-          return res.status(400).json({ message: 'Filial inválida para esta rede.' });
-        }
       }
       const member = await sequelize.transaction(async (t) => {
         const passwordHash = await bcrypt.hash(password, 10);
@@ -122,18 +161,21 @@ export const supermarketController = {
           { name, email, passwordHash, role: 'supermarket', phone: null },
           { transaction: t }
         );
-        return SupermarketMember.create(
+        const created = await SupermarketMember.create(
           {
             supermarketId,
             userId: user.id,
-            branchId: branchId ?? null,
             canSubmitOrders: canSubmitOrders !== false,
             canApproveOrders: canApproveOrders === true,
-            canViewInvoices: canViewInvoices === true,
+            // Pagar exige ver.
+            canViewInvoices: canViewInvoices === true || canPayInvoices === true,
+            canPayInvoices: canPayInvoices === true,
             isOwner: false,
           },
           { transaction: t }
         );
+        await syncMemberBranches(created.id, supermarketId, branchIds, t);
+        return created;
       });
       return res.status(201).json(member);
     } catch (error) {
@@ -141,7 +183,7 @@ export const supermarketController = {
     }
   },
 
-  // PUT /supermarket-members/:id — permissões / filial
+  // PUT /supermarket-members/:id — permissões / filiais de escopo
   async updateMember(req: AuthRequest, res: Response) {
     try {
       const member = await SupermarketMember.findByPk(req.params.id);
@@ -151,11 +193,19 @@ export const supermarketController = {
       }
       if (member.isOwner) return res.status(400).json({ message: 'O dono não pode ser alterado.' });
       const patch: any = {};
-      if (req.body.branchId !== undefined) patch.branchId = req.body.branchId || null;
       if (req.body.canSubmitOrders !== undefined) patch.canSubmitOrders = req.body.canSubmitOrders === true;
       if (req.body.canApproveOrders !== undefined) patch.canApproveOrders = req.body.canApproveOrders === true;
       if (req.body.canViewInvoices !== undefined) patch.canViewInvoices = req.body.canViewInvoices === true;
-      await member.update(patch);
+      if (req.body.canPayInvoices !== undefined) patch.canPayInvoices = req.body.canPayInvoices === true;
+      // Ver e pagar andam juntos: tirar o "ver" tira o "pagar"; ligar o "pagar" liga o "ver".
+      if (patch.canViewInvoices === false) patch.canPayInvoices = false;
+      if (patch.canPayInvoices === true && patch.canViewInvoices === undefined) patch.canViewInvoices = true;
+      await sequelize.transaction(async (t) => {
+        await member.update(patch, { transaction: t });
+        if (req.body.branchIds !== undefined) {
+          await syncMemberBranches(member.id, member.supermarketId, req.body.branchIds, t);
+        }
+      });
       return res.json(member);
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro.' });

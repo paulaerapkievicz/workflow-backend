@@ -237,11 +237,12 @@ export const orderService = {
       const where: any = { supermarketId: ctx.supermarketId }
       const all = await Order.findAll({ where, include: orderIncludes, order: [['createdAt', 'DESC'], ...orderJobsOrder] })
       // Gerente restrito a uma loja só vê pedidos com vaga/item daquela loja.
-      if (!ctx.branchId) return all
+      if (!ctx.branchIds) return all
+      const scope = new Set(ctx.branchIds)
       return all.filter(
         (o) =>
-          (o as any).items?.some((it: any) => it.branchId === ctx.branchId) ||
-          (o as any).orderJobs?.some((j: any) => j.branchId === ctx.branchId)
+          (o as any).items?.some((it: any) => scope.has(it.branchId)) ||
+          (o as any).orderJobs?.some((j: any) => scope.has(j.branchId))
       )
     }
     if (user.role === 'agency') {
@@ -265,11 +266,24 @@ export const orderService = {
     return []
   },
 
-  /** Se o gerente é de uma loja, todas as vagas do pedido são forçadas para essa filial. */
+  /**
+   * Aplica o escopo de filial do gerente aos itens do pedido:
+   * - rede toda (`branchIds` null): passa como veio;
+   * - exatamente uma filial: força todas as vagas para ela (não precisa escolher);
+   * - várias filiais: cada vaga precisa apontar para uma filial do grupo do gerente.
+   */
   scopeItems(rawItems: any[], ctx: OrderContext) {
     if (!ctx.canSubmitOrders) throw new Error('Você não tem permissão para solicitar vagas.')
-    if (!ctx.branchId) return rawItems
-    return (rawItems ?? []).map((it) => ({ ...it, branchId: ctx.branchId }))
+    if (!ctx.branchIds) return rawItems ?? []
+    if (ctx.branchIds.length === 1) {
+      return (rawItems ?? []).map((it) => ({ ...it, branchId: ctx.branchIds![0] }))
+    }
+    const scope = new Set(ctx.branchIds)
+    return (rawItems ?? []).map((it, idx) => {
+      if (!it?.branchId) throw new Error(`Item ${idx + 1}: escolha a filial da vaga.`)
+      if (!scope.has(it.branchId)) throw new Error(`Item ${idx + 1}: filial fora do seu grupo de lojas.`)
+      return it
+    })
   },
 
   async create(data: any, ctx: OrderContext) {

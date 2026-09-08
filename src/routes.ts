@@ -22,7 +22,7 @@ import { pendingController } from './controllers/pendingController';
 import { inviteController } from './controllers/inviteController';
 import { invoiceAdjustmentController } from './controllers/invoiceAdjustmentController';
 import { agencyMemberController } from './controllers/agencyMemberController';
-import { ensureAuth, authorize, ensureCanViewInvoices } from './middlewares/auth';
+import { ensureAuth, authorize, ensureCanViewInvoices, ensureCanPayInvoices } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
 const router = express.Router();
@@ -210,12 +210,12 @@ router.put('/payments/:id/cancel', authorize('admin'), paymentController.cancel)
 
 // ----- Faturas (supermercado → agência) -----
 router.get('/invoices/mine', authorize('supermarket'), ensureCanViewInvoices, paymentController.myInvoices);
-router.post('/invoices/:id/pay', authorize('supermarket'), ensureCanViewInvoices, paymentController.invoicePay);
-router.post('/invoices/:id/sync-payment', authorize('supermarket'), ensureCanViewInvoices, paymentController.invoiceSyncPayment);
+router.post('/invoices/:id/pay', authorize('supermarket'), ensureCanPayInvoices, paymentController.invoicePay);
+router.post('/invoices/:id/sync-payment', authorize('supermarket'), ensureCanPayInvoices, paymentController.invoiceSyncPayment);
 // Contestação/abatimento do fechamento mensal (supermercado lança, agência resolve)
 router.get('/invoices/:id/adjustments', authorize('supermarket', 'agency', 'admin'), ensureCanViewInvoices, invoiceAdjustmentController.list);
-router.post('/invoices/:id/adjustments', authorize('supermarket'), ensureCanViewInvoices, invoiceAdjustmentController.create);
-router.delete('/invoices/:id/adjustments/:adjId', authorize('supermarket'), ensureCanViewInvoices, invoiceAdjustmentController.remove);
+router.post('/invoices/:id/adjustments', authorize('supermarket'), ensureCanPayInvoices, invoiceAdjustmentController.create);
+router.delete('/invoices/:id/adjustments/:adjId', authorize('supermarket'), ensureCanPayInvoices, invoiceAdjustmentController.remove);
 router.post('/invoices/:id/adjustments/:adjId/approve', authorize('agency'), invoiceAdjustmentController.approve);
 router.post('/invoices/:id/adjustments/:adjId/reject', authorize('agency'), invoiceAdjustmentController.reject);
 router.post('/invoices/:id/adjustments/:adjId/revert', authorize('agency'), invoiceAdjustmentController.revert);

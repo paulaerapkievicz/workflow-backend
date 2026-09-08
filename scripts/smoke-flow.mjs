@@ -153,9 +153,11 @@ async function main() {
   const mgrEmail = `gerente-sul-${Date.now()}@email.com`
   const mkMember = await req('POST', `/supermarkets/${supermarketId}/members`, {
     token: superT,
-    body: { name: 'Gerente Zona Sul', email: mgrEmail, password: '123456', branchId: branchSul.id, canApproveOrders: false },
+    body: { name: 'Gerente Zona Sul', email: mgrEmail, password: '123456', branchIds: [branchSul.id], canApproveOrders: false },
   })
   ok(mkMember.status === 201, 'dono cadastra gerente de loja')
+  const mgrListed = (await req('GET', `/supermarkets/${supermarketId}/members`, { token: superT })).data.find((m) => m.id === mkMember.data.id)
+  ok(mgrListed && mgrListed.branchIds.length === 1 && mgrListed.branchIds[0] === branchSul.id, 'gerente com escopo de 1 filial (via branchIds)', mgrListed?.branchIds)
   const mgrT = await login(mgrEmail)
   const mgrOrder = await req('POST', '/orders', {
     token: mgrT,
@@ -176,6 +178,27 @@ async function main() {
   const rej = await req('POST', `/orders/${mgrOrder2.data.id}/reject`, { token: superT, body: { reason: 'fora do orçamento' } })
   ok(rej.status === 200 && rej.data.approvalStatus === 'rejected', 'dono recusa o pedido')
   ok(rej.data.orderJobs.every((j) => j.status === 'canceled'), 'vagas do pedido recusado são canceladas')
+
+  section('Gerente responsável por várias filiais')
+  const toMulti = await req('PUT', `/supermarket-members/${mkMember.data.id}`, {
+    token: superT, body: { branchIds: [branchSul.id, branchCentro.id] },
+  })
+  ok(toMulti.status === 200, 'dono amplia o escopo do gerente para 2 filiais')
+  const multiListed = (await req('GET', `/supermarkets/${supermarketId}/members`, { token: superT })).data.find((m) => m.id === mkMember.data.id)
+  ok(multiListed && multiListed.branchIds.length === 2, 'gerente agora cobre 2 filiais', multiListed?.branchIds?.length)
+  const multiOrder = await req('POST', '/orders', {
+    token: mgrT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, shiftPeriod: 'tarde', date: day }] },
+  })
+  ok(multiOrder.status === 201 && multiOrder.data.orderJobs.every((j) => j.branchId === branchCentro.id),
+    'gerente multi-filial escolhe a filial da vaga (não é forçada)', multiOrder.data?.orderJobs?.[0]?.branchId)
+  await req('POST', `/orders/${multiOrder.data.id}/reject`, { token: superT, body: { reason: 'teste' } })
+  const noBranch = await req('POST', '/orders', {
+    token: mgrT,
+    body: { items: [{ categoryId: catCaixa.id, quantity: 1, shiftPeriod: 'tarde', date: day }] },
+  })
+  ok(noBranch.status === 400 && /filial/i.test(noBranch.data?.message || ''), 'gerente multi-filial sem filial na vaga é recusado', noBranch.data?.message)
+  await req('PUT', `/supermarket-members/${mkMember.data.id}`, { token: superT, body: { branchIds: [branchSul.id] } })
 
   section('Editar / remover vaga ainda disponível')
   const editable = caixaJobs[2]
@@ -623,17 +646,34 @@ async function main() {
   ok(billing.invoices.some((i) => i.id === close.data.id && i.branchName == null), 'fatura mensal (matriz) no faturamento')
   ok(billing.totals.workedHours > 0, 'totais com horas trabalhadas', billing.totals?.workedHours)
 
-  section('Permissão do gerente de loja para ver as faturas (canViewInvoices)')
+  section('Permissão do gerente: ver x pagar a fatura (canViewInvoices / canPayInvoices)')
+  const invForPerm = close.data.id
   const mgrBillingBlocked = await req('GET', '/billing/summary', { token: mgrT })
   ok(mgrBillingBlocked.status === 403, 'gerente sem permissão não vê o faturamento', mgrBillingBlocked.status)
   const mgrInvoicesBlocked = await req('GET', '/invoices/mine', { token: mgrT })
   ok(mgrInvoicesBlocked.status === 403, 'gerente sem permissão não lista as faturas', mgrInvoicesBlocked.status)
+
+  // A agência libera só o "ver".
   const grantView = await req('PUT', `/supermarket-members/${mkMember.data.id}`, { token: agencyT, body: { canViewInvoices: true } })
-  ok(grantView.status === 200 && grantView.data.canViewInvoices === true, 'agência libera o gerente para ver as faturas')
+  ok(grantView.status === 200 && grantView.data.canViewInvoices === true && grantView.data.canPayInvoices === false, 'agência libera só a visualização das faturas')
   const mgrBillingOk = await req('GET', '/billing/summary', { token: mgrT })
-  ok(mgrBillingOk.status === 200 && Array.isArray(mgrBillingOk.data.jobs), 'gerente liberado enxerga o faturamento')
+  ok(mgrBillingOk.status === 200 && Array.isArray(mgrBillingOk.data.jobs), 'gerente com "ver" enxerga o faturamento')
+  const mgrPayBlocked = await req('POST', `/invoices/${invForPerm}/pay`, { token: mgrT })
+  ok(mgrPayBlocked.status === 403, 'quem só vê não paga a fatura', mgrPayBlocked.status)
+  const mgrAdjBlocked = await req('POST', `/invoices/${invForPerm}/adjustments`, { token: mgrT, body: { description: 'x', amount: 1 } })
+  ok(mgrAdjBlocked.status === 403, 'quem só vê não lança contestação', mgrAdjBlocked.status)
+
+  // O dono adiciona o "pagar" (que implica "ver").
+  const grantPay = await req('PUT', `/supermarket-members/${mkMember.data.id}`, { token: superT, body: { canPayInvoices: true } })
+  ok(grantPay.status === 200 && grantPay.data.canPayInvoices === true, 'dono libera o gerente para pagar/contestar')
+  const mgrAdjOk = await req('POST', `/invoices/${invForPerm}/adjustments`, { token: mgrT, body: { description: 'teste permissão', amount: 1 } })
+  ok(mgrAdjOk.status === 201, 'gerente com "pagar" lança contestação')
+  const mgrAdjDel = await req('DELETE', `/invoices/${invForPerm}/adjustments/${mgrAdjOk.data.id}`, { token: mgrT })
+  ok(mgrAdjDel.status === 200, 'gerente remove a própria contestação (deixa a fatura limpa p/ o resto do teste)')
+
+  // Revogar o "ver" derruba também o "pagar".
   const revokeView = await req('PUT', `/supermarket-members/${mkMember.data.id}`, { token: superT, body: { canViewInvoices: false } })
-  ok(revokeView.status === 200 && revokeView.data.canViewInvoices === false, 'dono do supermercado revoga o acesso do gerente às faturas')
+  ok(revokeView.status === 200 && revokeView.data.canViewInvoices === false && revokeView.data.canPayInvoices === false, 'revogar "ver" derruba também o "pagar"')
   const mgrBillingBlockedAgain = await req('GET', '/billing/summary', { token: mgrT })
   ok(mgrBillingBlockedAgain.status === 403, 'gerente volta a ser bloqueado depois da revogação')
 

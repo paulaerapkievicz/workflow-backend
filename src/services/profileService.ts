@@ -2,6 +2,7 @@ import { Supermarket } from '../models/Supermarket'
 import { Agency } from '../models/Agency'
 import { Freelancer } from '../models/Freelancer'
 import { SupermarketMember } from '../models/SupermarketMember'
+import { SupermarketMemberBranch } from '../models/SupermarketMemberBranch'
 import { AgencyMember } from '../models/AgencyMember'
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer'
 import { AgencyMemberBranch } from '../models/AgencyMemberBranch'
@@ -10,13 +11,23 @@ import { AgencyActor } from '../helpers/agencyScope'
 
 export interface SupermarketContext {
   supermarketId: string
-  /** NULL = rede toda; preenchido = gerente restrito a uma loja. */
-  branchId: string | null
+  /** NULL = rede toda; array (nunca vazio) = gerente restrito a essas filiais. */
+  branchIds: string[] | null
   canSubmitOrders: boolean
   canApproveOrders: boolean
-  /** Vê e paga as faturas (fechamento mensal) da rede. */
+  /** Vê as faturas (fechamento mensal) da rede. */
   canViewInvoices: boolean
+  /** Além de ver, paga a fatura e lança/remove contestação. */
+  canPayInvoices: boolean
   isOwner: boolean
+}
+
+async function branchIdsForMember(memberId: string): Promise<string[] | null> {
+  const links = await SupermarketMemberBranch.findAll({
+    where: { supermarketMemberId: memberId },
+    attributes: ['branchId'],
+  })
+  return links.length ? links.map((l) => l.branchId) : null
 }
 
 /**
@@ -99,13 +110,14 @@ export const profileService = {
   ): Promise<SupermarketContext | null> {
     const owned = await Supermarket.findOne({ where: { ownerId: user.id } })
     if (owned) {
-      const m = await SupermarketMember.findOne({ where: { supermarketId: owned.id, userId: user.id } })
+      // O dono enxerga a rede toda e sempre pode ver/pagar as faturas.
       return {
         supermarketId: owned.id,
-        branchId: m?.branchId ?? null,
-        canSubmitOrders: m?.canSubmitOrders ?? true,
-        canApproveOrders: m?.canApproveOrders ?? true,
+        branchIds: null,
+        canSubmitOrders: true,
+        canApproveOrders: true,
         canViewInvoices: true,
+        canPayInvoices: true,
         isOwner: true,
       }
     }
@@ -113,10 +125,11 @@ export const profileService = {
     if (!member) return null
     return {
       supermarketId: member.supermarketId,
-      branchId: member.branchId ?? null,
+      branchIds: member.isOwner ? null : await branchIdsForMember(member.id),
       canSubmitOrders: member.canSubmitOrders,
       canApproveOrders: member.canApproveOrders,
       canViewInvoices: member.canViewInvoices,
+      canPayInvoices: member.canPayInvoices,
       isOwner: member.isOwner,
     }
   },

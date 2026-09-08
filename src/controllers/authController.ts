@@ -146,9 +146,10 @@ export const authController = {
             {
               supermarketId: createdProfile.id,
               userId: user.id,
-              branchId: null,
               canSubmitOrders: true,
               canApproveOrders: true,
+              canViewInvoices: true,
+              canPayInvoices: true,
               isOwner: true,
             },
             { transaction: t }

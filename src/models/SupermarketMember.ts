@@ -7,12 +7,12 @@ export interface SupermarketMember {
   id: string
   supermarketId: string
   userId: string
-  /** NULL = acesso à rede toda; preenchido = gerente de uma loja. */
-  branchId?: string | null
   canSubmitOrders: boolean
   canApproveOrders: boolean
-  /** Vê e paga as faturas (fechamento mensal) da rede. O dono sempre pode; gerentes só quando marcado. */
+  /** Vê as faturas (fechamento mensal) da rede. O dono sempre pode; gerentes só quando marcado. */
   canViewInvoices: boolean
+  /** Além de ver, paga a fatura e lança/remove contestação. Exige (na prática) `canViewInvoices`. */
+  canPayInvoices: boolean
   isOwner: boolean
   createdAt: Date
   updatedAt: Date
@@ -22,10 +22,10 @@ export interface SupermarketMemberCreationAttributes
   extends Optional<
     SupermarketMember,
     | 'id'
-    | 'branchId'
     | 'canSubmitOrders'
     | 'canApproveOrders'
     | 'canViewInvoices'
+    | 'canPayInvoices'
     | 'isOwner'
     | 'createdAt'
     | 'updatedAt'
@@ -53,16 +53,10 @@ export const SupermarketMember = sequelize.define<SupermarketMemberInstance, Sup
       onUpdate: 'CASCADE',
       onDelete: 'CASCADE',
     },
-    branchId: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      references: { model: 'branches', key: 'id' },
-      onUpdate: 'CASCADE',
-      onDelete: 'SET NULL',
-    },
     canSubmitOrders: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     canApproveOrders: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     canViewInvoices: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    canPayInvoices: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     isOwner: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     createdAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updatedAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },

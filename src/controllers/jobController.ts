@@ -37,7 +37,7 @@ export const jobController = {
       if (req.user!.role === 'supermarket') {
         const ctx = await profileService.supermarketContextForUser(req.user!)
         if (!ctx) return res.status(403).json({ message: 'Supermercado não encontrado.' })
-        return res.json(await jobService.liveForSupermarket(ctx.supermarketId, ctx.branchId))
+        return res.json(await jobService.liveForSupermarket(ctx.supermarketId, ctx.branchIds))
       }
       const actor = await profileService.agencyContextForUser(req.user!)
       if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' })

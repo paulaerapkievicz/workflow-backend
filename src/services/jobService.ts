@@ -287,7 +287,7 @@ export const jobService = {
     if (user.role === 'supermarket') {
       const ctx = await profileService.supermarketContextForUser(user)
       if (!ctx || job.supermarketId !== ctx.supermarketId) return null
-      if (ctx.branchId && job.branchId !== ctx.branchId) return null
+      if (ctx.branchIds && !ctx.branchIds.includes(job.branchId)) return null
       return job
     }
 
@@ -320,7 +320,7 @@ export const jobService = {
       const ctx = await profileService.supermarketContextForUser(user)
       if (!ctx) return []
       const where: any = { supermarketId: ctx.supermarketId }
-      if (ctx.branchId) where.branchId = ctx.branchId
+      if (ctx.branchIds) where.branchId = { [Op.in]: ctx.branchIds }
       return Job.findAll({ where, include: jobIncludes, order: [['createdAt', 'DESC']] })
     }
 
@@ -418,10 +418,10 @@ export const jobService = {
     return Job.findAll({ where, include: jobIncludes, order: [['startTime', 'ASC']] })
   },
 
-  /** Vagas em andamento de um supermercado (opcionalmente de uma loja só). */
-  async liveForSupermarket(supermarketId: string, branchId?: string | null) {
+  /** Vagas em andamento de um supermercado (opcionalmente restrito a um grupo de lojas). */
+  async liveForSupermarket(supermarketId: string, branchIds?: string[] | null) {
     const where: any = { status: 'in_progress', supermarketId }
-    if (branchId) where.branchId = branchId
+    if (branchIds && branchIds.length) where.branchId = { [Op.in]: branchIds }
     return Job.findAll({ where, include: jobIncludes, order: [['startTime', 'ASC']] })
   },
 

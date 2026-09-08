@@ -21,6 +21,7 @@ import { SupermarketCategoryRate } from './SupermarketCategoryRate'
 import { Order } from './Order'
 import { OrderItem } from './OrderItem'
 import { SupermarketMember } from './SupermarketMember'
+import { SupermarketMemberBranch } from './SupermarketMemberBranch'
 import { FreelancerContract } from './FreelancerContract'
 import { UniformOrder } from './UniformOrder'
 import { Invite } from './Invite'
@@ -43,8 +44,12 @@ Supermarket.hasMany(Job, { foreignKey: 'supermarketId', as: 'supermarketJobs' })
 Supermarket.hasMany(SupermarketMember, { foreignKey: 'supermarketId', as: 'members' })
 SupermarketMember.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'memberSupermarket' })
 SupermarketMember.belongsTo(User, { foreignKey: 'userId', as: 'memberUser' })
-SupermarketMember.belongsTo(Branch, { foreignKey: 'branchId', as: 'memberBranch' })
 User.hasMany(SupermarketMember, { foreignKey: 'userId', as: 'supermarketMemberships' })
+
+// Escopo por filial do gerente (sem linhas = rede toda)
+SupermarketMember.hasMany(SupermarketMemberBranch, { foreignKey: 'supermarketMemberId', as: 'memberBranchLinks' })
+SupermarketMemberBranch.belongsTo(SupermarketMember, { foreignKey: 'supermarketMemberId', as: 'member' })
+SupermarketMemberBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' })
 
 Branch.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'parentSupermarket' })
 Branch.hasMany(Job, { foreignKey: 'branchId', as: 'branchJobs' })
@@ -190,6 +195,7 @@ export {
   Order,
   OrderItem,
   SupermarketMember,
+  SupermarketMemberBranch,
   FreelancerContract,
   UniformOrder,
   Invite,
