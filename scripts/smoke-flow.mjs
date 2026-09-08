@@ -623,8 +623,40 @@ async function main() {
   ok(billing.invoices.some((i) => i.id === close.data.id && i.branchName == null), 'fatura mensal (matriz) no faturamento')
   ok(billing.totals.workedHours > 0, 'totais com horas trabalhadas', billing.totals?.workedHours)
 
+  section('Contestação do fechamento (abatimento)')
+  const invId = close.data.id
+  const invTotal = Number(close.data.totalAmount)
+  const adj1 = await req('POST', `/invoices/${invId}/adjustments`, { token: superT, body: { description: 'Quebra de caixa 12/03', amount: 10 } })
+  ok(adj1.status === 201 && adj1.data.status === 'pending', 'supermercado lança contestação (pending)', adj1.data)
+  const adj2 = await req('POST', `/invoices/${invId}/adjustments`, { token: superT, body: { description: 'Item indevido', amount: 5 } })
+  ok(adj2.status === 201, 'segunda contestação lançada')
+
+  const payBlocked = await req('POST', `/invoices/${invId}/pay`, { token: superT })
+  ok(payBlocked.status === 400 && /contesta/i.test(payBlocked.data?.message || ''), 'pagamento bloqueado enquanto há contestação pendente', payBlocked.data?.message)
+
+  const pcBefore = (await req('GET', '/agency/pending-counts', { token: agencyT })).data
+  ok((pcBefore.contestationsToReview ?? 0) >= 2, 'pending-counts sinaliza contestações a revisar', pcBefore.contestationsToReview)
+
+  const balBefore = Number((await db.query('SELECT available_balance FROM agencies WHERE id=$1', [agencyId])).rows[0].available_balance)
+  const apprAdj = await req('POST', `/invoices/${invId}/adjustments/${adj1.data.id}/approve`, { token: agencyT })
+  ok(apprAdj.status === 200 && apprAdj.data.status === 'approved', 'agência aprova o abatimento')
+  const rejNoNote = await req('POST', `/invoices/${invId}/adjustments/${adj2.data.id}/reject`, { token: agencyT, body: {} })
+  ok(rejNoNote.status === 400, 'recusa exige motivo')
+  const rejAdj = await req('POST', `/invoices/${invId}/adjustments/${adj2.data.id}/reject`, { token: agencyT, body: { note: 'sem comprovação' } })
+  ok(rejAdj.status === 200 && rejAdj.data.status === 'rejected', 'agência recusa a outra contestação (com motivo)')
+  const balAfter = Number((await db.query('SELECT available_balance FROM agencies WHERE id=$1', [agencyId])).rows[0].available_balance)
+  ok(Math.abs((balBefore - balAfter) - 10) < 0.01, 'saldo da agência cai o valor do abatimento aprovado', balBefore - balAfter)
+
+  const billingAdj = (await req('GET', '/billing/summary', { token: superT })).data
+  const invRow = billingAdj.invoices.find((i) => i.id === invId)
+  ok(Number(invRow.adjustmentsTotal) === 10 && Math.abs(Number(invRow.netAmount) - (invTotal - 10)) < 0.01, 'faturamento mostra abatimento e valor líquido', invRow)
+
+  const pdfAdj = await fetch(`${BASE}/closings/${invId}/pdf`, { headers: { Authorization: `Bearer ${agencyT}` } })
+  const pdfAdjBuf = Buffer.from(await pdfAdj.arrayBuffer())
+  ok(pdfAdj.ok && pdfAdjBuf.slice(0, 5).toString() === '%PDF-', 'PDF do fechamento gera com a seção de abatimentos')
+
   const payInv = await req('POST', `/invoices/${close.data.id}/pay`, { token: superT })
-  ok(payInv.status === 200 && payInv.data.status === 'paid', 'supermercado paga a fatura mensal')
+  ok(payInv.status === 200 && payInv.data.status === 'paid', 'supermercado paga a fatura mensal (valor líquido)')
   // Item 11: rota de confirmação do pagamento via gateway (no-op quando já está paga).
   const syncInv = await req('POST', `/invoices/${close.data.id}/sync-payment`, { token: superT })
   ok(syncInv.status === 200 && syncInv.data.status === 'paid', 'rota de confirmação de pagamento da fatura responde', syncInv.data?.status)
@@ -632,6 +664,28 @@ async function main() {
   section('Relatório do freelancer')
   const report = (await req('GET', '/reports/freelancer', { token: freeT })).data
   ok(report.items.length >= 1 && report.totals.earned > 0, 'relatório com trabalhos e ganhos', report.totals)
+
+  section('Avaliação do colaborador pelo supermercado + reputação')
+  await db.query(`UPDATE jobs SET review_enabled = NULL WHERE id = $1`, [settledJob.id])
+  await req('PUT', '/agency/settings', { token: agencyT, body: { reviewEnabled: false } })
+  const revBlocked = await req('POST', `/jobs/${settledJob.id}/review-by-supermarket`, { token: superT, body: { rating: 5 } })
+  ok(revBlocked.status === 400 && /habilit/i.test(revBlocked.data?.message || ''), 'sem reviewEnabled o supermercado não avalia', revBlocked.data?.message)
+
+  await req('PUT', '/agency/settings', { token: agencyT, body: { reviewEnabled: true } })
+  const revBad = await req('POST', `/jobs/${settledJob.id}/review-by-supermarket`, { token: superT, body: { rating: 9 } })
+  ok(revBad.status === 400, 'nota fora de 1–5 recusada')
+  const rev1 = await req('POST', `/jobs/${settledJob.id}/review-by-supermarket`, { token: superT, body: { rating: 5, comment: 'Ótimo atendimento' } })
+  ok(rev1.status === 201 && rev1.data.authorRole === 'supermarket', 'supermercado avalia o colaborador da vaga', rev1.data)
+  const revDup = await req('POST', `/jobs/${settledJob.id}/review-by-supermarket`, { token: superT, body: { rating: 4 } })
+  ok(revDup.status === 400, 'segunda avaliação do supermercado na mesma vaga recusada')
+  const revAgency = await req('POST', `/jobs/${settledJob.id}/review`, { token: agencyT, body: { rating: 4, approved: true } })
+  ok(revAgency.status === 201, 'a agência ainda pode avaliar a mesma vaga (autor diferente)')
+
+  const reputation = (await req('GET', `/freelancers/${free2Id}/reputation`, { token: agencyT })).data
+  ok(Number(reputation.ratingCount) >= 2 && reputation.completedJobs >= 1 && reputation.workedMinutes > 0,
+    'reputação: nota média + convocações concluídas + horas trabalhadas', reputation)
+  ok(Array.isArray(reputation.reviews) && reputation.reviews.some((r) => r.authorRole === 'supermarket'),
+    'reputação lista as avaliações recentes com o autor')
 
   section('Onboarding do colaborador (perfil contratual + trava de trabalho)')
   await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: true, uniformPrice: 80 } })

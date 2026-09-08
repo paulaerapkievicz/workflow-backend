@@ -29,6 +29,7 @@ import { AgencyMemberFreelancer } from './AgencyMemberFreelancer'
 import { AgencyMemberBranch } from './AgencyMemberBranch'
 import { AgencyMemberPayment } from './AgencyMemberPayment'
 import { AgencyMemberJobCredit } from './AgencyMemberJobCredit'
+import { InvoiceAdjustment } from './InvoiceAdjustment'
 
 // Definição de relacionamentos
 User.hasOne(Supermarket, { foreignKey: 'ownerId', as: 'ownedSupermarket' })
@@ -50,6 +51,8 @@ Branch.hasMany(Job, { foreignKey: 'branchId', as: 'branchJobs' })
 
 Agency.hasMany(Freelancer, { foreignKey: 'agencyId', as: 'agencyFreelancers' })
 Agency.hasMany(Supermarket, { foreignKey: 'agencyId', as: 'agencySupermarkets' })
+// Vínculo comercial (cliente), não de posse — a agência que atende este supermercado.
+Supermarket.belongsTo(Agency, { foreignKey: 'agencyId', as: 'clientAgency' })
 Agency.hasMany(Invite, { foreignKey: 'agencyId', as: 'agencyInvites' })
 
 // Líderes de agência (logins extras com poderes operacionais, sem acesso financeiro)
@@ -89,7 +92,10 @@ Job.belongsTo(Branch, { foreignKey: 'branchId', as: 'jobBranch' })
 Job.belongsTo(Category, { foreignKey: 'categoryId', as: 'jobCategory' })
 Job.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'assignedFreelancer' })
 Job.hasMany(JobLog, { foreignKey: 'jobId', as: 'jobLogs' })
-Job.hasOne(Review, { foreignKey: 'jobId', as: 'jobReview' })
+// Avaliação da entrega — até uma por autor: a da agência e a do supermercado (cliente).
+Job.hasOne(Review, { foreignKey: 'jobId', as: 'jobReview', scope: { authorRole: 'agency' } })
+Job.hasOne(Review, { foreignKey: 'jobId', as: 'jobClientReview', scope: { authorRole: 'supermarket' } })
+Job.hasMany(Review, { foreignKey: 'jobId', as: 'jobReviews' })
 Job.hasOne(Payment, { foreignKey: 'jobId', as: 'jobPayment' })
 
 JobLog.belongsTo(Job, { foreignKey: 'jobId', as: 'logJob' })
@@ -141,6 +147,11 @@ Invoice.belongsTo(Branch, { foreignKey: 'branchId', as: 'invoiceBranch' })
 Invoice.hasMany(Job, { foreignKey: 'monthlyInvoiceId', as: 'invoiceJobs' })
 Job.belongsTo(Invoice, { foreignKey: 'monthlyInvoiceId', as: 'jobMonthlyInvoice' })
 
+// Contestações/abatimentos do fechamento mensal (lançados pelo supermercado, resolvidos pela agência)
+Invoice.hasMany(InvoiceAdjustment, { foreignKey: 'invoiceId', as: 'invoiceAdjustments' })
+InvoiceAdjustment.belongsTo(Invoice, { foreignKey: 'invoiceId', as: 'adjustmentInvoice' })
+InvoiceAdjustment.belongsTo(User, { foreignKey: 'createdBy', as: 'adjustmentAuthor' })
+
 JobLog.belongsTo(JobShift, { foreignKey: 'jobShiftId', as: 'logShift' })
 
 Job.hasMany(JobPhoto, { foreignKey: 'jobId', as: 'jobPhotos' })
@@ -187,4 +198,5 @@ export {
   AgencyMemberBranch,
   AgencyMemberPayment,
   AgencyMemberJobCredit,
+  InvoiceAdjustment,
 }

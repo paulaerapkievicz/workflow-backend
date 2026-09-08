@@ -20,6 +20,7 @@ import { billingController } from './controllers/billingController';
 import { onboardingController } from './controllers/onboardingController';
 import { pendingController } from './controllers/pendingController';
 import { inviteController } from './controllers/inviteController';
+import { invoiceAdjustmentController } from './controllers/invoiceAdjustmentController';
 import { agencyMemberController } from './controllers/agencyMemberController';
 import { ensureAuth, authorize } from './middlewares/auth';
 import { upload } from './middlewares/upload';
@@ -95,6 +96,7 @@ router.put('/freelancers/:id', authorize('agency', 'leader', 'freelancer', 'admi
 router.delete('/freelancers/:id', authorize('agency', 'admin'), freelancerController.delete);
 router.get('/freelancers/:id/categories', freelancerController.listCategories);
 router.get('/freelancers/:id/reviews', reviewController.getByFreelancerId);
+router.get('/freelancers/:id/reputation', authorize('agency', 'leader', 'freelancer', 'admin'), reviewController.reputation);
 router.post('/freelancers/:id/categories', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.addCategory);
 router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'admin'), freelancerController.setCategoryRate);
 router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.removeCategory);
@@ -179,6 +181,7 @@ router.put('/agency/jobs/:id/timesheet', authorize('agency', 'leader'), jobContr
 router.post('/agency/jobs/:id/break-start', authorize('agency', 'leader'), jobController.breakStart);
 router.post('/agency/jobs/:id/break-end', authorize('agency', 'leader'), jobController.breakEnd);
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
+router.post('/jobs/:id/review-by-supermarket', authorize('supermarket'), reviewController.createBySupermarket);
 router.get('/jobs/:id/review', reviewController.getByJob);
 
 // ----- Logs de jornada -----
@@ -209,6 +212,13 @@ router.put('/payments/:id/cancel', authorize('admin'), paymentController.cancel)
 router.get('/invoices/mine', authorize('supermarket'), paymentController.myInvoices);
 router.post('/invoices/:id/pay', authorize('supermarket'), paymentController.invoicePay);
 router.post('/invoices/:id/sync-payment', authorize('supermarket'), paymentController.invoiceSyncPayment);
+// Contestação/abatimento do fechamento mensal (supermercado lança, agência resolve)
+router.get('/invoices/:id/adjustments', authorize('supermarket', 'agency', 'admin'), invoiceAdjustmentController.list);
+router.post('/invoices/:id/adjustments', authorize('supermarket'), invoiceAdjustmentController.create);
+router.delete('/invoices/:id/adjustments/:adjId', authorize('supermarket'), invoiceAdjustmentController.remove);
+router.post('/invoices/:id/adjustments/:adjId/approve', authorize('agency'), invoiceAdjustmentController.approve);
+router.post('/invoices/:id/adjustments/:adjId/reject', authorize('agency'), invoiceAdjustmentController.reject);
+router.post('/invoices/:id/adjustments/:adjId/revert', authorize('agency'), invoiceAdjustmentController.revert);
 router.get('/invoices', authorize('supermarket', 'admin'), invoiceController.index);
 router.get('/invoices/supermarket/:supermarketId', authorize('supermarket', 'admin'), invoiceController.getBySupermarket);
 router.get('/invoices/:id', authorize('supermarket', 'admin'), invoiceController.show);

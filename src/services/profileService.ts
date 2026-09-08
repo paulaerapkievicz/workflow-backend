@@ -28,10 +28,12 @@ export const profileService = {
   async forUser(user: Pick<UserInstance, 'id' | 'role'>) {
     switch (user.role) {
       case 'supermarket': {
-        const owned = await Supermarket.findOne({ where: { ownerId: user.id } })
+        // inclui a agência-cliente para a UI saber, p.ex., se a avaliação de colaborador está ligada
+        const withAgency = { include: [{ model: Agency, as: 'clientAgency', attributes: ['id', 'name', 'reviewEnabled'] }] }
+        const owned = await Supermarket.findOne({ where: { ownerId: user.id }, ...withAgency })
         if (owned) return owned
         const member = await SupermarketMember.findOne({ where: { userId: user.id } })
-        return member ? Supermarket.findByPk(member.supermarketId) : null
+        return member ? Supermarket.findByPk(member.supermarketId, withAgency) : null
       }
       case 'agency':
         return Agency.findOne({ where: { ownerId: user.id } })

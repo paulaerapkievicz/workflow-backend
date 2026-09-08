@@ -12,6 +12,7 @@ import { Role } from '../middlewares/auth'
 import { supermarketRateService } from './supermarketRateService'
 import { freelancerService } from './freelancerService'
 import { paymentGatewayService } from './paymentGatewayService'
+import { invoiceAdjustmentService } from './invoiceAdjustmentService'
 import { leaderJobCreditService } from './leaderJobCreditService'
 import { AgencyMemberJobCreditStatus } from '../models/AgencyMemberJobCredit'
 import { Supermarket } from '../models/Supermarket'
@@ -252,6 +253,10 @@ export const paymentService = {
     if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não pertence ao seu supermercado.')
     if (invoice.status !== 'pending') throw new Error('Esta fatura não está pendente.')
 
+    // Contestações pendentes precisam ser resolvidas pela agência antes do pagamento do líquido.
+    await invoiceAdjustmentService.assertNoPending(invoice.id)
+    const amountToPay = invoiceAdjustmentService.invoiceNetAmount(invoice)
+
     if (!paymentGatewayService.configured) {
       await invoice.update({ status: 'paid', paidAt: new Date() })
       return invoice.reload()
@@ -262,7 +267,7 @@ export const paymentService = {
     const checkout = await paymentGatewayService.createCheckout({
       reference: `${INVOICE_REF_PREFIX}${invoice.id}`,
       title: `Fechamento mensal ${invoice.referenceMonth ?? ''}`.trim(),
-      amount: Number(invoice.totalAmount),
+      amount: amountToPay,
       buyerEmail: owner?.email,
       returnPath: '/supermarket/payments',
       returnKey: 'fatura',

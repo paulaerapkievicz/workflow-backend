@@ -5,6 +5,7 @@ import { Order } from '../models/Order'
 import { Freelancer } from '../models/Freelancer'
 import { Invoice } from '../models/Invoice'
 import { Agency } from '../models/Agency'
+import { InvoiceAdjustment } from '../models/InvoiceAdjustment'
 import { referenceMonthOf, round2 } from '../helpers/time'
 
 /**
@@ -57,26 +58,35 @@ export const billingService = {
       include: [
         { model: Agency, as: 'invoiceAgency', attributes: ['id', 'name'] },
         { model: Branch, as: 'invoiceBranch', attributes: ['id', 'name'] },
+        { model: InvoiceAdjustment, as: 'invoiceAdjustments', attributes: ['id', 'status', 'amount'] },
       ],
       order: [['referenceMonth', 'DESC']],
     })
 
-    const invoiceRows = invoices.map((i) => ({
-      id: i.id,
-      referenceMonth: i.referenceMonth,
-      agencyName: (i as any).invoiceAgency?.name ?? null,
-      branchId: i.branchId ?? null,
-      branchName: (i as any).invoiceBranch?.name ?? null,
-      totalJobs: i.totalJobs ?? 0,
-      contractedMinutes: i.contractedMinutes ?? 0,
-      workedMinutes: i.workedMinutes ?? 0,
-      totalAmount: Number(i.totalAmount),
-      status: i.status,
-      paymentUrl: i.paymentUrl ?? null,
-      paymentRef: i.paymentRef ?? null,
-      paidAt: i.paidAt ?? null,
-      createdAt: i.createdAt,
-    }))
+    const invoiceRows = invoices.map((i) => {
+      const adjustmentsTotal = round2(Number(i.adjustmentsTotal ?? 0))
+      const adjustmentRows: any[] = (i as any).invoiceAdjustments ?? []
+      const pendingAdjustments = adjustmentRows.filter((a) => a.status === 'pending').length
+      return {
+        id: i.id,
+        referenceMonth: i.referenceMonth,
+        agencyName: (i as any).invoiceAgency?.name ?? null,
+        branchId: i.branchId ?? null,
+        branchName: (i as any).invoiceBranch?.name ?? null,
+        totalJobs: i.totalJobs ?? 0,
+        contractedMinutes: i.contractedMinutes ?? 0,
+        workedMinutes: i.workedMinutes ?? 0,
+        totalAmount: Number(i.totalAmount),
+        adjustmentsTotal,
+        netAmount: round2(Number(i.totalAmount) - adjustmentsTotal),
+        pendingAdjustments,
+        status: i.status,
+        paymentUrl: i.paymentUrl ?? null,
+        paymentRef: i.paymentRef ?? null,
+        paidAt: i.paidAt ?? null,
+        createdAt: i.createdAt,
+      }
+    })
 
     const totals = {
       totalJobs: rows.length,
@@ -84,10 +94,10 @@ export const billingService = {
       workedHours: round2(rows.reduce((a, r) => a + r.workedMinutes, 0) / 60),
       totalAmount: round2(rows.reduce((a, r) => a + r.amount, 0)),
       openInvoicesAmount: round2(
-        invoiceRows.filter((i) => i.status === 'pending').reduce((a, i) => a + i.totalAmount, 0)
+        invoiceRows.filter((i) => i.status === 'pending').reduce((a, i) => a + i.netAmount, 0)
       ),
       paidInvoicesAmount: round2(
-        invoiceRows.filter((i) => i.status === 'paid').reduce((a, i) => a + i.totalAmount, 0)
+        invoiceRows.filter((i) => i.status === 'paid').reduce((a, i) => a + i.netAmount, 0)
       ),
     }
 

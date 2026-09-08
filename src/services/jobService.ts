@@ -25,6 +25,7 @@ import { orderService, OrderContext } from './orderService'
 import { supermarketRateService } from './supermarketRateService'
 import { freelancerService } from './freelancerService'
 import { paymentService } from './paymentService'
+import { reviewService } from './reviewService'
 import { minutesBetween, CHECKOUT_OVERTIME_TOLERANCE_MINUTES } from '../helpers/time'
 import { resolveShifts } from '../helpers/shifts'
 import { jobLogService, resolveBreaksEnabled, sumClosedBreakMinutes } from './jobLogService'
@@ -46,6 +47,7 @@ const jobIncludes = [
   { model: JobPhoto, as: 'jobPhotos' },
   { model: Payment, as: 'jobPayment' },
   { model: Review, as: 'jobReview' },
+  { model: Review, as: 'jobClientReview' },
   { model: Order, as: 'jobOrder' },
   { model: OrderItem, as: 'jobOrderItem' },
 ]
@@ -1105,6 +1107,7 @@ export const jobService = {
       phone: freelancer.phone ?? null,
       document: freelancer.document ?? null,
       profilePhotoUrl: freelancer.profilePhotoUrl ?? null,
+      reputation: await reviewService.reputationForFreelancer(freelancer.id),
     }
   },
 }

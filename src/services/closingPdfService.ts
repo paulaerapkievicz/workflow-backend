@@ -101,6 +101,26 @@ export const closingPdfService = {
     doc.text(`Valor total: ${fmtMoney(inv.totalAmount)}`)
     doc.moveDown(1)
 
+    // Abatimentos aprovados (contestações do supermercado — ex.: quebra de caixa)
+    const approvedAdjustments: any[] = (inv.invoiceAdjustments ?? []).filter(
+      (a: any) => a.status === 'approved'
+    )
+    if (approvedAdjustments.length) {
+      const adjustmentsTotal = approvedAdjustments.reduce((a, x) => a + Number(x.amount ?? 0), 0)
+      doc.fontSize(13).font('Helvetica-Bold').text('Abatimentos')
+      doc.moveDown(0.3)
+      doc.fontSize(10).font('Helvetica')
+      approvedAdjustments.forEach((a) => {
+        doc.text(pdfSafe(`- ${a.description}: - ${fmtMoney(a.amount)}`))
+      })
+      doc.moveDown(0.3)
+      doc.font('Helvetica-Bold').text(
+        `Valor liquido a pagar: ${fmtMoney(Number(inv.totalAmount) - adjustmentsTotal)}`
+      )
+      doc.font('Helvetica')
+      doc.moveDown(1)
+    }
+
     doc.fontSize(13).font('Helvetica-Bold').text('Vagas do período')
     doc.moveDown(0.5)
 

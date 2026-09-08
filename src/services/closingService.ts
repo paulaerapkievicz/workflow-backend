@@ -8,12 +8,14 @@ import { Branch } from '../models/Branch'
 import { Freelancer } from '../models/Freelancer'
 import { Agency } from '../models/Agency'
 import { Supermarket } from '../models/Supermarket'
+import { InvoiceAdjustment } from '../models/InvoiceAdjustment'
 import { monthRange, round2 } from '../helpers/time'
 
 const monthlyIncludes = [
   { model: Supermarket, as: 'invoiceSupermarket' },
   { model: Agency, as: 'invoiceAgency' },
   { model: Branch, as: 'invoiceBranch' },
+  { model: InvoiceAdjustment, as: 'invoiceAdjustments' },
   {
     model: Job,
     as: 'invoiceJobs',

@@ -21,6 +21,7 @@ export interface Invoice {
   contractedMinutes?: number | null
   workedMinutes?: number | null
   totalAmount: number
+  adjustmentsTotal: number
   status: 'pending' | 'paid' | 'canceled'
   paymentProvider?: string | null
   paymentRef?: string | null
@@ -45,6 +46,7 @@ export interface InvoiceCreationAttributes
     | 'totalJobs'
     | 'contractedMinutes'
     | 'workedMinutes'
+    | 'adjustmentsTotal'
     | 'paymentProvider'
     | 'paymentRef'
     | 'paymentUrl'
@@ -135,6 +137,11 @@ export const Invoice = sequelize.define<InvoiceInstance, Invoice>(
     totalAmount: {
       type: DataTypes.DECIMAL(10, 2),
       allowNull: false
+    },
+    adjustmentsTotal: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0
     },
     status: {
       type: DataTypes.ENUM('pending', 'paid', 'canceled'),

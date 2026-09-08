@@ -9,6 +9,7 @@ import { UniformOrder } from '../models/UniformOrder'
 import { Supermarket } from '../models/Supermarket'
 import { Branch } from '../models/Branch'
 import { leaderJobCreditService } from '../services/leaderJobCreditService'
+import { invoiceAdjustmentService } from '../services/invoiceAdjustmentService'
 
 export const pendingController = {
   // GET /supermarket/pending-counts
@@ -42,6 +43,7 @@ export const pendingController = {
       // Líder não aprova filial (rota é dono-only) — não conta pra ele.
       let branchesToApprove = 0
       let memberCreditsToReview = 0
+      let contestationsToReview = 0
       if (actor.isOwner) {
         const clientMarkets = await Supermarket.findAll({ where: { agencyId }, attributes: ['id'] })
         const marketIds = clientMarkets.map((m) => m.id)
@@ -50,6 +52,8 @@ export const pendingController = {
           : 0
         // Créditos de líderes pagos "por colaborador" aguardando a agência liberar/cancelar.
         memberCreditsToReview = await leaderJobCreditService.countPendingForAgency(agencyId)
+        // Contestações de fechamento lançadas pelos supermercados aguardando a agência.
+        contestationsToReview = await invoiceAdjustmentService.countPendingForAgency(agencyId)
       }
 
       const scopeWhere: any = { agencyId }
@@ -64,6 +68,7 @@ export const pendingController = {
           registrationsToApprove,
           branchesToApprove,
           memberCreditsToReview,
+          contestationsToReview,
         })
       }
 
@@ -79,6 +84,7 @@ export const pendingController = {
         registrationsToApprove,
         branchesToApprove,
         memberCreditsToReview,
+        contestationsToReview,
       })
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' })
