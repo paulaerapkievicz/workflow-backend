@@ -11,6 +11,8 @@ export interface SupermarketMember {
   branchId?: string | null
   canSubmitOrders: boolean
   canApproveOrders: boolean
+  /** Vê e paga as faturas (fechamento mensal) da rede. O dono sempre pode; gerentes só quando marcado. */
+  canViewInvoices: boolean
   isOwner: boolean
   createdAt: Date
   updatedAt: Date
@@ -23,6 +25,7 @@ export interface SupermarketMemberCreationAttributes
     | 'branchId'
     | 'canSubmitOrders'
     | 'canApproveOrders'
+    | 'canViewInvoices'
     | 'isOwner'
     | 'createdAt'
     | 'updatedAt'
@@ -59,6 +62,7 @@ export const SupermarketMember = sequelize.define<SupermarketMemberInstance, Sup
     },
     canSubmitOrders: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
     canApproveOrders: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    canViewInvoices: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     isOwner: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     createdAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updatedAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },

@@ -103,7 +103,7 @@ export const supermarketController = {
       if (!(await canManageTeam(req, supermarketId))) {
         return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
       }
-      const { name, email, password, branchId, canSubmitOrders, canApproveOrders } = req.body ?? {};
+      const { name, email, password, branchId, canSubmitOrders, canApproveOrders, canViewInvoices } = req.body ?? {};
       if (!name || !email || !password) {
         return res.status(400).json({ message: 'Informe nome, e-mail e senha do gerente.' });
       }
@@ -129,6 +129,7 @@ export const supermarketController = {
             branchId: branchId ?? null,
             canSubmitOrders: canSubmitOrders !== false,
             canApproveOrders: canApproveOrders === true,
+            canViewInvoices: canViewInvoices === true,
             isOwner: false,
           },
           { transaction: t }
@@ -153,6 +154,7 @@ export const supermarketController = {
       if (req.body.branchId !== undefined) patch.branchId = req.body.branchId || null;
       if (req.body.canSubmitOrders !== undefined) patch.canSubmitOrders = req.body.canSubmitOrders === true;
       if (req.body.canApproveOrders !== undefined) patch.canApproveOrders = req.body.canApproveOrders === true;
+      if (req.body.canViewInvoices !== undefined) patch.canViewInvoices = req.body.canViewInvoices === true;
       await member.update(patch);
       return res.json(member);
     } catch (error) {

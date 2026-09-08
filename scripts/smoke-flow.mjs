@@ -623,6 +623,20 @@ async function main() {
   ok(billing.invoices.some((i) => i.id === close.data.id && i.branchName == null), 'fatura mensal (matriz) no faturamento')
   ok(billing.totals.workedHours > 0, 'totais com horas trabalhadas', billing.totals?.workedHours)
 
+  section('Permissão do gerente de loja para ver as faturas (canViewInvoices)')
+  const mgrBillingBlocked = await req('GET', '/billing/summary', { token: mgrT })
+  ok(mgrBillingBlocked.status === 403, 'gerente sem permissão não vê o faturamento', mgrBillingBlocked.status)
+  const mgrInvoicesBlocked = await req('GET', '/invoices/mine', { token: mgrT })
+  ok(mgrInvoicesBlocked.status === 403, 'gerente sem permissão não lista as faturas', mgrInvoicesBlocked.status)
+  const grantView = await req('PUT', `/supermarket-members/${mkMember.data.id}`, { token: agencyT, body: { canViewInvoices: true } })
+  ok(grantView.status === 200 && grantView.data.canViewInvoices === true, 'agência libera o gerente para ver as faturas')
+  const mgrBillingOk = await req('GET', '/billing/summary', { token: mgrT })
+  ok(mgrBillingOk.status === 200 && Array.isArray(mgrBillingOk.data.jobs), 'gerente liberado enxerga o faturamento')
+  const revokeView = await req('PUT', `/supermarket-members/${mkMember.data.id}`, { token: superT, body: { canViewInvoices: false } })
+  ok(revokeView.status === 200 && revokeView.data.canViewInvoices === false, 'dono do supermercado revoga o acesso do gerente às faturas')
+  const mgrBillingBlockedAgain = await req('GET', '/billing/summary', { token: mgrT })
+  ok(mgrBillingBlockedAgain.status === 403, 'gerente volta a ser bloqueado depois da revogação')
+
   section('Contestação do fechamento (abatimento)')
   const invId = close.data.id
   const invTotal = Number(close.data.totalAmount)

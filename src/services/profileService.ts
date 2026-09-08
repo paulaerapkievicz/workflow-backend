@@ -14,6 +14,8 @@ export interface SupermarketContext {
   branchId: string | null
   canSubmitOrders: boolean
   canApproveOrders: boolean
+  /** Vê e paga as faturas (fechamento mensal) da rede. */
+  canViewInvoices: boolean
   isOwner: boolean
 }
 
@@ -103,6 +105,7 @@ export const profileService = {
         branchId: m?.branchId ?? null,
         canSubmitOrders: m?.canSubmitOrders ?? true,
         canApproveOrders: m?.canApproveOrders ?? true,
+        canViewInvoices: true,
         isOwner: true,
       }
     }
@@ -113,6 +116,7 @@ export const profileService = {
       branchId: member.branchId ?? null,
       canSubmitOrders: member.canSubmitOrders,
       canApproveOrders: member.canApproveOrders,
+      canViewInvoices: member.canViewInvoices,
       isOwner: member.isOwner,
     }
   },

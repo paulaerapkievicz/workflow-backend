@@ -22,7 +22,7 @@ import { pendingController } from './controllers/pendingController';
 import { inviteController } from './controllers/inviteController';
 import { invoiceAdjustmentController } from './controllers/invoiceAdjustmentController';
 import { agencyMemberController } from './controllers/agencyMemberController';
-import { ensureAuth, authorize } from './middlewares/auth';
+import { ensureAuth, authorize, ensureCanViewInvoices } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
 const router = express.Router();
@@ -133,14 +133,14 @@ router.post('/orders/:id/reject', authorize('supermarket'), orderController.reje
 router.post('/orders/:id/cancel', authorize('supermarket'), orderController.cancel);
 
 // ----- Fechamento mensal (agência fecha o mês de um supermercado) -----
-router.get('/closings', authorize('agency', 'supermarket'), closingController.index);
+router.get('/closings', authorize('agency', 'supermarket'), ensureCanViewInvoices, closingController.index);
 router.get('/closings/preview', authorize('agency'), closingController.preview);
 router.post('/closings', authorize('agency'), closingController.create);
-router.get('/closings/:id', authorize('agency', 'supermarket', 'admin'), closingController.show);
-router.get('/closings/:id/pdf', authorize('agency', 'supermarket', 'admin'), closingController.pdf);
+router.get('/closings/:id', authorize('agency', 'supermarket', 'admin'), ensureCanViewInvoices, closingController.show);
+router.get('/closings/:id/pdf', authorize('agency', 'supermarket', 'admin'), ensureCanViewInvoices, closingController.pdf);
 
 // ----- Faturamento e relatórios -----
-router.get('/billing/summary', authorize('supermarket'), billingController.summary);
+router.get('/billing/summary', authorize('supermarket'), ensureCanViewInvoices, billingController.summary);
 router.get('/reports/freelancer', authorize('freelancer'), billingController.freelancerReport);
 
 // ----- Onboarding do colaborador (perfil contratual + uniforme) -----
@@ -209,19 +209,19 @@ router.get('/payments/:id', paymentController.show);
 router.put('/payments/:id/cancel', authorize('admin'), paymentController.cancel);
 
 // ----- Faturas (supermercado → agência) -----
-router.get('/invoices/mine', authorize('supermarket'), paymentController.myInvoices);
-router.post('/invoices/:id/pay', authorize('supermarket'), paymentController.invoicePay);
-router.post('/invoices/:id/sync-payment', authorize('supermarket'), paymentController.invoiceSyncPayment);
+router.get('/invoices/mine', authorize('supermarket'), ensureCanViewInvoices, paymentController.myInvoices);
+router.post('/invoices/:id/pay', authorize('supermarket'), ensureCanViewInvoices, paymentController.invoicePay);
+router.post('/invoices/:id/sync-payment', authorize('supermarket'), ensureCanViewInvoices, paymentController.invoiceSyncPayment);
 // Contestação/abatimento do fechamento mensal (supermercado lança, agência resolve)
-router.get('/invoices/:id/adjustments', authorize('supermarket', 'agency', 'admin'), invoiceAdjustmentController.list);
-router.post('/invoices/:id/adjustments', authorize('supermarket'), invoiceAdjustmentController.create);
-router.delete('/invoices/:id/adjustments/:adjId', authorize('supermarket'), invoiceAdjustmentController.remove);
+router.get('/invoices/:id/adjustments', authorize('supermarket', 'agency', 'admin'), ensureCanViewInvoices, invoiceAdjustmentController.list);
+router.post('/invoices/:id/adjustments', authorize('supermarket'), ensureCanViewInvoices, invoiceAdjustmentController.create);
+router.delete('/invoices/:id/adjustments/:adjId', authorize('supermarket'), ensureCanViewInvoices, invoiceAdjustmentController.remove);
 router.post('/invoices/:id/adjustments/:adjId/approve', authorize('agency'), invoiceAdjustmentController.approve);
 router.post('/invoices/:id/adjustments/:adjId/reject', authorize('agency'), invoiceAdjustmentController.reject);
 router.post('/invoices/:id/adjustments/:adjId/revert', authorize('agency'), invoiceAdjustmentController.revert);
-router.get('/invoices', authorize('supermarket', 'admin'), invoiceController.index);
-router.get('/invoices/supermarket/:supermarketId', authorize('supermarket', 'admin'), invoiceController.getBySupermarket);
-router.get('/invoices/:id', authorize('supermarket', 'admin'), invoiceController.show);
+router.get('/invoices', authorize('supermarket', 'admin'), ensureCanViewInvoices, invoiceController.index);
+router.get('/invoices/supermarket/:supermarketId', authorize('supermarket', 'admin'), ensureCanViewInvoices, invoiceController.getBySupermarket);
+router.get('/invoices/:id', authorize('supermarket', 'admin'), ensureCanViewInvoices, invoiceController.show);
 router.post('/invoices', authorize('admin'), invoiceController.create);
 router.put('/invoices/:id', authorize('admin'), invoiceController.update);
 router.delete('/invoices/:id', authorize('admin'), invoiceController.delete);
