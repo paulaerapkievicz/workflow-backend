@@ -11,7 +11,7 @@ export interface Invite {
   token: string
   status: 'pending' | 'used' | 'revoked'
   /** Só para convite de líder: o pagamento dele, copiado para o AgencyMember no resgate. */
-  payType?: 'hora' | 'diaria' | 'mensal' | null
+  payType?: 'hora' | 'diaria' | 'mensal' | 'por_colaborador' | null
   payAmount?: number | null
   expiresAt?: Date | null
   usedAt?: Date | null
@@ -63,7 +63,7 @@ export const Invite = sequelize.define<InviteInstance, Invite>('Invite', {
   payType: {
     type: DataTypes.STRING,
     allowNull: true,
-    validate: { isIn: [['hora', 'diaria', 'mensal']] }
+    validate: { isIn: [['hora', 'diaria', 'mensal', 'por_colaborador']] }
   },
   payAmount: {
     type: DataTypes.DECIMAL(10, 2),

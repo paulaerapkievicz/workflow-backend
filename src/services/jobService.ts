@@ -261,7 +261,9 @@ async function cancelJobByAgency(
   })
 
   // Liquida o que foi efetivamente trabalhado (settleForJob abre a própria transação).
-  await paymentService.settleForJob(await job.reload())
+  // Conclusão veio de uma intervenção (desistência/falta/troca) — o crédito do líder pago
+  // por colaborador fica pendente de decisão da agência.
+  await paymentService.settleForJob(await job.reload(), { leaderCreditStatus: 'pending' })
   await orderService.syncStatus(job.orderId)
   return spunOffJobId
 }
@@ -769,7 +771,10 @@ export const jobService = {
         completedAt: now,
         settlementHold: settlementHeld,
       })
-      if (!settlementHeld) await paymentService.settleForJob(await job.reload())
+      // Checkout forçado pela agência: crédito do líder por colaborador fica pendente de decisão.
+      if (!settlementHeld) {
+        await paymentService.settleForJob(await job.reload(), { leaderCreditStatus: 'pending' })
+      }
       await orderService.syncStatus(job.orderId)
     }
     return this.findById(id)

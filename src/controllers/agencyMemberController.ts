@@ -2,6 +2,8 @@ import { Response } from 'express'
 import { AuthRequest } from '../middlewares/auth'
 import { profileService } from '../services/profileService'
 import { agencyMemberService } from '../services/agencyMemberService'
+import { leaderJobCreditService } from '../services/leaderJobCreditService'
+import { AgencyMemberJobCreditStatus } from '../models/AgencyMemberJobCredit'
 
 function fail(res: Response, err: unknown, code = 400) {
   return res.status(code).json({ message: err instanceof Error ? err.message : 'Erro inesperado.' })
@@ -95,6 +97,45 @@ export const agencyMemberController = {
   async myWallet(req: AuthRequest, res: Response) {
     try {
       return res.json(await agencyMemberService.walletForUser(req.user!.id))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // GET /agency/member-credits?status=pending — créditos "por colaborador que trabalhou"
+  async jobCredits(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await ownerAgencyId(req, res)
+      if (!agencyId) return
+      const raw = String(req.query.status ?? '')
+      const status = (['released', 'pending', 'canceled'] as AgencyMemberJobCreditStatus[]).includes(
+        raw as AgencyMemberJobCreditStatus
+      )
+        ? (raw as AgencyMemberJobCreditStatus)
+        : undefined
+      return res.json(await leaderJobCreditService.listForAgency(agencyId, status))
+    } catch (error) {
+      return fail(res, error, 500)
+    }
+  },
+
+  // POST /agency/member-credits/:id/release — a agência decide pagar o crédito pendente
+  async releaseJobCredit(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await ownerAgencyId(req, res)
+      if (!agencyId) return
+      return res.json(await leaderJobCreditService.release(req.params.id, agencyId))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /agency/member-credits/:id/cancel — a agência decide não pagar o crédito
+  async cancelJobCredit(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await ownerAgencyId(req, res)
+      if (!agencyId) return
+      return res.json(await leaderJobCreditService.cancel(req.params.id, agencyId, req.body?.note ?? null))
     } catch (error) {
       return fail(res, error)
     }

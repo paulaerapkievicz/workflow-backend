@@ -6,7 +6,7 @@ interface CreateOptions {
   /** true quando quem gera o convite é um líder (não o dono) — não pode gerar supermercado/líder. */
   createdByLeader?: boolean
   /** Só para role 'leader': pagamento do líder, copiado para o AgencyMember no resgate. */
-  payType?: 'hora' | 'diaria' | 'mensal' | null
+  payType?: 'hora' | 'diaria' | 'mensal' | 'por_colaborador' | null
   payAmount?: number | null
 }
 
@@ -28,8 +28,10 @@ export const inviteService = {
     if (role === 'leader') {
       const type = options.payType
       const amount = options.payAmount != null ? Number(options.payAmount) : null
-      if (!type || !['hora', 'diaria', 'mensal'].includes(type)) {
-        throw new Error('Escolha a forma de pagamento do líder (hora, diária ou mensal).')
+      if (!type || !['hora', 'diaria', 'mensal', 'por_colaborador'].includes(type)) {
+        throw new Error(
+          'Escolha a forma de pagamento do líder (hora, diária, mensal ou por colaborador que trabalhou).'
+        )
       }
       if (amount == null || !Number.isFinite(amount) || amount <= 0) {
         throw new Error('Informe o valor de pagamento do líder (maior que zero).')

@@ -3,7 +3,7 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
-export const AGENCY_MEMBER_PAY_TYPES = ['hora', 'diaria', 'mensal'] as const
+export const AGENCY_MEMBER_PAY_TYPES = ['hora', 'diaria', 'mensal', 'por_colaborador'] as const
 export type AgencyMemberPayType = (typeof AGENCY_MEMBER_PAY_TYPES)[number]
 
 /**

@@ -12,6 +12,8 @@ import { Role } from '../middlewares/auth'
 import { supermarketRateService } from './supermarketRateService'
 import { freelancerService } from './freelancerService'
 import { paymentGatewayService } from './paymentGatewayService'
+import { leaderJobCreditService } from './leaderJobCreditService'
+import { AgencyMemberJobCreditStatus } from '../models/AgencyMemberJobCredit'
 import { Supermarket } from '../models/Supermarket'
 import { User } from '../models/User'
 import { round2 } from '../helpers/time'
@@ -88,7 +90,14 @@ export const paymentService = {
   // colaborador recebe (R$/hora do colaborador por função), ambos proporcionais às horas
   // trabalhadas. A diferença fica com a agência. Credita as carteiras na hora; a fatura ao
   // supermercado sai no fechamento mensal.
-  async settleForJob(job: JobInstance) {
+  async settleForJob(
+    job: JobInstance,
+    opts: { leaderCreditStatus?: AgencyMemberJobCreditStatus } = {}
+  ) {
+    // Como o líder pago `por_colaborador` ganha por vaga concluída pelo colaborador: quando é o
+    // próprio colaborador que fecha o ponto, o crédito entra liberado; quando a conclusão veio
+    // de uma intervenção (desistência, falta, troca, checkout forçado) fica pendente de decisão.
+    const leaderCreditStatus: AgencyMemberJobCreditStatus = opts.leaderCreditStatus ?? 'released'
     const existing = await Payment.findOne({ where: { jobId: job.id } })
     if (existing) {
       // A vaga já foi liquidada antes, mas a trava de hora extra pode ter ficado
@@ -171,6 +180,8 @@ export const paymentService = {
       )
       await freelancer.increment('availableBalance', { by: freelancerAmount, transaction: t })
       await agency.increment('availableBalance', { by: agencyAmount, transaction: t })
+
+      await leaderJobCreditService.accrueForSettledJob(job, agency.id, leaderCreditStatus, t)
 
       return payment
     })

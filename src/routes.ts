@@ -115,6 +115,9 @@ router.put('/agency/members/:id', authorize('agency'), agencyMemberController.up
 router.put('/agency/members/:id/scope', authorize('agency'), agencyMemberController.setScope);
 router.delete('/agency/members/:id', authorize('agency'), agencyMemberController.remove);
 router.post('/agency/members/:id/payments', authorize('agency'), agencyMemberController.registerPayment);
+router.get('/agency/member-credits', authorize('agency'), agencyMemberController.jobCredits);
+router.post('/agency/member-credits/:id/release', authorize('agency'), agencyMemberController.releaseJobCredit);
+router.post('/agency/member-credits/:id/cancel', authorize('agency'), agencyMemberController.cancelJobCredit);
 // Carteira do próprio líder
 router.get('/leader/wallet', authorize('leader'), agencyMemberController.myWallet);
 

@@ -8,6 +8,7 @@ import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
 import { Supermarket } from '../models/Supermarket'
 import { Branch } from '../models/Branch'
+import { leaderJobCreditService } from '../services/leaderJobCreditService'
 
 export const pendingController = {
   // GET /supermarket/pending-counts
@@ -40,12 +41,15 @@ export const pendingController = {
       // Filiais que os supermercados-clientes cadastraram e ainda aguardam a agência aprovar o atendimento.
       // Líder não aprova filial (rota é dono-only) — não conta pra ele.
       let branchesToApprove = 0
+      let memberCreditsToReview = 0
       if (actor.isOwner) {
         const clientMarkets = await Supermarket.findAll({ where: { agencyId }, attributes: ['id'] })
         const marketIds = clientMarkets.map((m) => m.id)
         branchesToApprove = marketIds.length
           ? await Branch.count({ where: { supermarketId: marketIds, serviceStatus: 'pending' } })
           : 0
+        // Créditos de líderes pagos "por colaborador" aguardando a agência liberar/cancelar.
+        memberCreditsToReview = await leaderJobCreditService.countPendingForAgency(agencyId)
       }
 
       const scopeWhere: any = { agencyId }
@@ -59,6 +63,7 @@ export const pendingController = {
           contractsPending: 0,
           registrationsToApprove,
           branchesToApprove,
+          memberCreditsToReview,
         })
       }
 
@@ -73,6 +78,7 @@ export const pendingController = {
         contractsPending: Math.max(0, ids.length - contractsDone),
         registrationsToApprove,
         branchesToApprove,
+        memberCreditsToReview,
       })
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' })

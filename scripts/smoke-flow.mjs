@@ -824,6 +824,88 @@ async function main() {
   const procWd = await req('POST', `/withdrawals/${leaderWd.data.id}/process`, { token: adminT, body: { status: 'paid' } })
   ok(procWd.status === 200 && procWd.data.status === 'paid', 'admin processa o saque do líder', procWd.data?.status)
 
+  // --- Pagamento do líder "por colaborador que trabalhou" ---
+  // Sem salário fixo: o líder ganha um valor por cada vaga que um colaborador do grupo dele
+  // conclui. Conclusão normal -> crédito liberado na hora; desistência/troca -> pendente,
+  // e a agência decide se libera ou não. Deltas relativos (a carteira já tem histórico).
+  section('Líder pago por colaborador que trabalhou')
+  const agencyBalanceOf = async () =>
+    Number((await req('GET', `/agencies/${agencyId}`, { token: agencyT })).data.availableBalance)
+  const leaderBalanceOf = async () =>
+    Number((await req('GET', '/leader/wallet', { token: leaderT })).data.availableBalance)
+
+  const setPerColab = await req('PUT', `/agency/members/${leaderMember.id}`, {
+    token: agencyT, body: { payType: 'por_colaborador', payAmount: 12 },
+  })
+  ok(
+    setPerColab.status === 200 && setPerColab.data.payType === 'por_colaborador' && Number(setPerColab.data.payAmount) === 12,
+    'agência muda o líder para pagamento por colaborador (editável a qualquer momento)',
+    setPerColab.data?.payType
+  )
+
+  const runShift = async (jobId, hoursBack) => {
+    await req('POST', `/jobs/${jobId}/accept`, { token: freeT })
+    await startShiftNow(jobId)
+    await req('POST', `/jobs/${jobId}/logs/checkin`, { token: freeT, body: { ...CENTRO, accuracy: 10 } })
+    const fd = new FormData()
+    fd.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg')
+    await fetch(`${BASE}/jobs/${jobId}/photos`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fd })
+    await db.query(`UPDATE job_shifts SET check_in_at = check_in_at - interval '${hoursBack} hours' WHERE job_id=$1 AND status='in_progress'`, [jobId])
+    await db.query(`UPDATE job_logs SET timestamp = timestamp - interval '${hoursBack} hours' WHERE job_id=$1 AND event_type='check-in'`, [jobId])
+  }
+
+  // (1) free1 (escopo do líder, Filial Centro) conclui a vaga normalmente -> crédito liberado.
+  const pcOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: dateInDays(12), shifts: [{ startTime: '09:00', endTime: '12:00' }] }] },
+  })
+  const pcJob = pcOrder.data.orderJobs[0]
+  await runShift(pcJob.id, 3)
+  const leaderBefore1 = await leaderBalanceOf()
+  const agencyBefore1 = await agencyBalanceOf()
+  const coPc = await req('POST', `/jobs/${pcJob.id}/logs/checkout`, { token: freeT, body: CENTRO })
+  ok(coPc.status === 201 && coPc.data.jobCompleted === true, 'free1 conclui a vaga (por colaborador)')
+  ok(Math.abs((await leaderBalanceOf()) - leaderBefore1 - 12) < 0.01, 'colaborador cumpriu a escala -> líder recebe R$ 12 na hora', (await leaderBalanceOf()) - leaderBefore1)
+  ok(Math.abs((await agencyBalanceOf()) - agencyBefore1 - 24) < 1.5, 'crédito do líder debita o saldo da agência (margem 36 - 12)', (await agencyBalanceOf()) - agencyBefore1)
+  const releasedList = (await req('GET', '/agency/member-credits?status=released', { token: agencyT })).data
+  ok(releasedList.some((c) => c.jobId === pcJob.id && Number(c.amount) === 12), 'crédito liberado aparece em /agency/member-credits', releasedList.map((c) => c.jobId))
+
+  // (2) free1 desiste no meio de outra vaga -> crédito do líder fica pendente de decisão.
+  const pcOrder2 = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: dateInDays(12), shifts: [{ startTime: '15:00', endTime: '20:00' }] }] },
+  })
+  const pcJob2 = pcOrder2.data.orderJobs[0]
+  await runShift(pcJob2.id, 2)
+  const leaderBefore2 = await leaderBalanceOf()
+  const quit2 = await req('POST', `/jobs/${pcJob2.id}/withdraw`, { token: freeT, body: { reason: 'imprevisto' } })
+  ok(quit2.status === 200 && quit2.data.status === 'canceled', 'free1 desiste no meio do turno', quit2.data?.status)
+  ok(Math.abs((await leaderBalanceOf()) - leaderBefore2) < 0.01, 'desistência não credita o líder na hora', (await leaderBalanceOf()) - leaderBefore2)
+  const pendingList = (await req('GET', '/agency/member-credits?status=pending', { token: agencyT })).data
+  const pendingCredit = pendingList.find((c) => c.jobId === pcJob2.id)
+  ok(!!pendingCredit && pendingCredit.status === 'pending', 'crédito do líder por vaga com desistência fica pendente', pendingList.map((c) => c.jobId))
+  const counts = (await req('GET', '/agency/pending-counts', { token: agencyT })).data
+  ok((counts.memberCreditsToReview ?? 0) >= 1, 'pending-counts sinaliza créditos de líder a revisar', counts.memberCreditsToReview)
+
+  // (3) agência libera o crédito pendente -> entra na carteira do líder.
+  const relCredit = await req('POST', `/agency/member-credits/${pendingCredit.id}/release`, { token: agencyT })
+  ok(relCredit.status === 200 && relCredit.data.status === 'released', 'agência libera o crédito pendente', relCredit.data?.status)
+  ok(Math.abs((await leaderBalanceOf()) - leaderBefore2 - 12) < 0.01, 'liberação credita R$ 12 na carteira do líder', (await leaderBalanceOf()) - leaderBefore2)
+
+  // (4) outra desistência -> a agência decide NÃO pagar.
+  const pcOrder3 = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: dateInDays(13), shifts: [{ startTime: '09:00', endTime: '14:00' }] }] },
+  })
+  const pcJob3 = pcOrder3.data.orderJobs[0]
+  await runShift(pcJob3.id, 2)
+  await req('POST', `/jobs/${pcJob3.id}/withdraw`, { token: freeT, body: { reason: 'outro imprevisto' } })
+  const pending3 = (await req('GET', '/agency/member-credits?status=pending', { token: agencyT })).data.find((c) => c.jobId === pcJob3.id)
+  const leaderBefore3 = await leaderBalanceOf()
+  const cancelCredit = await req('POST', `/agency/member-credits/${pending3.id}/cancel`, { token: agencyT, body: { note: 'não cumpriu a escala' } })
+  ok(cancelCredit.status === 200 && cancelCredit.data.status === 'canceled', 'agência decide não pagar o crédito', cancelCredit.data?.status)
+  ok(Math.abs((await leaderBalanceOf()) - leaderBefore3) < 0.01, 'crédito não pago não mexe na carteira do líder', (await leaderBalanceOf()) - leaderBefore3)
+
   // Líder desativado perde o acesso.
   await req('DELETE', `/agency/members/${leaderMember.id}`, { token: agencyT })
   ok((await req('GET', '/freelancers', { token: leaderT })).status === 403, 'líder desativado perde acesso às rotas operacionais')

@@ -10,10 +10,11 @@ import { AgencyMember, AGENCY_MEMBER_PAY_TYPES, AgencyMemberPayType } from '../m
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer'
 import { AgencyMemberBranch } from '../models/AgencyMemberBranch'
 import { AgencyMemberPayment } from '../models/AgencyMemberPayment'
+import { leaderJobCreditService } from './leaderJobCreditService'
 
 function parsePay(payType: unknown, payAmount: unknown): { payType: AgencyMemberPayType; payAmount: number } {
   if (!payType || !AGENCY_MEMBER_PAY_TYPES.includes(payType as AgencyMemberPayType)) {
-    throw new Error('Escolha a forma de pagamento do líder (hora, diária ou mensal).')
+    throw new Error('Escolha a forma de pagamento do líder (hora, diária, mensal ou por colaborador que trabalhou).')
   }
   const amount = Number(payAmount)
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -23,7 +24,7 @@ function parsePay(payType: unknown, payAmount: unknown): { payType: AgencyMember
 }
 
 async function serialize(member: AgencyMember & { id: string }) {
-  const [user, freelancers, branches, payments] = await Promise.all([
+  const [user, freelancers, branches, payments, jobCredits] = await Promise.all([
     User.findByPk(member.userId, { attributes: ['id', 'name', 'email', 'phone'] }),
     AgencyMemberFreelancer.findAll({ where: { agencyMemberId: member.id }, attributes: ['freelancerId'] }),
     AgencyMemberBranch.findAll({ where: { agencyMemberId: member.id }, attributes: ['branchId'] }),
@@ -31,7 +32,14 @@ async function serialize(member: AgencyMember & { id: string }) {
       where: { agencyMemberId: member.id },
       order: [['createdAt', 'DESC']],
     }),
+    leaderJobCreditService.listForMember(member.id),
   ])
+  const creditsReleasedTotal = jobCredits
+    .filter((c) => c.status === 'released')
+    .reduce((acc, c) => acc + c.amount, 0)
+  const creditsPendingTotal = jobCredits
+    .filter((c) => c.status === 'pending')
+    .reduce((acc, c) => acc + c.amount, 0)
   return {
     id: member.id,
     agencyId: member.agencyId,
@@ -54,6 +62,9 @@ async function serialize(member: AgencyMember & { id: string }) {
       note: p.note ?? null,
       createdAt: p.createdAt,
     })),
+    jobCredits,
+    creditsReleasedTotal: Number(creditsReleasedTotal.toFixed(2)),
+    creditsPendingTotal: Number(creditsPendingTotal.toFixed(2)),
   }
 }
 
@@ -222,9 +233,10 @@ export const agencyMemberService = {
   async walletForUser(userId: string) {
     const member = await AgencyMember.findOne({ where: { userId } })
     if (!member) throw new Error('Líder não encontrado.')
-    const [agency, payments] = await Promise.all([
+    const [agency, payments, jobCredits] = await Promise.all([
       Agency.findByPk(member.agencyId, { attributes: ['name'] }),
       AgencyMemberPayment.findAll({ where: { agencyMemberId: member.id }, order: [['createdAt', 'DESC']] }),
+      leaderJobCreditService.listForMember(member.id),
     ])
     return {
       id: member.id,
@@ -240,6 +252,13 @@ export const agencyMemberService = {
         note: p.note ?? null,
         createdAt: p.createdAt,
       })),
+      jobCredits,
+      creditsReleasedTotal: Number(
+        jobCredits.filter((c) => c.status === 'released').reduce((acc, c) => acc + c.amount, 0).toFixed(2)
+      ),
+      creditsPendingTotal: Number(
+        jobCredits.filter((c) => c.status === 'pending').reduce((acc, c) => acc + c.amount, 0).toFixed(2)
+      ),
     }
   },
 }
