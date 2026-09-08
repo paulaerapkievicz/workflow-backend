@@ -20,6 +20,7 @@ import { UserInstance } from '../models/User'
 import { Agency } from '../models/Agency'
 import { SupermarketCategoryRate } from '../models/SupermarketCategoryRate'
 import { profileService } from './profileService'
+import { AgencyActor, assertBranchInScope, assertFreelancerInScope } from '../helpers/agencyScope'
 import { orderService, OrderContext } from './orderService'
 import { supermarketRateService } from './supermarketRateService'
 import { freelancerService } from './freelancerService'
@@ -100,6 +101,7 @@ const JOB_CONFIG_FIELDS = [
   'requireCheckoutPhoto',
   'reviewEnabled',
   'breaksEnabled',
+  'breakLimitMinutes',
 ] as const
 
 const JOB_CONFIG_BOOLEAN_FIELDS = ['requireCheckoutPhoto', 'reviewEnabled', 'breaksEnabled']
@@ -293,10 +295,12 @@ export const jobService = {
       return null
     }
 
-    if (user.role === 'agency') {
-      const agencyId = await profileService.agencyIdForUser(user)
-      if (!agencyId) return null
-      if ((job as any).jobSupermarket?.agencyId !== agencyId) return null
+    if (user.role === 'agency' || user.role === 'leader') {
+      const actor = await profileService.agencyContextForUser(user)
+      if (!actor) return null
+      if ((job as any).jobSupermarket?.agencyId !== actor.agencyId) return null
+      // Líder com escopo de filiais só enxerga vagas das filiais do escopo.
+      if (actor.scopeBranchIds && !actor.scopeBranchIds.includes(job.branchId)) return null
       return job
     }
 
@@ -333,15 +337,13 @@ export const jobService = {
       })
     }
 
-    if (user.role === 'agency') {
-      const agencyId = await profileService.agencyIdForUser(user)
-      if (!agencyId) return []
+    if (user.role === 'agency' || user.role === 'leader') {
+      const actor = await profileService.agencyContextForUser(user)
+      if (!actor) return []
       // A agência só vê vagas de supermercados que são clientes dela — sem pool entre agências.
-      return Job.findAll({
-        where: { '$jobSupermarket.agency_id$': agencyId },
-        include: jobIncludes,
-        order: [['createdAt', 'DESC']],
-      })
+      const where: any = { '$jobSupermarket.agency_id$': actor.agencyId }
+      if (actor.scopeBranchIds) where.branchId = { [Op.in]: actor.scopeBranchIds }
+      return Job.findAll({ where, include: jobIncludes, order: [['createdAt', 'DESC']] })
     }
 
     return []
@@ -403,15 +405,13 @@ export const jobService = {
   },
 
   /** Vagas em andamento da rede da agência, com o último ponto de localização. */
-  async liveForAgency(agencyId: string) {
+  async liveForAgency(agencyId: string, actor?: AgencyActor | null) {
     const freelancers = await Freelancer.findAll({ where: { agencyId }, attributes: ['id'] })
     const ids = freelancers.map((f) => f.id)
     if (!ids.length) return []
-    return Job.findAll({
-      where: { status: 'in_progress', freelancerId: { [Op.in]: ids } },
-      include: jobIncludes,
-      order: [['startTime', 'ASC']],
-    })
+    const where: any = { status: 'in_progress', freelancerId: { [Op.in]: ids } }
+    if (actor?.scopeBranchIds) where.branchId = { [Op.in]: actor.scopeBranchIds }
+    return Job.findAll({ where, include: jobIncludes, order: [['startTime', 'ASC']] })
   },
 
   /** Vagas em andamento de um supermercado (opcionalmente de uma loja só). */
@@ -465,9 +465,10 @@ export const jobService = {
    * overrides de configuração (raio, prazo, foto, avaliação) enquanto não estiver
    * concluída/cancelada. `null` num override volta ao padrão da agência.
    */
-  async updateByAgency(id: string, _agencyId: string, data: any) {
+  async updateByAgency(id: string, _agencyId: string, data: any, actor?: AgencyActor | null) {
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
+    if (actor) assertBranchInScope(actor, job.branchId)
     if (['completed', 'canceled'].includes(job.status)) {
       throw new Error('Não é possível editar uma vaga concluída ou cancelada.')
     }
@@ -678,9 +679,10 @@ export const jobService = {
   },
 
   // A agência libera a vaga de um freelancer da sua rede (para repassar / reabrir).
-  async releaseByAgency(id: string, agencyId: string, reason?: string) {
+  async releaseByAgency(id: string, agencyId: string, reason?: string, actor?: AgencyActor | null) {
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
+    if (actor) assertBranchInScope(actor, job.branchId)
     if (!['accepted', 'in_progress'].includes(job.status)) {
       throw new Error('Só é possível liberar uma vaga aceita ou em andamento.')
     }
@@ -693,10 +695,11 @@ export const jobService = {
   },
 
   // Agência registra que o freelancer da sua rede não concluiu a vaga.
-  async registerNoShow(id: string, agencyId: string, reason: string) {
+  async registerNoShow(id: string, agencyId: string, reason: string, actor?: AgencyActor | null) {
     if (!reason || !reason.trim()) throw new Error('Informe o motivo da falta.')
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
+    if (actor) assertBranchInScope(actor, job.branchId)
     if (!['accepted', 'in_progress'].includes(job.status)) {
       throw new Error('Só é possível registrar falta em vaga aceita ou em andamento.')
     }
@@ -718,10 +721,11 @@ export const jobService = {
    * aberto, calcula minutos trabalhados, liquida ou retém por hora extra), mas sem os gates de
    * geofence/foto que só fazem sentido pro próprio freelancer batendo o ponto.
    */
-  async forceCheckoutByAgency(id: string, agencyId: string, reason: string) {
+  async forceCheckoutByAgency(id: string, agencyId: string, reason: string, actor?: AgencyActor | null) {
     if (!reason || !reason.trim()) throw new Error('Informe o motivo do checkout forçado.')
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
+    if (actor) assertBranchInScope(actor, job.branchId)
     if (job.status !== 'in_progress') {
       throw new Error('Só é possível forçar o checkout de uma vaga em andamento.')
     }
@@ -772,9 +776,10 @@ export const jobService = {
   },
 
   /** A agência registra uma pausa/intervalo no lugar do colaborador (recurso precisa estar habilitado). */
-  async breakByAgency(id: string, agencyId: string, action: 'start' | 'end') {
+  async breakByAgency(id: string, agencyId: string, action: 'start' | 'end', actor?: AgencyActor | null) {
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
+    if (actor) assertBranchInScope(actor, job.branchId)
     const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!freelancer || freelancer.agencyId !== agencyId) {
       throw new Error('Este colaborador não pertence à sua agência.')
@@ -804,10 +809,12 @@ export const jobService = {
         breaks?: { startAt: string; endAt: string }[]
       }[]
       reason?: string
-    }
+    },
+    actor?: AgencyActor | null
   ) {
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
+    if (actor) assertBranchInScope(actor, job.branchId)
     if (['pending', 'awaiting_approval', 'canceled'].includes(job.status)) {
       throw new Error('Só é possível corrigir o ponto de uma vaga aceita, em andamento ou concluída.')
     }
@@ -937,9 +944,19 @@ export const jobService = {
    * de `cancelJobByAgency` (fecha a vaga original com as horas do freelancer atual liquidadas e
    * cria uma vaga nova `pending` com o restante) e atribui o novo freelancer a essa vaga nova.
    */
-  async reassignByAgency(id: string, agencyId: string, newFreelancerId: string, reason?: string) {
+  async reassignByAgency(
+    id: string,
+    agencyId: string,
+    newFreelancerId: string,
+    reason?: string,
+    actor?: AgencyActor | null
+  ) {
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
+    if (actor) {
+      assertBranchInScope(actor, job.branchId)
+      assertFreelancerInScope(actor, newFreelancerId)
+    }
     if (!['accepted', 'in_progress'].includes(job.status)) {
       throw new Error('Só é possível trocar o colaborador de uma vaga aceita ou em andamento.')
     }

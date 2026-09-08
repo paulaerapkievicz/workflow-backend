@@ -8,7 +8,7 @@ export interface User {
   name: string
   email: string
   passwordHash: string
-  role: 'admin' | 'supermarket' | 'freelancer' | 'agency'
+  role: 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader'
   phone?: string | null
   birthDate?: string | null
   createdAt: Date
@@ -40,9 +40,12 @@ export const User = sequelize.define<UserInstance, User>('User', {
     type: DataTypes.STRING,
     allowNull: false
   },
+  // Coluna convertida de ENUM para VARCHAR (migration 20260909010000) para caber o papel 'leader'
+  // sem recriar o tipo a cada valor novo — mesmo padrão de jobs.status / job_logs.event_type.
   role: {
-    type: DataTypes.ENUM('admin', 'supermarket', 'freelancer', 'agency'),
-    allowNull: false
+    type: DataTypes.STRING,
+    allowNull: false,
+    validate: { isIn: [['admin', 'supermarket', 'freelancer', 'agency', 'leader']] }
   },
   phone: {
     type: DataTypes.STRING,

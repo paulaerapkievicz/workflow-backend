@@ -58,6 +58,8 @@ interface NormalizedItem {
   endTime: Date
   /** Override por vaga do recurso de pausa/intervalo — null = usa o padrão da agência. */
   breaksEnabled: boolean | null
+  /** Override por vaga do limite de minutos de pausa por turno — null = usa o padrão da agência. */
+  breakLimitMinutes: number | null
 }
 
 /** Aceita o formato novo (`shifts: [...]`) e o legado (`shiftPeriod`/`startTime`/`endTime`). */
@@ -71,6 +73,12 @@ function optionalBool(v: unknown): boolean | null {
   if (v === true || v === 'true') return true
   if (v === false || v === 'false') return false
   return null
+}
+
+function optionalPositiveInt(v: unknown): number | null {
+  if (v == null || v === '') return null
+  const n = Math.trunc(Number(v))
+  return Number.isFinite(n) && n > 0 ? n : null
 }
 
 async function normalizeItems(rawItems: any[], supermarketId: string): Promise<NormalizedItem[]> {
@@ -136,6 +144,7 @@ async function normalizeItems(rawItems: any[], supermarketId: string): Promise<N
       startTime: shifts[0].startTime,
       endTime: shifts[shifts.length - 1].endTime,
       breaksEnabled: optionalBool(it?.breaksEnabled),
+      breakLimitMinutes: optionalPositiveInt(it?.breakLimitMinutes),
     }
   })
 }
@@ -188,6 +197,7 @@ async function createJobsForItems(
           endTime: item.endTime,
           contractedMinutes,
           breaksEnabled: item.breaksEnabled,
+          breakLimitMinutes: item.breakLimitMinutes,
         },
         { transaction: t }
       )
@@ -236,6 +246,21 @@ export const orderService = {
     }
     if (user.role === 'agency') {
       return Order.findAll({ include: orderIncludes, order: [['createdAt', 'DESC'], ...orderJobsOrder] })
+    }
+    if (user.role === 'leader') {
+      const actor = await profileService.agencyContextForUser(user)
+      if (!actor) return []
+      const all = await Order.findAll({ include: orderIncludes, order: [['createdAt', 'DESC'], ...orderJobsOrder] })
+      let scoped = all.filter((o) => (o as any).orderSupermarket?.agencyId === actor.agencyId)
+      if (actor.scopeBranchIds) {
+        const inScope = (id: string | null | undefined) => !!id && actor.scopeBranchIds!.includes(id)
+        scoped = scoped.filter(
+          (o) =>
+            (o as any).items?.some((it: any) => inScope(it.branchId)) ||
+            (o as any).orderJobs?.some((j: any) => inScope(j.branchId))
+        )
+      }
+      return scoped
     }
     return []
   },

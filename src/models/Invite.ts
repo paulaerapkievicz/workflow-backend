@@ -10,6 +10,9 @@ export interface Invite {
   role: 'supermarket' | 'freelancer' | 'leader'
   token: string
   status: 'pending' | 'used' | 'revoked'
+  /** Só para convite de líder: o pagamento dele, copiado para o AgencyMember no resgate. */
+  payType?: 'hora' | 'diaria' | 'mensal' | null
+  payAmount?: number | null
   expiresAt?: Date | null
   usedAt?: Date | null
   createdAt: Date
@@ -17,7 +20,10 @@ export interface Invite {
 }
 
 export interface InviteCreationAttributes
-  extends Optional<Invite, 'id' | 'status' | 'expiresAt' | 'usedAt' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<
+    Invite,
+    'id' | 'status' | 'payType' | 'payAmount' | 'expiresAt' | 'usedAt' | 'createdAt' | 'updatedAt'
+  > {}
 
 export interface InviteInstance extends Model<Invite, InviteCreationAttributes>, Invite {}
 
@@ -53,6 +59,15 @@ export const Invite = sequelize.define<InviteInstance, Invite>('Invite', {
     allowNull: false,
     defaultValue: 'pending',
     validate: { isIn: [['pending', 'used', 'revoked']] }
+  },
+  payType: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    validate: { isIn: [['hora', 'diaria', 'mensal']] }
+  },
+  payAmount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true
   },
   expiresAt: {
     type: DataTypes.DATE,

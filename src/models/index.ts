@@ -24,6 +24,10 @@ import { SupermarketMember } from './SupermarketMember'
 import { FreelancerContract } from './FreelancerContract'
 import { UniformOrder } from './UniformOrder'
 import { Invite } from './Invite'
+import { AgencyMember } from './AgencyMember'
+import { AgencyMemberFreelancer } from './AgencyMemberFreelancer'
+import { AgencyMemberBranch } from './AgencyMemberBranch'
+import { AgencyMemberPayment } from './AgencyMemberPayment'
 
 // Definição de relacionamentos
 User.hasOne(Supermarket, { foreignKey: 'ownerId', as: 'ownedSupermarket' })
@@ -46,6 +50,20 @@ Branch.hasMany(Job, { foreignKey: 'branchId', as: 'branchJobs' })
 Agency.hasMany(Freelancer, { foreignKey: 'agencyId', as: 'agencyFreelancers' })
 Agency.hasMany(Supermarket, { foreignKey: 'agencyId', as: 'agencySupermarkets' })
 Agency.hasMany(Invite, { foreignKey: 'agencyId', as: 'agencyInvites' })
+
+// Líderes de agência (logins extras com poderes operacionais, sem acesso financeiro)
+Agency.hasMany(AgencyMember, { foreignKey: 'agencyId', as: 'agencyMembers' })
+AgencyMember.belongsTo(Agency, { foreignKey: 'agencyId', as: 'memberAgency' })
+AgencyMember.belongsTo(User, { foreignKey: 'userId', as: 'memberUser' })
+User.hasOne(AgencyMember, { foreignKey: 'userId', as: 'agencyMembership' })
+AgencyMember.hasMany(AgencyMemberFreelancer, { foreignKey: 'agencyMemberId', as: 'scopeFreelancers' })
+AgencyMemberFreelancer.belongsTo(AgencyMember, { foreignKey: 'agencyMemberId', as: 'scopeMember' })
+AgencyMemberFreelancer.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'scopedFreelancer' })
+AgencyMember.hasMany(AgencyMemberBranch, { foreignKey: 'agencyMemberId', as: 'scopeBranches' })
+AgencyMemberBranch.belongsTo(AgencyMember, { foreignKey: 'agencyMemberId', as: 'scopeBranchMember' })
+AgencyMemberBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'scopedBranch' })
+AgencyMember.hasMany(AgencyMemberPayment, { foreignKey: 'agencyMemberId', as: 'memberPayments' })
+AgencyMemberPayment.belongsTo(AgencyMember, { foreignKey: 'agencyMemberId', as: 'paymentMember' })
 
 Freelancer.belongsTo(Agency, { foreignKey: 'agencyId', as: 'affiliatedAgency' })
 Freelancer.belongsTo(User, { foreignKey: 'userId', as: 'freelancerUser' })
@@ -159,4 +177,8 @@ export {
   FreelancerContract,
   UniformOrder,
   Invite,
+  AgencyMember,
+  AgencyMemberFreelancer,
+  AgencyMemberBranch,
+  AgencyMemberPayment,
 }

@@ -46,6 +46,8 @@ export interface Job {
   reviewEnabled?: boolean | null
   /** Override por vaga do recurso de pausa/intervalo no ponto — NULL = usa o padrão da agência. */
   breaksEnabled?: boolean | null
+  /** Override por vaga do limite de minutos de pausa por turno — NULL = usa o padrão da agência. */
+  breakLimitMinutes?: number | null
   createdAt: Date
   updatedAt: Date
 }
@@ -75,6 +77,7 @@ export interface JobCreationAttributes
     | 'requireCheckoutPhoto'
     | 'reviewEnabled'
     | 'breaksEnabled'
+    | 'breakLimitMinutes'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -236,6 +239,10 @@ export const Job = sequelize.define<JobInstance, Job>(
     },
     breaksEnabled: {
       type: DataTypes.BOOLEAN,
+      allowNull: true
+    },
+    breakLimitMinutes: {
+      type: DataTypes.INTEGER,
       allowNull: true
     },
     createdAt: {

@@ -43,6 +43,7 @@ export const UserResource: ResourceWithOptions = {
           { value: 'supermarket', label: 'Supermercado' },
           { value: 'freelancer', label: 'Freelancer' },
           { value: 'agency', label: 'Agência' },
+          { value: 'leader', label: 'Líder de agência' },
         ],
         isVisible: { list: true, edit: true, filter: true, show: true },
       },

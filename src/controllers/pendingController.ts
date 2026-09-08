@@ -29,20 +29,28 @@ export const pendingController = {
   // GET /agency/pending-counts
   async agency(req: AuthRequest, res: Response) {
     try {
-      const agencyId = await profileService.agencyIdForUser(req.user!)
-      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
-      const registrationsToApprove = await Freelancer.count({
-        where: { agencyId, registrationStatus: 'pending' },
-      })
+      const actor = await profileService.agencyContextForUser(req.user!)
+      if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' })
+      const agencyId = actor.agencyId
+
+      const regWhere: any = { agencyId, registrationStatus: 'pending' }
+      if (actor.scopeFreelancerIds) regWhere.id = actor.scopeFreelancerIds
+      const registrationsToApprove = await Freelancer.count({ where: regWhere })
 
       // Filiais que os supermercados-clientes cadastraram e ainda aguardam a agência aprovar o atendimento.
-      const clientMarkets = await Supermarket.findAll({ where: { agencyId }, attributes: ['id'] })
-      const marketIds = clientMarkets.map((m) => m.id)
-      const branchesToApprove = marketIds.length
-        ? await Branch.count({ where: { supermarketId: marketIds, serviceStatus: 'pending' } })
-        : 0
+      // Líder não aprova filial (rota é dono-only) — não conta pra ele.
+      let branchesToApprove = 0
+      if (actor.isOwner) {
+        const clientMarkets = await Supermarket.findAll({ where: { agencyId }, attributes: ['id'] })
+        const marketIds = clientMarkets.map((m) => m.id)
+        branchesToApprove = marketIds.length
+          ? await Branch.count({ where: { supermarketId: marketIds, serviceStatus: 'pending' } })
+          : 0
+      }
 
-      const freelancers = await Freelancer.findAll({ where: { agencyId }, attributes: ['id'] })
+      const scopeWhere: any = { agencyId }
+      if (actor.scopeFreelancerIds) scopeWhere.id = actor.scopeFreelancerIds
+      const freelancers = await Freelancer.findAll({ where: scopeWhere, attributes: ['id'] })
       const ids = freelancers.map((f) => f.id)
       if (!ids.length) {
         return res.json({

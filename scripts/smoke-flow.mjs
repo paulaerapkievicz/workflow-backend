@@ -503,6 +503,34 @@ async function main() {
   ok(brkDisabled.status === 400 && /não está habilitada/.test(brkDisabled.data?.message || ''), 'pausa recusada quando não habilitada na vaga', brkDisabled.data?.message)
   await req('POST', `/jobs/${noBreakJob.id}/force-checkout`, { token: agencyT, body: { reason: 'fim do teste' } })
 
+  section('Limite de minutos de pausa por turno (item 9)')
+  const badLimit = await req('PUT', '/agency/settings', { token: agencyT, body: { breakLimitMinutes: 999 } })
+  ok(badLimit.status === 400, 'limite de pausa fora da faixa (1–480) é recusado', badLimit.data?.message)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { breakLimitMinutes: 20 } })
+  const limitOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day, breaksEnabled: true, shifts: [{ startTime: '08:00', endTime: '16:00' }] }] },
+  })
+  const limitJob = limitOrder.data.orderJobs[0]
+  await req('POST', `/jobs/${limitJob.id}/accept`, { token: free2T })
+  await startShiftNow(limitJob.id)
+  await req('POST', `/jobs/${limitJob.id}/logs/checkin`, { token: free2T, body: { ...CENTRO, accuracy: 10 } })
+  const bl1 = await req('POST', `/jobs/${limitJob.id}/logs/break-start`, { token: free2T, body: CENTRO })
+  ok(bl1.status === 201, 'primeira pausa dentro do limite é permitida', bl1.data?.message)
+  await db.query(`UPDATE job_shift_breaks SET start_at = NOW() - interval '30 minutes' WHERE job_id=$1 AND end_at IS NULL`, [limitJob.id])
+  const bl1e = await req('POST', `/jobs/${limitJob.id}/logs/break-end`, { token: free2T, body: CENTRO })
+  ok(bl1e.status === 201, 'retomar o ponto fecha a pausa (~30 min, acima do limite de 20)')
+  const bl2 = await req('POST', `/jobs/${limitJob.id}/logs/break-start`, { token: free2T, body: CENTRO })
+  ok(bl2.status === 400 && /limite/i.test(bl2.data?.message || ''), 'nova pausa recusada depois de atingido o limite do turno', bl2.data?.message)
+  await req('PUT', `/agency/jobs/${limitJob.id}`, { token: agencyT, body: { breakLimitMinutes: 120 } })
+  const bl3 = await req('POST', `/jobs/${limitJob.id}/logs/break-start`, { token: free2T, body: CENTRO })
+  ok(bl3.status === 201, 'override de limite por vaga (120 min) libera nova pausa', bl3.data?.message)
+  await req('POST', `/jobs/${limitJob.id}/logs/break-end`, { token: free2T, body: CENTRO })
+  await req('POST', `/jobs/${limitJob.id}/force-checkout`, { token: agencyT, body: { reason: 'fim do teste' } })
+  await req('PUT', '/agency/settings', { token: agencyT, body: { breakLimitMinutes: null } })
+  const settingsNoLimit = (await req('GET', '/agency/settings', { token: agencyT })).data
+  ok(settingsNoLimit.breakLimitMinutes === null, 'limite de pausa volta a "sem limite"', settingsNoLimit.breakLimitMinutes)
+
   section('Colaborador desiste da vaga em andamento (item 7)')
   const quitOrder = await req('POST', '/orders', {
     token: superT,
@@ -670,8 +698,137 @@ async function main() {
     'colaborador cadastrado via convite já nasce aprovado e vinculado à agência',
     regFree.data
   )
-  const inviteLeaderRes = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'leader' } })
-  ok(inviteLeaderRes.status === 400, 'convite de líder ainda é recusado (feature futura)', inviteLeaderRes.data)
+  section('Líderes de agência (AgencyMember)')
+  const leaderInviteNoPay = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'leader' } })
+  ok(leaderInviteNoPay.status === 400, 'convite de líder exige forma/valor de pagamento', leaderInviteNoPay.data)
+  const leaderInvite = await req('POST', '/agency/invites', {
+    token: agencyT, body: { role: 'leader', payType: 'mensal', payAmount: 2500 },
+  })
+  ok(leaderInvite.status === 201 && !!leaderInvite.data.token, 'convite de líder gerado com pagamento', leaderInvite.data)
+  const leaderEmail = `lider-${Date.now()}@email.com`
+  const regLeader = await req('POST', '/auth/register', {
+    body: { name: 'Líder Convidado', email: leaderEmail, password: '123456', inviteToken: leaderInvite.data.token },
+  })
+  ok(
+    regLeader.status === 201 && regLeader.data.user.role === 'leader' && regLeader.data.profile.agencyId === agencyId,
+    'líder cadastrado via convite: role leader + vinculado à agência',
+    regLeader.data
+  )
+  const noInviteLeader = await req('POST', '/auth/register', {
+    body: { name: 'X', email: `x-${Date.now()}@email.com`, password: '123456', role: 'leader' },
+  })
+  ok(noInviteLeader.status === 400, 'cadastro de líder sem convite é recusado', noInviteLeader.data)
+
+  const leaderT = await login(leaderEmail)
+  const meLeader = (await req('GET', '/auth/me', { token: leaderT })).data
+  ok(
+    meLeader.profile.role === 'leader' && meLeader.profile.payType === 'mensal' && Number(meLeader.profile.payAmount) === 2500,
+    '/auth/me do líder traz agência e pagamento',
+    meLeader.profile
+  )
+
+  const members = (await req('GET', '/agency/members', { token: agencyT })).data
+  const leaderMember = members.find((m) => m.email === leaderEmail)
+  ok(!!leaderMember && leaderMember.scope.freelancerIds.length === 0, 'líder aparece na lista da agência, sem escopo', leaderMember)
+
+  // Sem escopo: líder enxerga a rede toda.
+  const freelancersAll = (await req('GET', '/freelancers', { token: leaderT })).data
+  ok(Array.isArray(freelancersAll) && freelancersAll.length >= 2, 'líder sem escopo enxerga todos os colaboradores', freelancersAll.length)
+
+  // Define escopo: só Joana (free1) + Filial Centro.
+  const setScope = await req('PUT', `/agency/members/${leaderMember.id}/scope`, {
+    token: agencyT, body: { freelancerIds: [freelancerId], branchIds: [branchCentro.id] },
+  })
+  ok(setScope.status === 200 && setScope.data.scope.freelancerIds.length === 1, 'agência define o escopo do líder', setScope.data.scope)
+
+  const scopedFreelancers = (await req('GET', '/freelancers', { token: leaderT })).data
+  ok(
+    scopedFreelancers.length === 1 && scopedFreelancers[0].id === freelancerId,
+    'líder com escopo só enxerga os colaboradores do grupo',
+    scopedFreelancers.map((f) => f.name)
+  )
+  const scopedJobs = (await req('GET', '/jobs', { token: leaderT })).data
+  ok(
+    Array.isArray(scopedJobs) && scopedJobs.every((j) => j.branchId === branchCentro.id),
+    'líder com escopo só enxerga vagas das filiais do grupo',
+    scopedJobs.map((j) => j.branchId)
+  )
+
+  // Nada financeiro/contábil.
+  ok((await req('PUT', '/agency/settings', { token: leaderT, body: { checkinRadius: 400 } })).status === 403, 'líder não altera configurações da agência')
+  ok((await req('GET', `/closings/preview?supermarketId=${supermarketId}&referenceMonth=${dateInDays(0).slice(0, 7)}`, { token: leaderT })).status === 403, 'líder não acessa prévia de fechamento')
+  ok((await req('GET', '/agency/pending-settlement', { token: leaderT })).status === 403, 'líder não acessa liberação de hora extra')
+  ok((await req('GET', '/closings', { token: leaderT })).status === 403, 'líder não lista fechamentos')
+
+  // Vaga fora do escopo de filial: líder não gerencia.
+  await req('POST', `/supermarkets/${supermarketId}/rates`, { token: agencyT, body: { categoryId: catCaixa.id, branchId: branchSul.id, hourlyRate: 30 } })
+  const outScopeOrder = await req('POST', '/orders', {
+    token: superT, body: { items: [{ categoryId: catCaixa.id, branchId: branchSul.id, quantity: 1, shiftPeriod: 'manha', date: dateInDays(9) }] },
+  })
+  const outScopeJob = outScopeOrder.data.orderJobs[0]
+  const outScopeEdit = await req('PUT', `/agency/jobs/${outScopeJob.id}`, { token: leaderT, body: { checkinRadius: 400 } })
+  ok(outScopeEdit.status === 400 && /grupo de trabalho/i.test(outScopeEdit.data?.message || ''), 'líder não gerencia vaga fora do escopo de filial', outScopeEdit.data?.message)
+  ok(!scopedJobs.some((j) => j.id === outScopeJob.id), 'vaga fora do escopo não aparece pro líder')
+
+  // Vaga dentro do escopo: líder gerencia.
+  const inScopeOrder = await req('POST', '/orders', {
+    token: superT, body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: dateInDays(9), shifts: [{ startTime: '09:00', endTime: '13:00' }] }] },
+  })
+  const inScopeJob = inScopeOrder.data.orderJobs[0]
+  const inScopeEdit = await req('PUT', `/agency/jobs/${inScopeJob.id}`, { token: leaderT, body: { checkinRadius: 350 } })
+  ok(inScopeEdit.status === 200, 'líder gerencia vaga dentro do escopo', inScopeEdit.data?.message)
+
+  // Líder cadastra colaborador — entra no escopo dele automaticamente.
+  const leaderFreeEmail = `colab-lider-${Date.now()}@email.com`
+  const leaderCreatesFree = await req('POST', '/agency/freelancers', {
+    token: leaderT, body: { name: 'Colab do Líder', email: leaderFreeEmail, password: '123456' },
+  })
+  ok(leaderCreatesFree.status === 201, 'líder cadastra colaborador', leaderCreatesFree.data)
+  const leaderFreeId = leaderCreatesFree.data.id
+  const afterCreate = (await req('GET', '/freelancers', { token: leaderT })).data
+  ok(afterCreate.some((f) => f.id === leaderFreeId), 'colaborador criado pelo líder entra no grupo dele')
+  await req('POST', `/freelancers/${leaderFreeId}/categories`, { token: leaderT, body: { categoryId: catCaixa.id, hourlyRate: 19 } })
+
+  // Reassign: alvo fora do escopo é recusado; dentro do escopo passa.
+  await req('POST', `/jobs/${inScopeJob.id}/accept`, { token: freeT })
+  const reassignOut = await req('POST', `/jobs/${inScopeJob.id}/reassign`, { token: leaderT, body: { freelancerId: free2Id } })
+  ok(reassignOut.status === 400 && /grupo de trabalho/i.test(reassignOut.data?.message || ''), 'líder não troca para colaborador fora do escopo', reassignOut.data?.message)
+  const reassignIn = await req('POST', `/jobs/${inScopeJob.id}/reassign`, { token: leaderT, body: { freelancerId: leaderFreeId } })
+  ok(reassignIn.status === 200 && reassignIn.data.freelancerId === leaderFreeId, 'líder troca para colaborador do próprio grupo', reassignIn.data?.message)
+
+  // Carteira do líder: agência credita (debita o saldo da agência), líder saca.
+  const meAgencyBal = Number((await req('GET', '/auth/me', { token: agencyT })).data.profile.availableBalance ?? 0)
+  const payAmt = Math.max(1, Math.min(Math.floor(meAgencyBal), 30))
+  const payLeader = await req('POST', `/agency/members/${leaderMember.id}/payments`, {
+    token: agencyT, body: { amount: payAmt, referenceMonth: '2099-01', note: 'smoke' },
+  })
+  ok(payLeader.status === 201 && Number(payLeader.data.availableBalance) === payAmt, 'agência credita a carteira do líder', payLeader.data?.availableBalance)
+  const meAgencyBal2 = Number((await req('GET', '/auth/me', { token: agencyT })).data.profile.availableBalance ?? 0)
+  ok(Math.abs(meAgencyBal2 - (meAgencyBal - payAmt)) < 0.01, 'pagamento ao líder debita o saldo da agência', { antes: meAgencyBal, depois: meAgencyBal2 })
+  const payDup = await req('POST', `/agency/members/${leaderMember.id}/payments`, { token: agencyT, body: { amount: payAmt, referenceMonth: '2099-01' } })
+  ok(payDup.status === 400, 'pagamento do mesmo mês de referência não pode repetir', payDup.data?.message)
+
+  const leaderWallet = (await req('GET', '/leader/wallet', { token: leaderT })).data
+  ok(Number(leaderWallet.availableBalance) === payAmt && leaderWallet.payments.length === 1, 'carteira do líder mostra saldo e créditos', leaderWallet)
+  const wdNoPix = await req('POST', '/withdrawals', { token: leaderT, body: { amount: payAmt } })
+  ok(wdNoPix.status === 400 && /pix/i.test(wdNoPix.data?.message || ''), 'saque sem chave Pix é recusado', wdNoPix.data?.message)
+  const leaderWd = await req('POST', '/withdrawals', { token: leaderT, body: { amount: payAmt, pixKey: 'lider@pix.com', pixKeyType: 'email' } })
+  ok(leaderWd.status === 201 && leaderWd.data.pixKey === 'lider@pix.com', 'líder solicita saque com chave Pix', leaderWd.data)
+  const adminT = await login('admin@email.com')
+  const wdList = (await req('GET', '/withdrawals?status=requested', { token: adminT })).data
+  ok(
+    Array.isArray(wdList) && wdList.some((w) => w.id === leaderWd.data.id && w.pixKey === 'lider@pix.com' && w.beneficiaryName),
+    'admin lista os saques pendentes com chave Pix e nome do beneficiário para a baixa manual',
+    wdList.find((w) => w.id === leaderWd.data.id)
+  )
+  const procWd = await req('POST', `/withdrawals/${leaderWd.data.id}/process`, { token: adminT, body: { status: 'paid' } })
+  ok(procWd.status === 200 && procWd.data.status === 'paid', 'admin processa o saque do líder', procWd.data?.status)
+
+  // Líder desativado perde o acesso.
+  await req('DELETE', `/agency/members/${leaderMember.id}`, { token: agencyT })
+  ok((await req('GET', '/freelancers', { token: leaderT })).status === 403, 'líder desativado perde acesso às rotas operacionais')
+  const meLeaderOff = (await req('GET', '/auth/me', { token: leaderT })).data
+  ok(meLeaderOff.profile?.active === false, '/auth/me do líder desativado sinaliza acesso suspenso', meLeaderOff.profile)
 
   section('Filial cadastrada pelo supermercado fica pendente até a agência aprovar')
   const newBranch = await req('POST', '/branches', {

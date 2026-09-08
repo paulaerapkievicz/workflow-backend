@@ -18,6 +18,8 @@ export interface Agency {
   requireCheckoutPhoto: boolean
   reviewEnabled: boolean
   breaksEnabled: boolean
+  /** Limite de minutos de pausa por turno (NULL = sem limite). */
+  breakLimitMinutes?: number | null
   onboardingRequired: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
@@ -37,6 +39,7 @@ export interface AgencyCreationAttributes
     | 'requireCheckoutPhoto'
     | 'reviewEnabled'
     | 'breaksEnabled'
+    | 'breakLimitMinutes'
     | 'onboardingRequired'
     | 'uniformPrice'
     | 'allowSelfRegistration'
@@ -113,6 +116,10 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false
+  },
+  breakLimitMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   },
   onboardingRequired: {
     type: DataTypes.BOOLEAN,

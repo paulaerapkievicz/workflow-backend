@@ -24,6 +24,15 @@ export function resolveBreaksEnabled(job: { breaksEnabled?: boolean | null }, ag
   return job.breaksEnabled ?? agency?.breaksEnabled ?? false
 }
 
+/** Limite de minutos de pausa por turno (override da vaga → padrão da agência). NULL = sem limite. */
+export function resolveBreakLimitMinutes(
+  job: { breakLimitMinutes?: number | null },
+  agency: any
+): number | null {
+  const limit = job.breakLimitMinutes ?? agency?.breakLimitMinutes ?? null
+  return limit != null && Number(limit) > 0 ? Number(limit) : null
+}
+
 /** Soma dos minutos das pausas já fechadas de um turno. */
 export async function sumClosedBreakMinutes(jobShiftId: string): Promise<number> {
   const breaks = await JobShiftBreak.findAll({ where: { jobShiftId, endAt: { [Op.ne]: null } } })
@@ -224,6 +233,15 @@ export const jobLogService = {
     if (!shift) throw new Error('Nenhum turno em andamento para pausar.')
     const already = await JobShiftBreak.findOne({ where: { jobShiftId: shift.id, endAt: null } })
     if (already) throw new Error('Já existe uma pausa aberta neste turno.')
+
+    // Limite de minutos de pausa por turno — não deixa abrir nova pausa depois de esgotado.
+    const limit = resolveBreakLimitMinutes(job, agency)
+    if (limit != null) {
+      const used = await sumClosedBreakMinutes(shift.id)
+      if (used >= limit) {
+        throw new Error(`O limite de ${limit} min de pausa por turno já foi atingido (${used} min usados).`)
+      }
+    }
 
     const now = new Date()
     const g = geo && geo.latitude != null && geo.longitude != null ? parseGeo(geo) : null
