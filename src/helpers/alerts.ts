@@ -206,6 +206,54 @@ export const ALERT_SETTING_RANGES: Record<
   shortNoticeWithdrawalMinutes: [0, 1440],
 }
 
+// ————————————————————————————————————————————————————————————————
+// Marcações visuais de vaga sem colaborador (bolinhas em Convocações)
+// ————————————————————————————————————————————————————————————————
+
+export interface UnfilledAlertTier {
+  id: string
+  /** Dispara quando faltam <= isto (min) para o início — 0 = na hora ou depois. */
+  minutesBefore: number
+  /** Cor da bolinha (#RGB ou #RRGGBB). */
+  color: string
+  /** Rótulo curto (tooltip). */
+  label: string
+  /** A bolinha pisca enquanto a vaga não é preenchida. */
+  blink: boolean
+}
+
+export const DEFAULT_UNFILLED_ALERT_TIERS: UnfilledAlertTier[] = [
+  { id: 'tier-60', minutesBefore: 60, color: '#EAB308', label: 'Falta 1h', blink: false },
+  { id: 'tier-30', minutesBefore: 30, color: '#F97316', label: 'Falta 30 min', blink: true },
+  { id: 'tier-0', minutesBefore: 0, color: '#DC2626', label: 'No horário / atrasada', blink: true },
+]
+
+const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/
+
+/** Normaliza a config recebida do front: faixas válidas, ordenadas da mais distante para a mais urgente. */
+export function sanitizeUnfilledAlertTiers(raw: unknown): UnfilledAlertTier[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_UNFILLED_ALERT_TIERS]
+  const tiers: UnfilledAlertTier[] = []
+  for (const item of raw.slice(0, 6)) {
+    const r = item as Record<string, unknown>
+    const minutesBefore = Math.trunc(Number(r?.minutesBefore))
+    if (!Number.isFinite(minutesBefore) || minutesBefore < 0 || minutesBefore > 1440) continue
+    const color = String(r?.color ?? '').trim()
+    if (!HEX_COLOR.test(color)) continue
+    const label = String(r?.label ?? '').trim().slice(0, 40) || `${minutesBefore} min`
+    const id = String(r?.id ?? '').trim() || `tier-${minutesBefore}-${tiers.length}`
+    tiers.push({ id, minutesBefore, color, label, blink: r?.blink === true })
+  }
+  tiers.sort((a, b) => b.minutesBefore - a.minutesBefore)
+  return tiers
+}
+
+export function resolveUnfilledAlertTiers(agency: { unfilledAlertTiers?: unknown } | null | undefined): UnfilledAlertTier[] {
+  const raw = agency?.unfilledAlertTiers
+  if (raw == null) return [...DEFAULT_UNFILLED_ALERT_TIERS]
+  return sanitizeUnfilledAlertTiers(raw)
+}
+
 type AgencyLike = Partial<AlertSettings> | null | undefined
 
 /** Config efetiva de alertas de uma agência, com fallback nos defaults. */

@@ -91,6 +91,44 @@ async function main() {
   ok(badTol.status === 400, 'antecedência de check-in fora da faixa (0–240) é recusada', badTol.data?.message)
   await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 300, cancellationWindowMinutes: 30, checkinEarlyToleranceMinutes: 30, requireCheckoutPhoto: true } })
 
+  section('Marcações de vaga sem colaborador (faixas configuráveis)')
+  ok(Array.isArray(settings.unfilledAlertTiers) && settings.unfilledAlertTiers.length === 3, 'faixas padrão vêm no settings', settings.unfilledAlertTiers?.length)
+  const tiersUpd = await req('PUT', '/agency/settings', {
+    token: agencyT,
+    body: {
+      unfilledAlertTiers: [
+        { id: 'a', minutesBefore: 9999, color: 'roxo', label: 'inválida' }, // descartada (minutos + cor)
+        { id: 'b', minutesBefore: 45, color: '#00AA00', label: 'Falta 45 min', blink: true },
+        { id: 'c', minutesBefore: 0, color: '#F00', label: '', blink: false }, // #RGB ok, label auto
+      ],
+    },
+  })
+  ok(tiersUpd.status === 200, 'PUT settings com faixas 200')
+  const savedTiers = tiersUpd.data.unfilledAlertTiers
+  ok(savedTiers.length === 2, 'faixa inválida (minutos/cor) descartada', savedTiers.map((t) => t.minutesBefore))
+  ok(savedTiers[0].minutesBefore === 45 && savedTiers[1].minutesBefore === 0, 'faixas ordenadas da mais distante para a mais urgente', savedTiers.map((t) => t.minutesBefore))
+  ok(savedTiers[1].label === '0 min', 'rótulo vazio ganha fallback', savedTiers[1].label)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { unfilledAlertTiers: settings.unfilledAlertTiers } })
+
+  section('Funções: flag ativa + gestão pela agência')
+  const publicCats = (await req('GET', '/categories', { token: agencyT })).data
+  const manageCats = (await req('GET', '/categories/manage', { token: agencyT })).data
+  ok(!publicCats.some((c) => c.name === 'Estoquista'), 'função inativa não aparece em GET /categories', publicCats.map((c) => c.name))
+  ok(manageCats.some((c) => c.name === 'Estoquista' && c.active === false), 'função inativa aparece em /categories/manage com active=false')
+  const estoquista = manageCats.find((c) => c.name === 'Estoquista')
+  const activated = await req('PUT', `/categories/${estoquista.id}`, { token: agencyT, body: { active: true, name: 'Estoquista Sênior' } })
+  ok(activated.status === 200 && activated.data.active === true && activated.data.name === 'Estoquista Sênior', 'agência ativa e renomeia a função')
+  ok((await req('GET', '/categories', { token: agencyT })).data.some((c) => c.name === 'Estoquista Sênior'), 'função ativada passa a aparecer na combo')
+  const dupCat = await req('POST', '/categories', { token: agencyT, body: { name: 'Repositor' } })
+  ok(dupCat.status === 400, 'nome de função duplicado é recusado', dupCat.data?.message)
+  const newCat = await req('POST', '/categories', { token: agencyT, body: { name: `Empacotador ${Date.now()}` } })
+  ok(newCat.status === 201, 'agência cria nova função')
+  ok((await req('DELETE', `/categories/${newCat.data.id}`, { token: agencyT })).status === 200, 'função sem uso pode ser excluída')
+  const repInUse = (await req('GET', '/categories', { token: agencyT })).data.find((c) => c.name === 'Repositor')
+  const delInUse = await req('DELETE', `/categories/${repInUse.id}`, { token: agencyT })
+  ok(delInUse.status === 400 && /uso/i.test(delInUse.data?.message || ''), 'função em uso não pode ser excluída (desative)', delInUse.data?.message)
+  await req('PUT', `/categories/${estoquista.id}`, { token: agencyT, body: { active: false, name: 'Estoquista' } })
+
   section('Valores/hora do supermercado')
   const cats = (await req('GET', '/categories', { token: superT })).data
   const catCaixa = cats.find((c) => c.name === 'Operador de Caixa')
@@ -99,6 +137,10 @@ async function main() {
   const rates = (await req('GET', `/supermarkets/${supermarketId}/rates`, { token: agencyT })).data
   const rateCaixa = rates.find((r) => r.categoryId === catCaixa.id && !r.branchId)
   ok(Number(rateCaixa.hourlyRate) === 32, 'valor/hora Operador de Caixa (padrão) = 32', rateCaixa?.hourlyRate)
+  const branchesForRate = (await req('GET', '/branches', { token: superT })).data
+  const branchSulForRate = branchesForRate.find((b) => b.name === 'Filial Zona Sul')
+  const rateCaixaSul = rates.find((r) => r.categoryId === catCaixa.id && r.branchId === branchSulForRate.id)
+  ok(rateCaixaSul && Number(rateCaixaSul.hourlyRate) === 30, 'override da filial (Zona Sul) = 30 e vence o padrão da matriz', rateCaixaSul?.hourlyRate)
   const ratePadeiro = rates.find((r) => r.categoryId === catPadeiro.id && !r.branchId)
   // O valor/hora do Padeiro só é removido DEPOIS do pedido criado (mais abaixo) — a criação
   // do pedido agora exige valor/hora configurado pra cada função (orderService.normalizeItems).

@@ -6,12 +6,14 @@ import { DataTypes, Model, Optional } from 'sequelize'
 export interface Category {
   id: string
   name: string
+  /** Função inativa não aparece em nenhuma combo (perfil do colaborador, valores/hora, pedido). */
+  active: boolean
   createdAt: Date
   updatedAt: Date
 }
 
 export interface CategoryCreationAttributes
-  extends Optional<Category, 'id' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<Category, 'id' | 'active' | 'createdAt' | 'updatedAt'> {}
 
 export interface CategoryInstance extends Model<Category, CategoryCreationAttributes>, Category {}
 
@@ -28,6 +30,11 @@ export const Category = sequelize.define<CategoryInstance, Category>(
       type: DataTypes.STRING,
       allowNull: false,
       unique: true
+    },
+    active: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: true
     },
     createdAt: {
       allowNull: false,

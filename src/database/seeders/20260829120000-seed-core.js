@@ -20,9 +20,11 @@ module.exports = {
     const passwordHash = await bcrypt.hash('123456', 10);
     const ts = { created_at: now(), updated_at: now() };
 
-    // ---- Categorias ----
-    const categories = ['Repositor', 'Operador de Caixa', 'Fiscal de Loja', 'Açougueiro', 'Padeiro']
-      .map((name) => ({ id: uid(), name, ...ts }));
+    // ---- Categorias/funções ---- ("Estoquista" nasce inativa: some das combos até a agência ativar)
+    const categories = [
+      ['Repositor', true], ['Operador de Caixa', true], ['Fiscal de Loja', true],
+      ['Açougueiro', true], ['Padeiro', true], ['Estoquista', false],
+    ].map(([name, active]) => ({ id: uid(), name, active, ...ts }));
     await queryInterface.bulkInsert('categories', categories);
 
     // ---- Usuários ----

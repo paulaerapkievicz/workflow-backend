@@ -4,7 +4,7 @@ import { sequelize } from '../database';
 import { Agency, AgencyCreationAttributes } from '../models/Agency';
 import { User } from '../models/User';
 import { Commission } from '../models/Commission';
-import { ALERT_SETTING_RANGES } from '../helpers/alerts';
+import { ALERT_SETTING_RANGES, resolveUnfilledAlertTiers, sanitizeUnfilledAlertTiers } from '../helpers/alerts';
 
 /** Campos de perfil institucional que a própria agência (ou o admin) pode editar. */
 const PROFILE_FIELDS = [
@@ -160,6 +160,7 @@ export const agencyService = {
       missingCheckoutGraceMinutes: a.missingCheckoutGraceMinutes,
       unfilledAlertLeadMinutes: a.unfilledAlertLeadMinutes,
       shortNoticeWithdrawalMinutes: a.shortNoticeWithdrawalMinutes,
+      unfilledAlertTiers: resolveUnfilledAlertTiers(a),
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
@@ -184,6 +185,7 @@ export const agencyService = {
       missingCheckoutGraceMinutes: number
       unfilledAlertLeadMinutes: number
       shortNoticeWithdrawalMinutes: number
+      unfilledAlertTiers: unknown
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
@@ -236,6 +238,10 @@ export const agencyService = {
         throw new Error(`"${field}" deve ficar entre ${min} e ${max} minutos.`)
       }
       patch[field] = n
+    }
+
+    if (data.unfilledAlertTiers !== undefined) {
+      patch.unfilledAlertTiers = sanitizeUnfilledAlertTiers(data.unfilledAlertTiers)
     }
 
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true

@@ -3,6 +3,7 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 import { User } from './User'
+import { UnfilledAlertTier, DEFAULT_UNFILLED_ALERT_TIERS } from '../helpers/alerts'
 
 export interface Agency {
   id: string
@@ -36,6 +37,8 @@ export interface Agency {
   missingCheckoutGraceMinutes: number
   unfilledAlertLeadMinutes: number
   shortNoticeWithdrawalMinutes: number
+  /** Faixas das bolinhas de "vaga sem colaborador" na tela de Convocações. */
+  unfilledAlertTiers: UnfilledAlertTier[]
   onboardingRequired: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
@@ -70,6 +73,7 @@ export interface AgencyCreationAttributes
     | 'missingCheckoutGraceMinutes'
     | 'unfilledAlertLeadMinutes'
     | 'shortNoticeWithdrawalMinutes'
+    | 'unfilledAlertTiers'
     | 'onboardingRequired'
     | 'uniformPrice'
     | 'allowSelfRegistration'
@@ -216,6 +220,11 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 180
+  },
+  unfilledAlertTiers: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: DEFAULT_UNFILLED_ALERT_TIERS
   },
   onboardingRequired: {
     type: DataTypes.BOOLEAN,

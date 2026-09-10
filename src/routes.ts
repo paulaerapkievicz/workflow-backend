@@ -38,7 +38,6 @@ router.post('/auth/login', authController.login);
 
 // Leitura pública usada nas telas de cadastro
 router.get('/categories', categoryController.index);
-router.get('/categories/:id', categoryController.show);
 router.get('/agencies', agencyController.index);
 router.get('/invites/:token', inviteController.show);
 router.get('/contracts/verify/:id', contractSignatureController.verify);
@@ -130,9 +129,13 @@ router.post('/freelancers/:id/categories', authorize('agency', 'leader', 'freela
 router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'admin'), freelancerController.setCategoryRate);
 router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.removeCategory);
 
-// ----- Categorias (escrita: admin) -----
-router.post('/categories', authorize('admin'), categoryController.create);
-router.delete('/categories/:id', authorize('admin'), categoryController.delete);
+// ----- Funções/categorias -----
+// Lista completa (com a flag `active`) para a tela de gestão da agência.
+router.get('/categories/manage', authorize('admin', 'agency', 'leader'), categoryController.manageIndex);
+router.get('/categories/:id', categoryController.show);
+router.post('/categories', authorize('admin', 'agency'), categoryController.create);
+router.put('/categories/:id', authorize('admin', 'agency'), categoryController.update);
+router.delete('/categories/:id', authorize('admin', 'agency'), categoryController.delete);
 
 // ----- Configurações da agência -----
 router.get('/agency/settings', authorize('agency', 'leader'), agencyController.getSettings);
