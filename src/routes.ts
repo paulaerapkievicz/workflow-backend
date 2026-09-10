@@ -104,6 +104,7 @@ router.delete('/freelancers/:id', authorize('agency', 'admin'), freelancerContro
 router.get('/freelancers/:id/categories', freelancerController.listCategories);
 router.get('/freelancers/:id/reviews', reviewController.getByFreelancerId);
 router.get('/freelancers/:id/reputation', authorize('agency', 'leader', 'freelancer', 'admin'), reviewController.reputation);
+router.get('/freelancers/:id/leaders', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.leaders);
 router.post('/freelancers/:id/categories', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.addCategory);
 router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'admin'), freelancerController.setCategoryRate);
 router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.removeCategory);

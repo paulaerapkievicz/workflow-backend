@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import { freelancerService } from '../services/freelancerService';
+import { agencyMemberService } from '../services/agencyMemberService';
 import { profileService } from '../services/profileService';
 import { sequelize } from '../database';
 import { User } from '../models/User';
@@ -126,6 +127,17 @@ export const freelancerController = {
       return res.json(freelancer);
     } catch (err) {
       return res.status(500).json({ message: 'Erro ao buscar freelancer.' });
+    }
+  },
+
+  // GET /freelancers/:id/leaders — líderes da agência que respondem por este colaborador
+  async leaders(req: AuthRequest, res: Response) {
+    try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
+      return res.json(await agencyMemberService.leadersForFreelancer(freelancer.id));
+    } catch (err) {
+      return res.status(500).json({ message: 'Erro ao buscar os líderes do colaborador.' });
     }
   },
 

@@ -271,4 +271,37 @@ export const agencyMemberService = {
       ),
     }
   },
+
+  /**
+   * Líderes ativos da agência do colaborador que respondem por ele: os que têm o colaborador
+   * na lista de escopo (`scope: 'explicit'`) e os sem nenhum escopo de colaborador — que
+   * cobrem a rede inteira (`scope: 'all'`).
+   */
+  async leadersForFreelancer(freelancerId: string) {
+    const freelancer = await Freelancer.findByPk(freelancerId, { attributes: ['id', 'agencyId'] })
+    if (!freelancer?.agencyId) return []
+
+    const members = await AgencyMember.findAll({
+      where: { agencyId: freelancer.agencyId, active: true },
+      order: [['createdAt', 'ASC']],
+    })
+
+    const leaders: { id: string; name: string; scope: 'explicit' | 'all' }[] = []
+    for (const member of members) {
+      const scopeRows = await AgencyMemberFreelancer.findAll({
+        where: { agencyMemberId: member.id },
+        attributes: ['freelancerId'],
+      })
+      const scope: 'explicit' | 'all' | null =
+        scopeRows.length === 0
+          ? 'all'
+          : scopeRows.some((r) => r.freelancerId === freelancerId)
+          ? 'explicit'
+          : null
+      if (!scope) continue
+      const user = await User.findByPk(member.userId, { attributes: ['name'] })
+      leaders.push({ id: member.id, name: user?.name ?? '—', scope })
+    }
+    return leaders
+  },
 }
