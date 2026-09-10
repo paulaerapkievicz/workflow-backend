@@ -32,6 +32,9 @@ import { AgencyMemberBranch } from './AgencyMemberBranch'
 import { AgencyMemberPayment } from './AgencyMemberPayment'
 import { AgencyMemberJobCredit } from './AgencyMemberJobCredit'
 import { InvoiceAdjustment } from './InvoiceAdjustment'
+import { ContractTemplate } from './ContractTemplate'
+import { FreelancerContractSignature } from './FreelancerContractSignature'
+import { JobAlert } from './JobAlert'
 
 // Definição de relacionamentos
 User.hasOne(Supermarket, { foreignKey: 'ownerId', as: 'ownedSupermarket' })
@@ -164,12 +167,26 @@ InvoiceAdjustment.belongsTo(User, { foreignKey: 'createdBy', as: 'adjustmentAuth
 
 JobLog.belongsTo(JobShift, { foreignKey: 'jobShiftId', as: 'logShift' })
 
+// Controle de ocorrências (atraso, falta, saída antecipada, turno sem check-out…)
+Job.hasMany(JobAlert, { foreignKey: 'jobId', as: 'alerts' })
+JobAlert.belongsTo(Job, { foreignKey: 'jobId', as: 'alertJob' })
+JobAlert.belongsTo(JobShift, { foreignKey: 'jobShiftId', as: 'alertShift' })
+JobAlert.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'alertFreelancer' })
+
 Job.hasMany(JobPhoto, { foreignKey: 'jobId', as: 'jobPhotos' })
 JobPhoto.belongsTo(Job, { foreignKey: 'jobId', as: 'photoJob' })
 JobPhoto.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'photoFreelancer' })
 JobPhoto.belongsTo(JobLog, { foreignKey: 'jobLogId', as: 'photoJobLog' })
 
 Commission.belongsTo(Agency, { foreignKey: 'agencyId', as: 'commissionAgency' })
+
+// Modelo de contrato da agência + assinaturas eletrônicas dos colaboradores
+Agency.hasMany(ContractTemplate, { foreignKey: 'agencyId', as: 'contractTemplates' })
+ContractTemplate.belongsTo(Agency, { foreignKey: 'agencyId', as: 'templateAgency' })
+Freelancer.hasMany(FreelancerContractSignature, { foreignKey: 'freelancerId', as: 'contractSignatures' })
+FreelancerContractSignature.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'signatureFreelancer' })
+FreelancerContractSignature.belongsTo(Agency, { foreignKey: 'agencyId', as: 'signatureAgency' })
+FreelancerContractSignature.belongsTo(ContractTemplate, { foreignKey: 'templateId', as: 'signatureTemplate' })
 
 Session.belongsTo(User, { foreignKey: 'userId', as: 'sessionUser' })
 
@@ -211,4 +228,7 @@ export {
   AgencyMemberPayment,
   AgencyMemberJobCredit,
   InvoiceAdjustment,
+  ContractTemplate,
+  FreelancerContractSignature,
+  JobAlert,
 }

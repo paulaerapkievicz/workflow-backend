@@ -42,7 +42,10 @@ export interface RawShift {
   shiftPeriod?: unknown
   startTime?: string | null
   endTime?: string | null
+  /** Nome do turno. Livre quando `custom`; senão acompanha o rótulo do período. */
   label?: string | null
+  /** Turno com nome personalizado — sem `label` cai no padrão "Turno N" pela ordem. */
+  custom?: unknown
 }
 
 export interface ResolvedShift {
@@ -102,17 +105,20 @@ export function resolveShifts(rawShifts: RawShift[], date: string): ResolvedShif
     throw new Error('Adicione ao menos um turno à vaga.')
   }
 
-  const resolved = rawShifts.map((raw) => {
+  const resolved = rawShifts.map((raw, idx) => {
     const period = raw?.nominalPeriod ?? raw?.shiftPeriod
+    // Turno personalizado sem nome digitado → "Turno N" pela ordem em que foi montado.
+    const hasLabel = typeof raw?.label === 'string' && raw.label.trim()
+    const label = hasLabel ? raw!.label : raw?.custom ? `Turno ${idx + 1}` : undefined
     if (isHHMM(raw?.startTime) && isHHMM(raw?.endTime)) {
-      return resolveFreeShift(date, raw!.startTime!, raw!.endTime!, period, raw?.label)
+      return resolveFreeShift(date, raw!.startTime!, raw!.endTime!, period, label)
     }
     // Modo legado: só o período nominal — usa a janela sugerida.
     if (!isShiftPeriod(period)) {
       throw new Error('Informe o horário do turno (início e fim) ou um período (manhã, tarde, noite, madrugada).')
     }
     const b = SHIFT_BOUNDS[period]
-    return resolveFreeShift(date, b.start, b.end === '24:00' ? '00:00' : b.end, period, raw?.label)
+    return resolveFreeShift(date, b.start, b.end === '24:00' ? '00:00' : b.end, period, label)
   })
 
   resolved.sort((a, b) => a.startTime.getTime() - b.startTime.getTime())

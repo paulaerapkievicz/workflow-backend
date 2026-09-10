@@ -10,19 +10,21 @@ import { Supermarket } from '../models/Supermarket'
 import { Branch } from '../models/Branch'
 import { leaderJobCreditService } from '../services/leaderJobCreditService'
 import { invoiceAdjustmentService } from '../services/invoiceAdjustmentService'
+import { jobAlertService } from '../services/jobAlertService'
 
 export const pendingController = {
   // GET /supermarket/pending-counts
   async supermarket(req: AuthRequest, res: Response) {
     try {
       const ctx = await profileService.supermarketContextForUser(req.user!)
-      if (!ctx) return res.json({ ordersToApprove: 0 })
+      if (!ctx) return res.json({ ordersToApprove: 0, alertsOpen: 0, alertsCritical: 0 })
       const ordersToApprove = ctx.canApproveOrders
         ? await Order.count({
             where: { supermarketId: ctx.supermarketId, approvalStatus: 'pending_approval' },
           })
         : 0
-      return res.json({ ordersToApprove })
+      const alerts = await jobAlertService.summaryForSupermarket(ctx).catch(() => ({ open: 0, critical: 0 }))
+      return res.json({ ordersToApprove, alertsOpen: alerts.open, alertsCritical: alerts.critical })
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' })
     }
@@ -38,6 +40,10 @@ export const pendingController = {
       const regWhere: any = { agencyId, registrationStatus: 'pending' }
       if (actor.scopeFreelancerIds) regWhere.id = actor.scopeFreelancerIds
       const registrationsToApprove = await Freelancer.count({ where: regWhere })
+
+      const alerts = await jobAlertService
+        .summaryForAgency(actor)
+        .catch(() => ({ open: 0, critical: 0 }))
 
       // Filiais que os supermercados-clientes cadastraram e ainda aguardam a agência aprovar o atendimento.
       // Líder não aprova filial (rota é dono-only) — não conta pra ele.
@@ -69,6 +75,8 @@ export const pendingController = {
           branchesToApprove,
           memberCreditsToReview,
           contestationsToReview,
+          alertsOpen: alerts.open,
+          alertsCritical: alerts.critical,
         })
       }
 
@@ -85,6 +93,8 @@ export const pendingController = {
         branchesToApprove,
         memberCreditsToReview,
         contestationsToReview,
+        alertsOpen: alerts.open,
+        alertsCritical: alerts.critical,
       })
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' })

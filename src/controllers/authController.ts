@@ -10,6 +10,8 @@ import { SupermarketMember } from '../models/SupermarketMember'
 import { AgencyMember } from '../models/AgencyMember'
 import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
+import { ContractTemplate } from '../models/ContractTemplate'
+import { FreelancerContractSignature } from '../models/FreelancerContractSignature'
 import { jwtService } from '../services/jwtService'
 import { profileService } from '../services/profileService'
 import { inviteService } from '../services/inviteService'
@@ -53,6 +55,12 @@ async function profileWithContext(user: { id: string; role: Role }) {
     const approved = !!f.onboardingApprovedAt
     // Autocadastro aguardando a agência aprovar: bloqueia tudo até lá.
     const awaitingRegistration = f.registrationStatus === 'pending'
+    const contractTemplate = f.agencyId
+      ? await ContractTemplate.findOne({ where: { agencyId: f.agencyId, active: true }, attributes: ['id'] })
+      : null
+    const contractSigned = await FreelancerContractSignature.count({
+      where: { freelancerId: f.id, status: 'signed' },
+    })
     return {
       ...f.toJSON(),
       onboarding: {
@@ -63,6 +71,8 @@ async function profileWithContext(user: { id: string; role: Role }) {
         registrationStatus: f.registrationStatus ?? 'approved',
         awaitingRegistration,
         blocked: awaitingRegistration || (required && (!contractComplete || !approved)),
+        contractTemplateAvailable: !!contractTemplate,
+        contractSigned: contractSigned > 0,
       },
     }
   }
@@ -240,6 +250,13 @@ export const authController = {
     const ok = await bcrypt.compare(password, user.passwordHash)
     if (!ok) {
       return res.status(401).json({ message: 'E-mail ou senha inválidos.' })
+    }
+
+    if (user.role === 'agency') {
+      const agency = await Agency.findOne({ where: { ownerId: user.id } })
+      if (agency && agency.active === false) {
+        return res.status(403).json({ message: 'Esta agência está desativada. Fale com o suporte.' })
+      }
     }
 
     const token = jwtService.sign({ sub: user.id, role: user.role, email: user.email })

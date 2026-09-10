@@ -8,9 +8,14 @@ export interface Agency {
   id: string
   ownerId: string
   name: string
+  legalName?: string | null
   cnpj: string
   address: string
   phone?: string
+  email?: string | null
+  logoUrl?: string | null
+  profilePhotoUrl?: string | null
+  active: boolean
   availableBalance: number
   commissionPercentage: number
   checkinRadius: number
@@ -20,6 +25,17 @@ export interface Agency {
   breaksEnabled: boolean
   /** Limite de minutos de pausa por turno (NULL = sem limite). */
   breakLimitMinutes?: number | null
+  /** Antecedência máxima (min) para bater o check-in antes do início do turno. */
+  checkinEarlyToleranceMinutes: number
+  /** Controle de ocorrências das vagas (atraso, falta, saída antecipada…). */
+  alertsEnabled: boolean
+  notifySupermarketOnAlerts: boolean
+  lateCheckinToleranceMinutes: number
+  lateCheckinCriticalMinutes: number
+  earlyCheckoutToleranceMinutes: number
+  missingCheckoutGraceMinutes: number
+  unfilledAlertLeadMinutes: number
+  shortNoticeWithdrawalMinutes: number
   onboardingRequired: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
@@ -31,7 +47,12 @@ export interface AgencyCreationAttributes
   extends Optional<
     Agency,
     | 'id'
+    | 'legalName'
     | 'phone'
+    | 'email'
+    | 'logoUrl'
+    | 'profilePhotoUrl'
+    | 'active'
     | 'availableBalance'
     | 'commissionPercentage'
     | 'checkinRadius'
@@ -40,6 +61,15 @@ export interface AgencyCreationAttributes
     | 'reviewEnabled'
     | 'breaksEnabled'
     | 'breakLimitMinutes'
+    | 'checkinEarlyToleranceMinutes'
+    | 'alertsEnabled'
+    | 'notifySupermarketOnAlerts'
+    | 'lateCheckinToleranceMinutes'
+    | 'lateCheckinCriticalMinutes'
+    | 'earlyCheckoutToleranceMinutes'
+    | 'missingCheckoutGraceMinutes'
+    | 'unfilledAlertLeadMinutes'
+    | 'shortNoticeWithdrawalMinutes'
     | 'onboardingRequired'
     | 'uniformPrice'
     | 'allowSelfRegistration'
@@ -70,6 +100,10 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.STRING,
     allowNull: false
   },
+  legalName: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   cnpj: {
     type: DataTypes.STRING,
     allowNull: false,
@@ -81,6 +115,23 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
   },
   phone: {
     type: DataTypes.STRING
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  logoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  profilePhotoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  active: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true
   },
   availableBalance: {
     type: DataTypes.DECIMAL(10, 2),
@@ -120,6 +171,51 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
   breakLimitMinutes: {
     type: DataTypes.INTEGER,
     allowNull: true
+  },
+  checkinEarlyToleranceMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 30
+  },
+  alertsEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true
+  },
+  notifySupermarketOnAlerts: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true
+  },
+  lateCheckinToleranceMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 10
+  },
+  lateCheckinCriticalMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 30
+  },
+  earlyCheckoutToleranceMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 15
+  },
+  missingCheckoutGraceMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 20
+  },
+  unfilledAlertLeadMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 120
+  },
+  shortNoticeWithdrawalMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 180
   },
   onboardingRequired: {
     type: DataTypes.BOOLEAN,

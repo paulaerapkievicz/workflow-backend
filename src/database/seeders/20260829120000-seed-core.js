@@ -38,7 +38,7 @@ module.exports = {
     // Vaga concluída (Padeiro, 4h): supermercado paga 33/h = 132 ; colaborador recebe 19/h = 76 ; agência 56.
     const agencyAmountPaid = 56.0;
     const freelancerAmountPaid = 76.0;
-    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', cnpj: '55666777000188', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 4000-0000', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: false, ...ts };
+    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', legal_name: 'Prime Serviços de Mão de Obra Ltda', cnpj: '55666777000188', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 4000-0000', email: 'contato@agenciaprime.com.br', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, checkin_early_tolerance_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: false, active: true, ...ts };
     await queryInterface.bulkInsert('agencies', [agency]);
     await queryInterface.bulkInsert('commissions', [{ id: uid(), agency_id: agency.id, percentage: 15, ...ts }]);
 
@@ -48,7 +48,7 @@ module.exports = {
     await queryInterface.bulkInsert('team_roles', agencyRoles);
 
     // ---- Supermercado (cliente da agência acima) + filiais ----
-    const supermarket = { id: uid(), owner_id: superUser.id, agency_id: agency.id, name: 'Mercado Central', cnpj: '11222333000144', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0000', ...ts };
+    const supermarket = { id: uid(), owner_id: superUser.id, agency_id: agency.id, name: 'Mercado Central', legal_name: 'Mercado Central Comércio de Alimentos Ltda', cnpj: '11222333000144', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0000', email: 'contato@mercadocentral.com.br', ...ts };
     await queryInterface.bulkInsert('supermarkets', [supermarket]);
     const superRoles = ['Administrador', 'Gerente', 'RH', 'Financeiro', 'Comprador'].map((n, i) => teamRole('supermarket', supermarket.id, n, i));
     await queryInterface.bulkInsert('team_roles', superRoles);
@@ -104,6 +104,42 @@ module.exports = {
     await queryInterface.bulkInsert('agency_member_branches', [
       { id: uid(), agency_member_id: leaderMember.id, branch_id: branchCentro.id, ...ts },
     ]);
+
+    // ---- Onboarding concluído do Pedro (free2) — pronto para assinar o contrato ----
+    // (free1 é usado no fluxo que testa a trava de onboarding, então fica sem contrato no seed.)
+    await queryInterface.bulkUpdate('freelancers', { onboarding_approved_at: now() }, { id: free2.id });
+    await queryInterface.bulkInsert('freelancer_contracts', [{
+      id: uid(), freelancer_id: free2.id,
+      full_name: 'Pedro Henrique Freelancer', cpf: '987.654.321-00', rg: '7654321', rg_issuer: 'SSP/RS',
+      pis_nis: '210.98765.43-2', birth_date: '1990-11-03', gender: 'Masculino', marital_status: 'Casado',
+      nationality: 'Brasileira', mother_name: 'Ana Freelancer', father_name: 'Carlos Freelancer',
+      education_level: 'Ensino médio completo', ctps_number: '7654321', ctps_series: '0002-RS',
+      address_cep: '99020-200', address_street: 'Rua Morom', address_number: '120', address_complement: 'Casa',
+      address_neighborhood: 'Vila Rodrigues', address_city: 'Passo Fundo', address_state: 'RS',
+      bank_name: 'Caixa Econômica', bank_branch: '0987-6', bank_account: '54321-0', bank_account_type: 'Poupança',
+      pix_key: 'free2@email.com', emergency_contact_name: 'Ana Freelancer', emergency_contact_phone: '(54) 99999-1111',
+      shirt_size: 'G', completed_at: now(), ...ts,
+    }]);
+
+    // ---- Modelo de contrato ativo da agência ----
+    const contractTemplate = {
+      id: uid(), agency_id: agency.id, title: 'Contrato de Prestação de Serviços', active: true,
+      created_by: agencyUser.id,
+      body_html:
+        '<h1>Contrato de Prestação de Serviços</h1>'
+        + '<p>Pelo presente instrumento, de um lado <strong>{{agencyLegalName}}</strong>, inscrita no CNPJ '
+        + 'sob o nº {{agencyCnpj}}, com sede em {{agencyAddress}}, doravante denominada CONTRATANTE, e de outro '
+        + 'lado <strong>{{fullName}}</strong>, portador(a) do CPF {{cpf}} e do RG {{rg}}, residente em '
+        + '{{address}}, doravante denominado(a) PRESTADOR(A).</p>'
+        + '<h2>1. Do objeto</h2><p>O(a) PRESTADOR(A) executará serviços de reposição e atendimento nas lojas '
+        + 'clientes da CONTRATANTE, conforme as convocações aceitas na plataforma.</p>'
+        + '<h2>2. Dos dados bancários</h2><p>Os pagamentos serão feitos na conta {{bankAccount}}, agência '
+        + '{{bankBranch}}, do {{bankName}}, ou via chave Pix {{pixKey}}.</p>'
+        + '<h2>3. Do contato de emergência</h2><p>{{emergencyContactName}} — {{emergencyContactPhone}}.</p>'
+        + '<p>{{dataPorExtenso}}.</p>',
+      ...ts,
+    };
+    await queryInterface.bulkInsert('contract_templates', [contractTemplate]);
 
     // ---- Vagas ----
     const baseJob = (over) => ({
@@ -179,8 +215,9 @@ module.exports = {
     for (const table of [
       'withdrawals', 'job_photos', 'invoices', 'payments', 'job_logs', 'job_shifts',
       'freelancer_locations', 'jobs', 'order_items', 'orders', 'supermarket_category_rates',
+      'freelancer_contract_signatures', 'contract_templates',
       'agency_member_payments', 'agency_member_freelancers', 'agency_member_branches', 'agency_members',
-      'freelancer_categories', 'reviews', 'commissions', 'supermarket_member_branches', 'supermarket_members',
+      'freelancer_categories', 'freelancer_contracts', 'reviews', 'commissions', 'supermarket_member_branches', 'supermarket_members',
       'freelancers', 'branches', 'team_roles', 'supermarkets', 'agencies', 'categories', 'sessions', 'users',
     ]) {
       await queryInterface.bulkDelete(table, null, {});

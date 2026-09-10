@@ -19,10 +19,14 @@ import { closingController } from './controllers/closingController';
 import { billingController } from './controllers/billingController';
 import { onboardingController } from './controllers/onboardingController';
 import { pendingController } from './controllers/pendingController';
+import { alertController } from './controllers/alertController';
 import { inviteController } from './controllers/inviteController';
 import { invoiceAdjustmentController } from './controllers/invoiceAdjustmentController';
 import { agencyMemberController } from './controllers/agencyMemberController';
 import { teamRoleController } from './controllers/teamRoleController';
+import { adminAgencyController } from './controllers/adminAgencyController';
+import { contractTemplateController } from './controllers/contractTemplateController';
+import { contractSignatureController } from './controllers/contractSignatureController';
 import { ensureAuth, authorize, ensureCanViewInvoices, ensureCanPayInvoices } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
@@ -37,6 +41,7 @@ router.get('/categories', categoryController.index);
 router.get('/categories/:id', categoryController.show);
 router.get('/agencies', agencyController.index);
 router.get('/invites/:token', inviteController.show);
+router.get('/contracts/verify/:id', contractSignatureController.verify);
 
 // Webhook do Mercado Pago (chamado pelo provedor, sem token)
 router.post('/payments/mercadopago/webhook', onboardingController.mercadoPagoWebhook);
@@ -52,6 +57,13 @@ router.get('/users/:id', authorize('admin'), userController.show);
 router.post('/users', authorize('admin'), userController.create);
 router.put('/users/:id', authorize('admin'), userController.update);
 router.delete('/users/:id', authorize('admin'), userController.delete);
+
+// ----- Agências (admin da plataforma cadastra e gerencia) -----
+// Prefixo /platform (não /admin) para não colidir com o painel AdminJS montado em /admin.
+router.get('/platform/agencies', authorize('admin'), adminAgencyController.index);
+router.post('/platform/agencies', authorize('admin'), adminAgencyController.create);
+router.get('/platform/agencies/:id', authorize('admin'), adminAgencyController.show);
+router.put('/platform/agencies/:id', authorize('admin'), adminAgencyController.update);
 
 // ----- Supermercados -----
 router.get('/supermarkets', supermarketController.index);
@@ -70,6 +82,10 @@ router.put('/team-roles/:id', authorize('supermarket', 'agency'), teamRoleContro
 router.delete('/team-roles/:id', authorize('supermarket', 'agency'), teamRoleController.remove);
 router.put('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.update);
 router.delete('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.delete);
+// Perfil institucional do supermercado (dono OU agência-cliente)
+router.put('/supermarkets/:id/profile', authorize('supermarket', 'agency', 'admin'), supermarketController.updateProfile);
+router.post('/supermarkets/:id/profile/logo', authorize('supermarket', 'agency', 'admin'), upload.single('file'), supermarketController.uploadProfileImage);
+router.post('/supermarkets/:id/profile/photo', authorize('supermarket', 'agency', 'admin'), upload.single('file'), supermarketController.uploadProfileImage);
 // Valores/hora por função que a agência cobra de cada supermercado (definidos no cadastro do supermercado)
 router.get('/supermarkets/:id/rates', authorize('supermarket', 'agency', 'admin'), supermarketController.listRates);
 router.post('/supermarkets/:id/rates', authorize('agency', 'admin'), supermarketController.saveRate);
@@ -84,6 +100,11 @@ router.post('/branches', authorize('supermarket', 'agency', 'admin'), branchCont
 router.put('/branches/:id', authorize('supermarket', 'agency', 'admin'), branchController.update);
 router.delete('/branches/:id', authorize('supermarket', 'agency', 'admin'), branchController.delete);
 router.post('/branches/:id/approve', authorize('agency'), branchController.approve);
+// Perfil/dados cadastrais da filial (vazio = herda da matriz)
+router.get('/branches/:id/profile', authorize('supermarket', 'agency', 'admin'), branchController.resolvedProfile);
+router.put('/branches/:id/profile', authorize('supermarket', 'agency', 'admin'), branchController.updateProfile);
+router.post('/branches/:id/profile/logo', authorize('supermarket', 'agency', 'admin'), upload.single('file'), branchController.uploadProfileImage);
+router.post('/branches/:id/profile/photo', authorize('supermarket', 'agency', 'admin'), upload.single('file'), branchController.uploadProfileImage);
 
 // ----- Agências -----
 router.get('/agencies/:id', agencyController.show);
@@ -116,6 +137,27 @@ router.delete('/categories/:id', authorize('admin'), categoryController.delete);
 // ----- Configurações da agência -----
 router.get('/agency/settings', authorize('agency', 'leader'), agencyController.getSettings);
 router.put('/agency/settings', authorize('agency'), agencyController.updateSettings);
+
+// ----- Perfil institucional da agência (a própria agência edita) -----
+router.get('/agency/profile', authorize('agency'), agencyController.getProfile);
+router.put('/agency/profile', authorize('agency'), agencyController.updateProfile);
+router.post('/agency/profile/logo', authorize('agency'), upload.single('file'), agencyController.uploadImage);
+router.post('/agency/profile/photo', authorize('agency'), upload.single('file'), agencyController.uploadImage);
+
+// ----- Modelos de contrato (agência) -----
+router.get('/agency/contract-templates', authorize('agency'), contractTemplateController.list);
+router.post('/agency/contract-templates', authorize('agency'), contractTemplateController.create);
+router.put('/agency/contract-templates/:id', authorize('agency'), contractTemplateController.update);
+router.post('/agency/contract-templates/:id/activate', authorize('agency'), contractTemplateController.activate);
+router.delete('/agency/contract-templates/:id', authorize('agency'), contractTemplateController.remove);
+router.get('/agency/contract-templates/:id/preview', authorize('agency'), contractTemplateController.preview);
+
+// ----- Assinaturas de contrato -----
+router.get('/agency/contract-signatures', authorize('agency'), contractSignatureController.agencyList);
+router.get('/agency/contract-signatures/:id/document', authorize('agency'), contractSignatureController.agencyDocument);
+router.get('/freelancer/contract/agreement', authorize('freelancer'), contractSignatureController.myAgreement);
+router.post('/freelancer/contract/sign', authorize('freelancer'), contractSignatureController.sign);
+router.get('/freelancer/contract/document', authorize('freelancer'), contractSignatureController.myDocument);
 router.post('/agency/invites', authorize('agency', 'leader'), inviteController.create);
 
 // ----- Líderes de agência (gestão pelo dono) -----
@@ -191,6 +233,13 @@ router.post('/agency/jobs/:id/break-end', authorize('agency', 'leader'), jobCont
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
 router.post('/jobs/:id/review-by-supermarket', authorize('supermarket'), reviewController.createBySupermarket);
 router.get('/jobs/:id/review', reviewController.getByJob);
+
+// ----- Alertas de ocorrência nas vagas (atraso, falta, saída antecipada…) -----
+router.get('/alerts', authorize('agency', 'leader', 'supermarket'), alertController.list);
+router.get('/alerts/summary', authorize('agency', 'leader', 'supermarket'), alertController.summary);
+router.post('/alerts/:id/acknowledge', authorize('agency', 'leader'), alertController.acknowledge);
+router.post('/alerts/:id/resolve', authorize('agency', 'leader'), alertController.resolve);
+router.post('/internal/alerts/sweep', authorize('admin'), alertController.sweep);
 
 // ----- Logs de jornada -----
 router.get('/logs', authorize('admin'), jobLogsController.findAll);

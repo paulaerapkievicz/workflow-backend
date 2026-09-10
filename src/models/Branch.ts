@@ -10,6 +10,11 @@ export interface Branch {
   name: string
   address: string
   phone?: string
+  legalName?: string | null
+  cnpj?: string | null
+  email?: string | null
+  logoUrl?: string | null
+  profilePhotoUrl?: string | null
   latitude?: number | null
   longitude?: number | null
   geocodedAt?: Date | null
@@ -26,6 +31,11 @@ export interface BranchCreationAttributes
     Branch,
     | 'id'
     | 'phone'
+    | 'legalName'
+    | 'cnpj'
+    | 'email'
+    | 'logoUrl'
+    | 'profilePhotoUrl'
     | 'latitude'
     | 'longitude'
     | 'geocodedAt'
@@ -66,6 +76,26 @@ export const Branch = sequelize.define<BranchInstance, Branch>('Branch', {
   },
   phone: {
     type: DataTypes.STRING
+  },
+  legalName: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  cnpj: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  logoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  profilePhotoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   latitude: {
     type: DataTypes.DECIMAL(10, 6),

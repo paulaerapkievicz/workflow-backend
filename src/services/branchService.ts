@@ -1,6 +1,17 @@
 import { Branch, BranchCreationAttributes } from '../models/Branch';
 import { Supermarket } from '../models/Supermarket';
 import { geocodeAddress } from '../helpers/geocode';
+import { resolveBranchProfile } from '../helpers/branchProfile';
+
+/** Dados cadastrais próprios da filial (vazio = herda da matriz). */
+const PROFILE_FIELDS = [
+  'name', 'address', 'phone', 'legalName', 'cnpj', 'email', 'logoUrl', 'profilePhotoUrl',
+] as const;
+
+function trimOrNull(v: unknown): string | null {
+  const s = String(v ?? '').trim();
+  return s === '' ? null : s;
+}
 
 // Coordenadas manuais explícitas no payload (opcional — normalmente vêm da geocodificação).
 function manualCoords(data: Record<string, any>) {
@@ -73,6 +84,36 @@ export const branchService = {
     }
     delete patch.regeocode;
     return branch.update(patch);
+  },
+
+  /**
+   * Atualiza os dados cadastrais da filial (whitelist). Reaproveita `update` para o
+   * re-geocode quando o endereço muda.
+   */
+  async updateProfile(id: string, data: Record<string, unknown>) {
+    const branch = await Branch.findByPk(id);
+    if (!branch) throw new Error('Filial não encontrada.');
+
+    const patch: Record<string, unknown> = {};
+    for (const field of PROFILE_FIELDS) {
+      if (data[field] === undefined) continue;
+      if (field === 'name' || field === 'address') {
+        const value = String(data[field] ?? '').trim();
+        if (!value) throw new Error('Nome e endereço da filial são obrigatórios.');
+        patch[field] = value;
+      } else {
+        patch[field] = trimOrNull(data[field]);
+      }
+    }
+    return this.update(id, patch as any);
+  },
+
+  /** Perfil efetivo (com herança da matriz) de uma filial. */
+  async resolvedProfile(id: string) {
+    const branch = await Branch.findByPk(id);
+    if (!branch) throw new Error('Filial não encontrada.');
+    const market = await Supermarket.findByPk(branch.supermarketId);
+    return { branch, profile: resolveBranchProfile(branch, market) };
   },
 
   async approveForAgency(id: string, agencyId: string, approvedBy: string) {

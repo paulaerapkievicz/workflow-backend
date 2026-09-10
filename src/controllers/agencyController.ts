@@ -26,6 +26,42 @@ export const agencyController = {
     }
   },
 
+  // GET /agency/profile (agency) — dados cadastrais da própria agência
+  async getProfile(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(400).json({ message: 'Cadastre a agência primeiro.' });
+      const agency = await agencyService.findById(agencyId);
+      return res.json(agency);
+    } catch (error) {
+      return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' });
+    }
+  },
+
+  // PUT /agency/profile (agency)
+  async updateProfile(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(400).json({ message: 'Cadastre a agência primeiro.' });
+      return res.json(await agencyService.updateProfile(agencyId, req.body ?? {}));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro.' });
+    }
+  },
+
+  // POST /agency/profile/logo | /agency/profile/photo (agency, multipart campo "file")
+  async uploadImage(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!);
+      if (!agencyId) return res.status(400).json({ message: 'Cadastre a agência primeiro.' });
+      if (!req.file) return res.status(400).json({ message: 'Envie um arquivo de imagem.' });
+      const field = req.path.endsWith('/photo') ? 'profilePhotoUrl' : 'logoUrl';
+      return res.json(await agencyService.updateProfile(agencyId, { [field]: `/uploads/${req.file.filename}` }));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao enviar imagem.' });
+    }
+  },
+
   // GET /agencies - Lista todas as agências
   async index(req: Request, res: Response) {
     try {

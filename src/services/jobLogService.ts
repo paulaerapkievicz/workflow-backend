@@ -12,16 +12,27 @@ import { Agency } from '../models/Agency'
 import { FreelancerLocation } from '../models/FreelancerLocation'
 import { paymentService } from './paymentService'
 import { orderService } from './orderService'
+import { jobAlertService } from './jobAlertService'
 import { distanceInMeters } from '../helpers/geo'
 import {
   minutesBetween,
   CHECKOUT_OVERTIME_TOLERANCE_MINUTES,
   CHECKIN_EARLY_TOLERANCE_MINUTES,
 } from '../helpers/time'
+import { resolveAlertSettings, PARTIAL_COMPLETION_RATIO } from '../helpers/alerts'
 
 /** Pausa/intervalo no ponto está habilitado para esta vaga? (override da vaga → padrão da agência) */
 export function resolveBreaksEnabled(job: { breaksEnabled?: boolean | null }, agency: any): boolean {
   return job.breaksEnabled ?? agency?.breaksEnabled ?? false
+}
+
+/** Antecedência máxima (min) do check-in antes do turno (override da vaga → padrão da agência). */
+export function resolveCheckinEarlyToleranceMinutes(
+  job: { checkinEarlyToleranceMinutes?: number | null },
+  agency: any
+): number {
+  const t = job.checkinEarlyToleranceMinutes ?? agency?.checkinEarlyToleranceMinutes ?? CHECKIN_EARLY_TOLERANCE_MINUTES
+  return Number.isFinite(Number(t)) && Number(t) >= 0 ? Number(t) : CHECKIN_EARLY_TOLERANCE_MINUTES
 }
 
 /** Limite de minutos de pausa por turno (override da vaga → padrão da agência). NULL = sem limite. */
@@ -130,13 +141,14 @@ export const jobLogService = {
     if (!shift) throw new Error('Todos os turnos desta vaga já passaram.')
 
     // O check-in não pode ser feito muito antes do horário do turno — só atraso é tolerado.
-    const earliestCheckIn = new Date(
-      new Date(shift.startTime).getTime() - CHECKIN_EARLY_TOLERANCE_MINUTES * 60000
-    )
+    // Vale para todos os turnos da vaga: o turno seguinte só abre perto do horário dele,
+    // mesmo que o colaborador já tenha encerrado o turno anterior.
+    const earlyTolerance = resolveCheckinEarlyToleranceMinutes(job, agency)
+    const earliestCheckIn = new Date(new Date(shift.startTime).getTime() - earlyTolerance * 60000)
     if (now < earliestCheckIn) {
       throw new Error(
         `Ainda não é hora do check-in. O turno começa às ${hhmmBR(shift.startTime)} — ` +
-          `a entrada pode ser registrada a partir de ${CHECKIN_EARLY_TOLERANCE_MINUTES} min antes.`
+          `a entrada pode ser registrada a partir de ${earlyTolerance} min antes.`
       )
     }
 
@@ -151,6 +163,40 @@ export const jobLogService = {
       await job.update({ status: 'in_progress' })
       await orderService.syncStatus(job.orderId)
     }
+
+    // Ocorrência: registra o atraso (se houver) e fecha alertas de atraso/vaga descoberta.
+    try {
+      const settings = resolveAlertSettings(agency)
+      const minsLate = Math.round((now.getTime() - new Date(shift.startTime).getTime()) / 60000)
+      if (minsLate > settings.lateCheckinToleranceMinutes) {
+        await jobAlertService.recordResolved(
+          {
+            jobId,
+            jobShiftId: shift.id,
+            freelancerId: freelancer.id,
+            type: 'late_checkin',
+            severity: minsLate > settings.lateCheckinCriticalMinutes ? 'critical' : 'warning',
+            title: 'Check-in com atraso',
+            message: `${freelancer.name} bateu o check-in às ${hhmmBR(now)} — ${minsLate} min após o início do turno (${hhmmBR(shift.startTime)}).`,
+            context: {
+              expectedAt: new Date(shift.startTime).toISOString(),
+              actualAt: now.toISOString(),
+              minutesLate: minsLate,
+            },
+            settings,
+          },
+          { code: 'acted' }
+        )
+      }
+      await jobAlertService.resolveForJob(
+        jobId,
+        ['late_checkin', 'shift_unfilled_soon', 'shift_unfilled_started', 'no_show'],
+        { code: 'acted' }
+      )
+    } catch (err) {
+      console.error('⚠️ hook de alerta (check-in):', err instanceof Error ? err.message : err)
+    }
+
     return { log, shift: await shift.reload() }
   },
 
@@ -207,6 +253,66 @@ export const jobLogService = {
       completed = true
       // check-out encerra o rastreamento em tempo real (a vaga sai do "ao vivo").
     }
+
+    // Ocorrências: saída antecipada, hora extra retida, cumprimento parcial + fecha os alertas do turno.
+    try {
+      const settings = resolveAlertSettings(agency)
+      const shiftEnd = new Date(shift.endTime)
+      const minsEarly = Math.round((shiftEnd.getTime() - now.getTime()) / 60000)
+      if (minsEarly > settings.earlyCheckoutToleranceMinutes) {
+        const shiftContracted = minutesBetween(shift.startTime, shift.endTime)
+        const critical = shiftContracted > 0 && minsEarly > shiftContracted * 0.5
+        await jobAlertService.raise({
+          jobId,
+          jobShiftId: shift.id,
+          freelancerId: freelancer.id,
+          type: 'early_checkout',
+          severity: critical ? 'critical' : 'warning',
+          title: 'Saída antecipada',
+          message: `${freelancer.name} bateu o check-out às ${hhmmBR(now)}, ${minsEarly} min antes do fim do turno (${hhmmBR(shiftEnd)}).`,
+          context: {
+            expectedAt: shiftEnd.toISOString(),
+            actualAt: now.toISOString(),
+            minutesShort: minsEarly,
+          },
+          settings,
+        })
+      }
+      await jobAlertService.resolveForJob(
+        jobId,
+        ['late_checkin', 'missing_checkout', 'break_overrun', 'break_not_resumed'],
+        { code: 'acted' }
+      )
+      if (completed) {
+        const fresh = await job.reload()
+        const contracted = fresh.contractedMinutes ?? 0
+        const worked = fresh.workedMinutes ?? 0
+        if (settlementHeld) {
+          await jobAlertService.raise({
+            jobId,
+            freelancerId: freelancer.id,
+            type: 'overtime_hold',
+            title: 'Hora extra retida',
+            message: `A vaga passou da tolerância de hora extra (${worked} min trabalhados x ${contracted} contratados). O pagamento fica retido até a agência liberar.`,
+            context: { workedMinutes: worked, contractedMinutes: contracted },
+            settings,
+          })
+        } else if (contracted > 0 && worked < contracted * PARTIAL_COMPLETION_RATIO) {
+          await jobAlertService.raise({
+            jobId,
+            freelancerId: freelancer.id,
+            type: 'partial_completion',
+            title: 'Cumprimento parcial',
+            message: `A vaga foi concluída com ${worked} min de ${contracted} contratados (${Math.round((worked / contracted) * 100)}%).`,
+            context: { workedMinutes: worked, contractedMinutes: contracted },
+            settings,
+          })
+        }
+      }
+    } catch (err) {
+      console.error('⚠️ hook de alerta (check-out):', err instanceof Error ? err.message : err)
+    }
+
     return { log, shift: await shift.reload(), jobCompleted: completed, settlementHeld }
   },
 
@@ -296,6 +402,31 @@ export const jobLogService = {
       longitude: g?.longitude ?? null,
       accuracy: g?.accuracy ?? null,
     })
+
+    // Ocorrência: pausa acima do limite (abre) ou dentro do limite de novo (fecha).
+    try {
+      const agency = freelancer.agencyId ? await Agency.findByPk(freelancer.agencyId) : null
+      const settings = resolveAlertSettings(agency)
+      const sumMin = await sumClosedBreakMinutes(shift.id)
+      const limit = resolveBreakLimitMinutes(job, agency)
+      if (limit != null && sumMin >= limit) {
+        await jobAlertService.raise({
+          jobId,
+          jobShiftId: shift.id,
+          freelancerId: freelancer.id,
+          type: 'break_overrun',
+          title: 'Pausa acima do limite',
+          message: `As pausas do turno somam ${sumMin} min (limite de ${limit} min por turno).`,
+          context: { breakMinutes: sumMin },
+          settings,
+        })
+      } else {
+        await jobAlertService.resolveForJob(jobId, ['break_overrun', 'break_not_resumed'], { code: 'acted' })
+      }
+    } catch (err) {
+      console.error('⚠️ hook de alerta (retomar pausa):', err instanceof Error ? err.message : err)
+    }
+
     return { break: await brk.reload(), shift: await shift.reload() }
   },
 }

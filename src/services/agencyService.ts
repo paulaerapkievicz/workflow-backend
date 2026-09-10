@@ -1,10 +1,32 @@
+import bcrypt from 'bcrypt';
+import { Op } from 'sequelize';
+import { sequelize } from '../database';
 import { Agency, AgencyCreationAttributes } from '../models/Agency';
-import { teamRoleService } from './teamRoleService';
+import { User } from '../models/User';
+import { Commission } from '../models/Commission';
+import { ALERT_SETTING_RANGES } from '../helpers/alerts';
+
+/** Campos de perfil institucional que a própria agência (ou o admin) pode editar. */
+const PROFILE_FIELDS = [
+  'name', 'legalName', 'cnpj', 'address', 'phone', 'email', 'logoUrl', 'profilePhotoUrl',
+] as const;
+
+function trimOrNull(v: unknown): string | null {
+  const s = String(v ?? '').trim();
+  return s === '' ? null : s;
+}
+
+async function assertCnpjAvailable(cnpj: string, exceptAgencyId?: string) {
+  const where: any = { cnpj };
+  if (exceptAgencyId) where.id = { [Op.ne]: exceptAgencyId };
+  const clash = await Agency.findOne({ where });
+  if (clash) throw new Error('Já existe uma agência com esse CNPJ.');
+}
 
 export const agencyService = {
   // Busca todas as agências
   async findAll() {
-    return await Agency.findAll();
+    return await Agency.findAll({ order: [['name', 'ASC']] });
   },
 
   // Busca uma agência pelo ID
@@ -12,19 +34,109 @@ export const agencyService = {
     return await Agency.findByPk(id);
   },
 
-  // Cria uma nova agência
+  // Cria uma nova agência (linha crua — usado pelo AdminJS/legado)
   async create(data: AgencyCreationAttributes) {
-    const agency = await Agency.create(data);
-    await teamRoleService.seedDefaults('agency', agency.id);
-    return agency;
+    return await Agency.create(data);
   },
 
-  // Atualiza uma agência pelo ID
+  /**
+   * Cria a agência junto com o login do dono (User role 'agency') e a Commission — mesma
+   * transação. Usado pelo cadastro feito pelo admin e pelo `POST /auth/register` de agência.
+   */
+  async createWithOwner(data: {
+    name: string
+    legalName?: string | null
+    cnpj: string
+    address: string
+    phone?: string | null
+    email?: string | null
+    ownerName: string
+    ownerEmail: string
+    password: string
+    commissionPercentage?: number
+  }) {
+    const name = String(data.name ?? '').trim();
+    const cnpj = String(data.cnpj ?? '').trim();
+    const address = String(data.address ?? '').trim();
+    const ownerName = String(data.ownerName ?? '').trim();
+    const ownerEmail = String(data.ownerEmail ?? '').trim().toLowerCase();
+
+    if (!name || !cnpj || !address) throw new Error('Informe nome, CNPJ e endereço da agência.');
+    if (!ownerName || !ownerEmail || !data.password) {
+      throw new Error('Informe nome, e-mail e senha do responsável (login da agência).');
+    }
+    if (String(data.password).length < 4) throw new Error('A senha deve ter ao menos 4 caracteres.');
+
+    const emailTaken = await User.findOne({ where: { email: ownerEmail } });
+    if (emailTaken) throw new Error('Este e-mail já está cadastrado.');
+    await assertCnpjAvailable(cnpj);
+
+    const pct = data.commissionPercentage != null ? Number(data.commissionPercentage) : 10;
+
+    return sequelize.transaction(async (t) => {
+      const passwordHash = await bcrypt.hash(String(data.password), 10);
+      const owner = await User.create(
+        { name: ownerName, email: ownerEmail, passwordHash, role: 'agency', phone: trimOrNull(data.phone) },
+        { transaction: t }
+      );
+      const agency = await Agency.create(
+        {
+          ownerId: owner.id,
+          name,
+          legalName: trimOrNull(data.legalName),
+          cnpj,
+          address,
+          phone: trimOrNull(data.phone) ?? undefined,
+          email: trimOrNull(data.email),
+          commissionPercentage: pct,
+        },
+        { transaction: t }
+      );
+      await Commission.create({ agencyId: agency.id, percentage: pct }, { transaction: t });
+      return { agency, owner };
+    });
+  },
+
+  // Atualiza uma agência pelo ID (linha crua — legado)
   async update(id: string, data: Partial<Agency>) {
     const agency = await Agency.findByPk(id);
     if (!agency) return null;
-    
+
     return await agency.update(data);
+  },
+
+  /** Atualização de perfil institucional (whitelist). Valida CNPJ obrigatório e único. */
+  async updateProfile(agencyId: string, data: Record<string, unknown>) {
+    const agency = await Agency.findByPk(agencyId);
+    if (!agency) throw new Error('Agência não encontrada.');
+
+    const patch: Record<string, unknown> = {};
+    for (const field of PROFILE_FIELDS) {
+      if (data[field] === undefined) continue;
+      if (field === 'name' || field === 'cnpj' || field === 'address') {
+        const value = String(data[field] ?? '').trim();
+        if (!value) throw new Error('Nome, CNPJ e endereço são obrigatórios.');
+        patch[field] = value;
+      } else {
+        patch[field] = trimOrNull(data[field]);
+      }
+    }
+    if (patch.cnpj && patch.cnpj !== agency.cnpj) {
+      await assertCnpjAvailable(String(patch.cnpj), agencyId);
+    }
+    await agency.update(patch);
+    return agency.reload();
+  },
+
+  /** Admin: dados cadastrais + ativar/desativar. */
+  async adminUpdate(agencyId: string, data: Record<string, unknown>) {
+    const agency = await Agency.findByPk(agencyId);
+    if (!agency) throw new Error('Agência não encontrada.');
+    await this.updateProfile(agencyId, data);
+    if (data.active !== undefined) {
+      await agency.update({ active: data.active === true });
+    }
+    return Agency.findByPk(agencyId);
   },
 
   // Configurações operacionais da agência (raio de check-in, prazo de cancelamento, etc.)
@@ -39,6 +151,15 @@ export const agencyService = {
       reviewEnabled: a.reviewEnabled,
       breaksEnabled: a.breaksEnabled,
       breakLimitMinutes: a.breakLimitMinutes ?? null,
+      checkinEarlyToleranceMinutes: a.checkinEarlyToleranceMinutes,
+      alertsEnabled: a.alertsEnabled,
+      notifySupermarketOnAlerts: a.notifySupermarketOnAlerts,
+      lateCheckinToleranceMinutes: a.lateCheckinToleranceMinutes,
+      lateCheckinCriticalMinutes: a.lateCheckinCriticalMinutes,
+      earlyCheckoutToleranceMinutes: a.earlyCheckoutToleranceMinutes,
+      missingCheckoutGraceMinutes: a.missingCheckoutGraceMinutes,
+      unfilledAlertLeadMinutes: a.unfilledAlertLeadMinutes,
+      shortNoticeWithdrawalMinutes: a.shortNoticeWithdrawalMinutes,
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
@@ -54,6 +175,15 @@ export const agencyService = {
       reviewEnabled: boolean
       breaksEnabled: boolean
       breakLimitMinutes: number | string | null
+      checkinEarlyToleranceMinutes: number
+      alertsEnabled: boolean
+      notifySupermarketOnAlerts: boolean
+      lateCheckinToleranceMinutes: number
+      lateCheckinCriticalMinutes: number
+      earlyCheckoutToleranceMinutes: number
+      missingCheckoutGraceMinutes: number
+      unfilledAlertLeadMinutes: number
+      shortNoticeWithdrawalMinutes: number
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
@@ -87,6 +217,27 @@ export const agencyService = {
         patch.breakLimitMinutes = n
       }
     }
+    if (data.checkinEarlyToleranceMinutes != null) {
+      const n = Math.trunc(Number(data.checkinEarlyToleranceMinutes))
+      if (!Number.isFinite(n) || n < 0 || n > 240) {
+        throw new Error('Antecedência do check-in deve ficar entre 0 e 240 minutos.')
+      }
+      patch.checkinEarlyToleranceMinutes = n
+    }
+    if (data.alertsEnabled != null) patch.alertsEnabled = data.alertsEnabled === true
+    if (data.notifySupermarketOnAlerts != null) {
+      patch.notifySupermarketOnAlerts = data.notifySupermarketOnAlerts === true
+    }
+    for (const [field, [min, max]] of Object.entries(ALERT_SETTING_RANGES)) {
+      const raw = (data as Record<string, unknown>)[field]
+      if (raw == null || raw === '') continue
+      const n = Math.trunc(Number(raw))
+      if (!Number.isFinite(n) || n < min || n > max) {
+        throw new Error(`"${field}" deve ficar entre ${min} e ${max} minutos.`)
+      }
+      patch[field] = n
+    }
+
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true
     if (data.allowSelfRegistration != null) patch.allowSelfRegistration = data.allowSelfRegistration === true
     if (data.uniformPrice != null) {
@@ -102,7 +253,7 @@ export const agencyService = {
   async delete(id: string) {
     const agency = await Agency.findByPk(id);
     if (!agency) return false;
-    
+
     await agency.destroy();
     return true;
   }

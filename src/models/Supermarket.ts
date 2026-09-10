@@ -14,12 +14,18 @@ export interface Supermarket {
   cnpj: string
   address: string
   phone?: string
+  email?: string | null
+  logoUrl?: string | null
+  profilePhotoUrl?: string | null
   createdAt: Date
   updatedAt: Date
 }
 
 export interface SupermarketCreationAttributes
-  extends Optional<Supermarket, 'id' | 'legalName' | 'phone' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<
+    Supermarket,
+    'id' | 'legalName' | 'phone' | 'email' | 'logoUrl' | 'profilePhotoUrl' | 'createdAt' | 'updatedAt'
+  > {}
 
 export interface SupermarketInstance
   extends Model<Supermarket, SupermarketCreationAttributes>,
@@ -71,6 +77,18 @@ export const Supermarket = sequelize.define<SupermarketInstance, Supermarket>('S
   },
   phone: {
     type: DataTypes.STRING
+  },
+  email: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  logoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  profilePhotoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   createdAt: {
     allowNull: false,

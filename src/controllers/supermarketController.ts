@@ -305,6 +305,34 @@ export const supermarketController = {
     }
   },
 
+  // PUT /supermarkets/:id/profile — dados cadastrais (dono do supermercado OU agência-cliente)
+  async updateProfile(req: AuthRequest, res: Response) {
+    try {
+      if (!(await canManageTeam(req, req.params.id))) {
+        return res.status(403).json({ message: 'Sem permissão para editar este supermercado.' });
+      }
+      return res.json(await supermarketService.updateProfile(req.params.id, req.body ?? {}));
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao salvar o perfil.' });
+    }
+  },
+
+  // POST /supermarkets/:id/profile/logo | /photo (multipart campo "file")
+  async uploadProfileImage(req: AuthRequest, res: Response) {
+    try {
+      if (!(await canManageTeam(req, req.params.id))) {
+        return res.status(403).json({ message: 'Sem permissão para editar este supermercado.' });
+      }
+      if (!req.file) return res.status(400).json({ message: 'Envie um arquivo de imagem.' });
+      const field = req.path.endsWith('/photo') ? 'profilePhotoUrl' : 'logoUrl';
+      return res.json(
+        await supermarketService.updateProfile(req.params.id, { [field]: `/uploads/${req.file.filename}` })
+      );
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao enviar imagem.' });
+    }
+  },
+
   // GET /supermarkets - Lista todos os supermercados
   async index(req: Request, res: Response) {
     try {

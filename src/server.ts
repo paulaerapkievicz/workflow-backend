@@ -8,6 +8,10 @@ import { router } from './routes'
 
 const app = express();
 
+// Atrás do proxy do Railway/Vercel — necessário para `req.ip` real (trilha de evidências
+// da assinatura de contrato).
+app.set('trust proxy', true);
+
 // CORS: origens explícitas em FRONTEND_BASE_URL (lista separada por vírgula) +
 // qualquer deploy da Vercel (produção e previews) + localhost em dev.
 const configuredOrigins = (process.env.FRONTEND_BASE_URL || '')
@@ -45,7 +49,7 @@ app.use('/admin', (req, res, next) => {
   res.status(503).type('text').send('Painel administrativo inicializando, tente novamente em instantes.');
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
 app.use(express.static(path.resolve(__dirname, '..', 'public')));
 
 // Health check simples — responde antes mesmo do banco conectar.
@@ -72,4 +76,21 @@ import('./adminjs')
     console.log(`🎛️ AdminJS mounted at ${adminJs.options.rootPath}`);
   })
   .catch(err => console.error('❌ Falha ao montar o AdminJS:', err));
+
+// Varredura periódica do controle de ocorrências das vagas (atraso, falta, turno sem
+// check-out, vaga descoberta…). Desligada em teste e com ALERTS_SWEEP_ENABLED=0.
+if (process.env.NODE_ENV !== 'test' && process.env.ALERTS_SWEEP_ENABLED !== '0') {
+  import('./services/jobAlertService')
+    .then(({ jobAlertService }) => {
+      const { SWEEP_INTERVAL_MS, SWEEP_FIRST_DELAY_MS } = require('./helpers/alerts');
+      const tick = () =>
+        jobAlertService.sweep().catch((err: unknown) =>
+          console.error('⚠️ Varredura de alertas falhou:', err instanceof Error ? err.message : err),
+        );
+      setTimeout(tick, SWEEP_FIRST_DELAY_MS).unref();
+      setInterval(tick, SWEEP_INTERVAL_MS).unref();
+      console.log('🚨 Varredura de alertas de vaga ativada.');
+    })
+    .catch(err => console.error('❌ Falha ao iniciar a varredura de alertas:', err));
+}
 

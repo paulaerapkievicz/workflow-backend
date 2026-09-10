@@ -2,7 +2,22 @@ import { Request, Response } from 'express';
 import { branchService } from '../services/branchService';
 import { profileService } from '../services/profileService';
 import { Supermarket } from '../models/Supermarket';
+import { Branch } from '../models/Branch';
 import { AuthRequest } from '../middlewares/auth';
+
+/** Pode editar a filial: admin, dono do supermercado ou a agência-cliente dele. */
+async function canManageBranch(req: AuthRequest, branchId: string): Promise<boolean> {
+  if (req.user!.role === 'admin') return true;
+  const branch = await Branch.findByPk(branchId);
+  if (!branch) return false;
+  if (req.user!.role === 'agency') {
+    const agencyId = await profileService.agencyIdForUser(req.user!);
+    const market = await Supermarket.findByPk(branch.supermarketId);
+    return !!agencyId && !!market && market.agencyId === agencyId;
+  }
+  const ctx = await profileService.supermarketContextForUser(req.user!);
+  return !!ctx && ctx.supermarketId === branch.supermarketId && ctx.isOwner;
+}
 
 export const branchController = {
   // GET /branches - Lista todas as filiais
@@ -86,6 +101,47 @@ export const branchController = {
       return res.json(branch);
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar filial.' });
+    }
+  },
+
+  // GET /branches/:id/profile — perfil efetivo (com herança da matriz)
+  async resolvedProfile(req: AuthRequest, res: Response) {
+    try {
+      if (!(await canManageBranch(req, req.params.id))) {
+        return res.status(403).json({ message: 'Sem permissão para ver esta filial.' });
+      }
+      const { branch, profile } = await branchService.resolvedProfile(req.params.id);
+      return res.json({ branch, profile });
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao buscar filial.' });
+    }
+  },
+
+  // PUT /branches/:id/profile — dados cadastrais próprios da filial
+  async updateProfile(req: AuthRequest, res: Response) {
+    try {
+      if (!(await canManageBranch(req, req.params.id))) {
+        return res.status(403).json({ message: 'Sem permissão para editar esta filial.' });
+      }
+      const branch = await branchService.updateProfile(req.params.id, req.body ?? {});
+      return res.json(branch);
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao salvar a filial.' });
+    }
+  },
+
+  // POST /branches/:id/profile/logo | /photo (multipart campo "file")
+  async uploadProfileImage(req: AuthRequest, res: Response) {
+    try {
+      if (!(await canManageBranch(req, req.params.id))) {
+        return res.status(403).json({ message: 'Sem permissão para editar esta filial.' });
+      }
+      if (!req.file) return res.status(400).json({ message: 'Envie um arquivo de imagem.' });
+      const field = req.path.endsWith('/photo') ? 'profilePhotoUrl' : 'logoUrl';
+      const branch = await branchService.updateProfile(req.params.id, { [field]: `/uploads/${req.file.filename}` });
+      return res.json(branch);
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao enviar imagem.' });
     }
   },
 

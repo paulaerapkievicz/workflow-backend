@@ -48,6 +48,8 @@ export interface Job {
   breaksEnabled?: boolean | null
   /** Override por vaga do limite de minutos de pausa por turno — NULL = usa o padrão da agência. */
   breakLimitMinutes?: number | null
+  /** Override por vaga da antecedência máxima do check-in — NULL = usa o padrão da agência. */
+  checkinEarlyToleranceMinutes?: number | null
   createdAt: Date
   updatedAt: Date
 }
@@ -78,6 +80,7 @@ export interface JobCreationAttributes
     | 'reviewEnabled'
     | 'breaksEnabled'
     | 'breakLimitMinutes'
+    | 'checkinEarlyToleranceMinutes'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -242,6 +245,10 @@ export const Job = sequelize.define<JobInstance, Job>(
       allowNull: true
     },
     breakLimitMinutes: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    checkinEarlyToleranceMinutes: {
       type: DataTypes.INTEGER,
       allowNull: true
     },

@@ -81,9 +81,15 @@ async function main() {
   section('Configurações da agência')
   let settings = (await req('GET', '/agency/settings', { token: agencyT })).data
   ok(settings.checkinRadius === 300 && settings.cancellationWindowMinutes === 30, 'settings padrão', settings)
-  const upd = await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 250, cancellationWindowMinutes: 45 } })
-  ok(upd.status === 200 && upd.data.checkinRadius === 250 && upd.data.cancellationWindowMinutes === 45, 'settings atualizadas')
-  await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 300, cancellationWindowMinutes: 30, requireCheckoutPhoto: true } })
+  ok(settings.checkinEarlyToleranceMinutes === 30, 'antecedência de check-in padrão = 30 min', settings.checkinEarlyToleranceMinutes)
+  const upd = await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 250, cancellationWindowMinutes: 45, checkinEarlyToleranceMinutes: 15 } })
+  ok(
+    upd.status === 200 && upd.data.checkinRadius === 250 && upd.data.cancellationWindowMinutes === 45 && upd.data.checkinEarlyToleranceMinutes === 15,
+    'settings atualizadas (incl. antecedência do check-in)'
+  )
+  const badTol = await req('PUT', '/agency/settings', { token: agencyT, body: { checkinEarlyToleranceMinutes: 999 } })
+  ok(badTol.status === 400, 'antecedência de check-in fora da faixa (0–240) é recusada', badTol.data?.message)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { checkinRadius: 300, cancellationWindowMinutes: 30, checkinEarlyToleranceMinutes: 30, requireCheckoutPhoto: true } })
 
   section('Valores/hora do supermercado')
   const cats = (await req('GET', '/categories', { token: superT })).data
@@ -506,6 +512,65 @@ async function main() {
   ok(gapOrder.status === 201, 'pedido com 2 turnos e intervalo entre eles aceito')
   const gapJob = gapOrder.data.orderJobs[0]
   ok((gapJob.shifts?.length ?? 0) === 2 && Number(gapJob.contractedMinutes) === 300, '2 turnos, 5h contratadas (intervalo não conta)', gapJob.contractedMinutes)
+
+  // Turnos com nome personalizado: o supermercado escreve o rótulo que quiser; sem nome, cai em "Turno N".
+  const namedOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [
+          { startTime: '08:00', endTime: '14:00', nominalPeriod: 'manha', custom: true, label: 'Abertura da loja' },
+          { startTime: '14:00', endTime: '20:00', nominalPeriod: 'tarde', custom: true, label: '' },
+        ],
+      }],
+    },
+  })
+  ok(namedOrder.status === 201, 'pedido com turnos de nome personalizado aceito', namedOrder.data?.message)
+  const namedShifts = [...(namedOrder.data.orderJobs[0].shifts ?? [])].sort((a, b) => a.position - b.position)
+  ok(namedShifts[0]?.label === 'Abertura da loja', '1º turno guarda o nome personalizado', namedShifts[0]?.label)
+  ok(namedShifts[1]?.label === 'Turno 2', '2º turno sem nome cai no padrão "Turno N"', namedShifts[1]?.label)
+
+  // A antecedência do check-in vale para todos os turnos: o 2º turno não abre longe do horário dele.
+  const seqOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [
+          { startTime: '08:00', endTime: '10:00', nominalPeriod: 'manha' },
+          { startTime: '16:00', endTime: '18:00', nominalPeriod: 'tarde' },
+        ],
+      }],
+    },
+  })
+  const seqJob = seqOrder.data.orderJobs[0]
+  // Libera vagas do Pedro pra evitar conflito de agenda no aceite.
+  for (const j of (await req('GET', '/jobs', { token: agencyT })).data
+    .filter((j) => j.freelancerId === free2Id && ['accepted', 'in_progress'].includes(j.status))) {
+    await req('POST', `/jobs/${j.id}/release`, { token: agencyT })
+  }
+  const seqAcc = await req('POST', `/jobs/${seqJob.id}/accept`, { token: free2T })
+  ok(seqAcc.status === 200, 'vaga de 2 turnos aceita pelo colaborador', seqAcc.data?.message)
+  // Só o 1º turno vira "agora"; o 2º segue no horário original (daqui a horas).
+  await db.query(
+    `UPDATE job_shifts SET start_time = NOW() - interval '5 minutes', end_time = NOW() + interval '30 minutes'
+     WHERE job_id = $1 AND position = 0`,
+    [seqJob.id]
+  )
+  await req('POST', `/jobs/${seqJob.id}/logs/checkin`, { token: free2T, body: { ...CENTRO, accuracy: 10 } })
+  await db.query(`UPDATE job_shifts SET check_in_at = NOW() - interval '90 minutes' WHERE job_id=$1 AND position=0`, [seqJob.id])
+  const fdSeq = new FormData()
+  fdSeq.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'p.jpg')
+  await fetch(`${BASE}/jobs/${seqJob.id}/photos`, { method: 'POST', headers: { Authorization: `Bearer ${free2T}` }, body: fdSeq })
+  await req('POST', `/jobs/${seqJob.id}/logs/checkout`, { token: free2T, body: CENTRO })
+  const earlyNext = await req('POST', `/jobs/${seqJob.id}/logs/checkin`, { token: free2T, body: { ...CENTRO, accuracy: 10 } })
+  ok(
+    earlyNext.status === 400 && /Ainda não é hora do check-in/.test(earlyNext.data?.message || ''),
+    'check-in do 2º turno é recusado longe do horário dele (mesmo com o 1º turno já encerrado)',
+    earlyNext.data?.message
+  )
+  await req('POST', `/jobs/${seqJob.id}/release`, { token: agencyT })
 
   section('Pausar / retomar o ponto (intervalo escolhido pelo colaborador)')
   // Libera todas as vagas aceitas/em andamento do Pedro pra ele ficar livre nos testes a seguir.
@@ -1128,6 +1193,154 @@ async function main() {
   section('Geocodificação (tolerante a rede)')
   const geo = await req('POST', '/branches/geocode', { token: superT, body: { address: TEST_ADDRESS } })
   ok(geo.status === 200 || geo.status === 400, `geocode respondeu (${geo.status})`, geo.status === 200 ? { lat: geo.data.latitude } : geo.data?.message)
+
+  section('Cadastro de agência pelo admin + perfis institucionais')
+  const adminTok = await login('admin@email.com')
+  const newAgEmail = `nova-agencia-${Date.now()}@x.com`
+  const createAg = await req('POST', '/platform/agencies', { token: adminTok, body: {
+    name: 'Agência Console', legalName: 'Console Servicos Ltda', cnpj: `${Date.now()}`.slice(0, 14),
+    address: TEST_ADDRESS, ownerEmail: newAgEmail, ownerName: 'Dono Console', password: '123456',
+  } })
+  ok(createAg.status === 201 && !!createAg.data.agency?.id, 'admin cadastra agência via /platform/agencies', createAg.data?.message)
+  ok(!!(await login(newAgEmail)), 'login do dono da nova agência funciona')
+  const newAgToken = await login(newAgEmail)
+  const dupCnpj = await req('POST', '/platform/agencies', { token: adminTok, body: {
+    name: 'X', cnpj: createAg.data.agency.cnpj, address: 'a', ownerEmail: `x-${Date.now()}@x.com`, ownerName: 'X', password: '1234',
+  } })
+  ok(dupCnpj.status === 400, 'CNPJ de agência duplicado é recusado')
+  ok((await req('GET', '/platform/agencies', { token: agencyT })).status === 403, 'agência comum não acessa /platform/agencies (só admin)')
+
+  const putAgProfile = await req('PUT', '/agency/profile', { token: newAgToken, body: { legalName: 'Console Servicos S.A.', email: 'contato@console.com' } })
+  ok(putAgProfile.status === 200 && putAgProfile.data.legalName === 'Console Servicos S.A.', 'agência edita o próprio perfil (razão social/e-mail)')
+  ok((await req('GET', '/auth/me', { token: newAgToken })).data.profile.email === 'contato@console.com', '/auth/me reflete o perfil da agência')
+
+  await req('PUT', `/platform/agencies/${createAg.data.agency.id}`, { token: adminTok, body: { active: false } })
+  ok((await req('POST', '/auth/login', { body: { email: newAgEmail, password: '123456' } })).status === 403, 'agência desativada pelo admin não consegue logar')
+  await req('PUT', `/platform/agencies/${createAg.data.agency.id}`, { token: adminTok, body: { active: true } })
+
+  await req('PUT', `/supermarkets/${supermarketId}/profile`, { token: superT, body: { legalName: 'Central Matriz Ltda' } })
+  const brProfile = (await req('GET', `/branches/${branchCentro.id}/profile`, { token: superT })).data
+  ok(brProfile.profile.legalName === 'Central Matriz Ltda' && brProfile.profile.inherited.includes('legalName'), 'filial sem razão social herda a da matriz')
+  await req('PUT', `/branches/${branchCentro.id}/profile`, { token: superT, body: { cnpj: '11222333000199' } })
+  const brProfile2 = (await req('GET', `/branches/${branchCentro.id}/profile`, { token: superT })).data
+  ok(brProfile2.profile.cnpj === '11222333000199' && !brProfile2.profile.inherited.includes('cnpj'), 'CNPJ próprio da filial deixa de ser herdado')
+
+  section('Contrato eletrônico do colaborador')
+  const free2Tok = await login('free2@email.com')
+  const tpls = (await req('GET', '/agency/contract-templates', { token: agencyT })).data
+  ok(tpls.templates.some((t) => t.active) && tpls.tokens.length > 0, 'agência tem modelo de contrato ativo + campos de mesclagem')
+  const agreement = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data
+  ok(agreement.hasTemplate && agreement.canSign && agreement.missing.length === 0, 'colaborador com onboarding aprovado pode assinar', agreement.blockedReason)
+  const signRes = await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: true } })
+  ok(signRes.status === 201 && /^[0-9a-f]{64}$/.test(signRes.data.contentHash || ''), 'contrato assinado com hash SHA-256', signRes.data)
+  ok(!!signRes.data.ipAddress, 'assinatura registra o IP do signatário')
+  ok((await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: false } })).status === 400, 'assinatura sem marcar o aceite é recusada')
+  const agencySigs = (await req('GET', '/agency/contract-signatures', { token: agencyT })).data
+  ok(agencySigs.some((s) => s.id === signRes.data.id && s.freelancer), 'agência vê a assinatura do colaborador (com o nome dele)')
+  const verify = (await req('GET', `/contracts/verify/${signRes.data.id}`)).data
+  ok(verify.contentHash === signRes.data.contentHash && /\*\*\*/.test(verify.signerCpfMasked || ''), 'verificação pública confere o hash e mascara o CPF')
+  const docRes = await fetch(BASE + '/freelancer/contract/document', { headers: { Authorization: `Bearer ${free2Tok}` } })
+  const docBuf = Buffer.from(await docRes.arrayBuffer())
+  ok(docRes.status === 200 && docBuf.slice(0, 4).toString() === '%PDF' && docBuf.length > 1000, 'PDF do contrato assinado é gerado (> 1 KB)', docBuf.length)
+  const activeTpl = tpls.templates.find((t) => t.active)
+  await req('PUT', `/agency/contract-templates/${activeTpl.id}`, { token: agencyT, body: { bodyHtml: `${activeTpl.bodyHtml}<p>Clausula adicional {{dataAtual}}.</p>` } })
+  const agreement2 = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data
+  ok(agreement2.canSign && agreement2.supersededSignature, 'modelo alterado libera nova assinatura e marca a anterior como superada')
+  const sign2 = await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: true } })
+  ok(sign2.status === 201 && sign2.data.id !== signRes.data.id && sign2.data.contentHash !== signRes.data.contentHash, 'nova assinatura cria uma segunda linha (histórico preservado)')
+
+  section('Alertas de ocorrência nas vagas (atraso, falta, vaga descoberta…)')
+  const alertAdminT = await login('admin@email.com')
+  const sweep = () => req('POST', '/internal/alerts/sweep', { token: alertAdminT })
+  const agAlerts = async (qs = '') => (await req('GET', `/alerts${qs}`, { token: agencyT })).data
+  const superAlerts = async () => (await req('GET', '/alerts', { token: superT })).data
+  const backdate = (jobId, mins, spanMin = 240) =>
+    Promise.all([
+      db.query(
+        `UPDATE job_shifts SET start_time = NOW() - ($2 || ' minutes')::interval,
+           end_time = NOW() - ($2 || ' minutes')::interval + ($3 || ' minutes')::interval
+         WHERE job_id = $1`,
+        [jobId, String(mins), String(spanMin)]
+      ),
+      db.query(
+        `UPDATE jobs SET start_time = NOW() - ($2 || ' minutes')::interval,
+           end_time = NOW() - ($2 || ' minutes')::interval + ($3 || ' minutes')::interval WHERE id = $1`,
+        [jobId, String(mins), String(spanMin)]
+      ),
+    ])
+  const mkAlertJob = async (d) => {
+    const o = await req('POST', '/orders', {
+      token: superT,
+      body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: dateInDays(d), shifts: [{ startTime: '08:00', endTime: '12:00' }] }] },
+    })
+    return { orderId: o.data.id, job: o.data.orderJobs[0] }
+  }
+
+  // Vaga descoberta com o turno já começado.
+  const unf = await mkAlertJob(20)
+  await backdate(unf.job.id, 40, 300)
+  await sweep()
+  const unfAlert = (await agAlerts('?status=open')).find((a) => a.jobId === unf.job.id && a.type === 'shift_unfilled_started')
+  ok(!!unfAlert && unfAlert.severity === 'critical', 'vaga descoberta após o início gera alerta crítico', unfAlert?.severity)
+  ok((await superAlerts()).some((a) => a.jobId === unf.job.id), 'supermercado vê o alerta de vaga descoberta (afeta a entrega)')
+
+  // Aceitar resolve o alerta de vaga descoberta (turno reposicionado para "começa agora").
+  await req('POST', `/jobs/${unf.job.id}/accept`, { token: freeT })
+  await backdate(unf.job.id, 2, 300)
+  await sweep()
+  ok(
+    (await agAlerts('?status=all')).find((a) => a.jobId === unf.job.id && a.type === 'shift_unfilled_started')?.status === 'resolved',
+    'aceitar a vaga resolve o alerta de vaga descoberta'
+  )
+
+  // Atraso no check-in + escalonamento para crítico.
+  await backdate(unf.job.id, 20, 260)
+  await sweep()
+  let late = (await agAlerts('?status=open')).find((a) => a.jobId === unf.job.id && a.type === 'late_checkin')
+  ok(!!late && late.severity === 'warning', 'atraso de 20 min no check-in gera alerta de atenção', late?.severity)
+  await backdate(unf.job.id, 45, 260)
+  await sweep()
+  late = (await agAlerts('?status=open')).find((a) => a.jobId === unf.job.id && a.type === 'late_checkin')
+  ok(!!late && late.severity === 'critical', 'atraso passa de 30 min -> alerta escala para crítico', late?.severity)
+
+  // Reconhecer + resolver manualmente.
+  const ackRes = await req('POST', `/alerts/${late.id}/acknowledge`, { token: agencyT })
+  ok(ackRes.status === 200 && ackRes.data.status === 'acknowledged', 'agência reconhece a ocorrência')
+  const resRes = await req('POST', `/alerts/${late.id}/resolve`, { token: agencyT, body: { note: 'falei com o colaborador' } })
+  ok(
+    resRes.status === 200 && resRes.data.status === 'resolved' && resRes.data.resolutionNote === 'falei com o colaborador',
+    'agência resolve a ocorrência com nota'
+  )
+  await req('POST', `/jobs/${unf.job.id}/release`, { token: agencyT, body: { reason: 'teste de alerta' } })
+
+  // Falta (no-show) + auto-resolução ao registrar.
+  const ns = await mkAlertJob(21)
+  await req('POST', `/jobs/${ns.job.id}/accept`, { token: freeT })
+  await backdate(ns.job.id, 240, 180) // turno inteiro no passado
+  await sweep()
+  const nsAlert = (await agAlerts('?status=open')).find((a) => a.jobId === ns.job.id && a.type === 'no_show')
+  ok(!!nsAlert && nsAlert.severity === 'critical', 'colaborador não apareceu e a janela acabou -> alerta de falta', nsAlert?.severity)
+  await req('POST', `/jobs/${ns.job.id}/no-show`, { token: agencyT, body: { reason: 'não compareceu' } })
+  const nsAll = await agAlerts('?status=all')
+  ok(nsAll.find((a) => a.jobId === ns.job.id && a.type === 'no_show')?.status === 'resolved', 'registrar a falta resolve o alerta de falta')
+  ok(nsAll.some((a) => a.jobId === ns.job.id && a.type === 'no_show_confirmed'), 'a falta confirmada fica registrada para auditoria')
+
+  // A agência pode ocultar do supermercado.
+  await req('PUT', '/agency/settings', { token: agencyT, body: { notifySupermarketOnAlerts: false } })
+  const hid = await mkAlertJob(22)
+  await backdate(hid.job.id, 30, 300)
+  await sweep()
+  ok((await agAlerts('?status=open')).some((a) => a.jobId === hid.job.id), 'agência ainda vê a ocorrência com o aviso do supermercado desligado')
+  ok(!(await superAlerts()).some((a) => a.jobId === hid.job.id), 'supermercado não recebe ocorrências quando a agência desliga o aviso')
+  await req('PUT', '/agency/settings', { token: agencyT, body: { notifySupermarketOnAlerts: true } })
+
+  // Contadores no menu.
+  const alertCounts = (await req('GET', '/agency/pending-counts', { token: agencyT })).data
+  ok(
+    typeof alertCounts.alertsOpen === 'number' && typeof alertCounts.alertsCritical === 'number',
+    'pending-counts da agência traz alertsOpen/alertsCritical',
+    { open: alertCounts.alertsOpen, critical: alertCounts.alertsCritical }
+  )
 
   console.log(`\n----------\n${pass} passaram, ${fail} falharam`)
   await db.end()

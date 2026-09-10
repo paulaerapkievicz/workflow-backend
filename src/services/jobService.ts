@@ -9,6 +9,7 @@ import { Category } from '../models/Category'
 import { Branch } from '../models/Branch'
 import { Supermarket } from '../models/Supermarket'
 import { JobLog } from '../models/JobLog'
+import { JobAlert } from '../models/JobAlert'
 import { JobPhoto } from '../models/JobPhoto'
 import { Payment } from '../models/Payment'
 import { Review } from '../models/Review'
@@ -29,6 +30,8 @@ import { reviewService } from './reviewService'
 import { minutesBetween, CHECKOUT_OVERTIME_TOLERANCE_MINUTES } from '../helpers/time'
 import { resolveShifts } from '../helpers/shifts'
 import { jobLogService, resolveBreaksEnabled, sumClosedBreakMinutes } from './jobLogService'
+import { jobAlertService } from './jobAlertService'
+import { resolveAlertSettings } from '../helpers/alerts'
 
 const BR_TZ = 'America/Sao_Paulo'
 const fmtWindow = (a: Date | string, b: Date | string) => {
@@ -44,6 +47,7 @@ const jobIncludes = [
   { model: Freelancer, as: 'assignedFreelancer' },
   { model: JobShift, as: 'shifts', include: [{ model: JobShiftBreak, as: 'breaks' }] },
   { model: JobLog, as: 'jobLogs' },
+  { model: JobAlert, as: 'alerts' },
   { model: JobPhoto, as: 'jobPhotos' },
   { model: Payment, as: 'jobPayment' },
   { model: Review, as: 'jobReview' },
@@ -104,6 +108,7 @@ const JOB_CONFIG_FIELDS = [
   'reviewEnabled',
   'breaksEnabled',
   'breakLimitMinutes',
+  'checkinEarlyToleranceMinutes',
 ] as const
 
 const JOB_CONFIG_BOOLEAN_FIELDS = ['requireCheckoutPhoto', 'reviewEnabled', 'breaksEnabled']
@@ -590,6 +595,17 @@ export const jobService = {
 
     await job.update({ freelancerId: freelancer.id, status: 'accepted', contractedMinutes })
     await orderService.syncStatus(job.orderId)
+
+    // Ocorrência: a vaga saiu do estado "descoberta".
+    try {
+      await jobAlertService.resolveForJob(
+        id,
+        ['shift_unfilled_soon', 'shift_unfilled_started', 'late_withdrawal'],
+        { code: 'acted' }
+      )
+    } catch (err) {
+      console.error('⚠️ hook de alerta (aceite):', err instanceof Error ? err.message : err)
+    }
     return this.findById(id)
   },
 
@@ -637,6 +653,26 @@ export const jobService = {
     })
 
     await orderService.syncStatus(job.orderId)
+
+    // Ocorrência: desistência de última hora + fecha alertas do colaborador que saiu.
+    try {
+      const settings = resolveAlertSettings(agency)
+      const minsToStart = Math.round((new Date(job.startTime).getTime() - Date.now()) / 60000)
+      if (minsToStart <= settings.shortNoticeWithdrawalMinutes) {
+        await jobAlertService.raise({
+          jobId: id,
+          freelancerId: freelancer.id,
+          type: 'late_withdrawal',
+          title: 'Desistência de última hora',
+          message: `${freelancer.name} desistiu da vaga${minsToStart >= 0 ? ` a ${minsToStart} min do início` : ' após o horário de início'}. A vaga voltou ao pool.`,
+          context: { minutesLate: -minsToStart },
+          settings,
+        })
+      }
+      await jobAlertService.resolveForJob(id, ['late_checkin', 'no_show'], { code: 'auto' })
+    } catch (err) {
+      console.error('⚠️ hook de alerta (desistência):', err instanceof Error ? err.message : err)
+    }
     return this.findById(id)
   },
 
@@ -679,6 +715,29 @@ export const jobService = {
       'withdrawn',
       reason?.trim() || 'Colaborador desistiu da vaga em andamento.'
     )
+
+    // Ocorrência crítica: desistência no meio do turno.
+    try {
+      const agency = freelancer.agencyId ? await Agency.findByPk(freelancer.agencyId) : null
+      const settings = resolveAlertSettings(agency)
+      await jobAlertService.raise({
+        jobId: job.id,
+        freelancerId: freelancer.id,
+        type: 'late_withdrawal',
+        severity: 'critical',
+        title: 'Desistência no meio do turno',
+        message: `${freelancer.name} desistiu com a vaga em andamento. As horas feitas foram liquidadas e o restante voltou ao pool.`,
+        context: {},
+        settings,
+      })
+      await jobAlertService.resolveForJob(
+        job.id,
+        ['late_checkin', 'missing_checkout', 'break_overrun', 'break_not_resumed'],
+        { code: 'auto' }
+      )
+    } catch (err) {
+      console.error('⚠️ hook de alerta (desistência em andamento):', err instanceof Error ? err.message : err)
+    }
     return this.findById(job.id)
   },
 
@@ -695,6 +754,16 @@ export const jobService = {
       throw new Error('Este freelancer não pertence à sua agência.')
     }
     await cancelJobByAgency(job, freelancer.id, 'withdrawn', reason?.trim() || 'Vaga liberada pela agência.')
+
+    try {
+      await jobAlertService.resolveForJob(
+        id,
+        ['late_checkin', 'no_show', 'missing_checkout', 'break_overrun', 'break_not_resumed'],
+        { code: 'acted', by: actor?.isOwner === false ? 'leader' : 'agency' }
+      )
+    } catch (err) {
+      console.error('⚠️ hook de alerta (liberação):', err instanceof Error ? err.message : err)
+    }
     return this.findById(id)
   },
 
@@ -717,6 +786,30 @@ export const jobService = {
     await freelancer.update({ blockedUntil })
 
     await cancelJobByAgency(job, freelancer.id, 'no-show', reason.trim())
+
+    // Ocorrência: registra a falta confirmada e fecha o alerta de falta/atraso.
+    try {
+      const agency = await Agency.findByPk(agencyId)
+      const settings = resolveAlertSettings(agency)
+      await jobAlertService.recordResolved(
+        {
+          jobId: id,
+          freelancerId: freelancer.id,
+          type: 'no_show_confirmed',
+          title: 'Falta confirmada pela agência',
+          message: `A agência registrou a falta de ${freelancer.name}. Motivo: ${reason.trim()}. O colaborador ficou bloqueado por 7 dias.`,
+          context: {},
+          settings,
+        },
+        { code: 'acted', by: actor?.isOwner === false ? 'leader' : 'agency' }
+      )
+      await jobAlertService.resolveForJob(id, ['no_show', 'late_checkin', 'missing_checkout'], {
+        code: 'acted',
+        by: actor?.isOwner === false ? 'leader' : 'agency',
+      })
+    } catch (err) {
+      console.error('⚠️ hook de alerta (falta):', err instanceof Error ? err.message : err)
+    }
     return this.findById(id)
   },
 
@@ -778,6 +871,31 @@ export const jobService = {
         await paymentService.settleForJob(await job.reload(), { leaderCreditStatus: 'pending' })
       }
       await orderService.syncStatus(job.orderId)
+    }
+
+    // Ocorrência: fecha alertas do turno; se ficou retido por hora extra, abre o aviso.
+    try {
+      const agency = await Agency.findByPk(agencyId)
+      const settings = resolveAlertSettings(agency)
+      await jobAlertService.resolveForJob(
+        id,
+        ['missing_checkout', 'break_not_resumed', 'break_overrun', 'late_checkin'],
+        { code: 'acted', by: actor?.isOwner === false ? 'leader' : 'agency' }
+      )
+      const fresh = await job.reload()
+      if (fresh.settlementHold) {
+        await jobAlertService.raise({
+          jobId: id,
+          freelancerId: fresh.freelancerId,
+          type: 'overtime_hold',
+          title: 'Hora extra retida',
+          message: `Checkout forçado pela agência com horas acima do contratado — o pagamento fica retido até a liberação.`,
+          context: { workedMinutes: fresh.workedMinutes ?? 0, contractedMinutes: fresh.contractedMinutes ?? 0 },
+          settings,
+        })
+      }
+    } catch (err) {
+      console.error('⚠️ hook de alerta (checkout forçado):', err instanceof Error ? err.message : err)
     }
     return this.findById(id)
   },
@@ -942,6 +1060,17 @@ export const jobService = {
       }
     }
     await orderService.syncStatus(job.orderId)
+
+    // Ocorrência: a agência corrigiu o ponto — fecha os alertas que dependiam do horário.
+    try {
+      await jobAlertService.resolveForJob(
+        id,
+        ['early_checkout', 'partial_completion', 'missing_checkout', 'late_checkin', 'overtime_hold'],
+        { code: 'acted', by: actor?.isOwner === false ? 'leader' : 'agency' }
+      )
+    } catch (err) {
+      console.error('⚠️ hook de alerta (correção de ponto):', err instanceof Error ? err.message : err)
+    }
     return this.findById(id)
   },
 
@@ -1020,6 +1149,7 @@ export const jobService = {
         await job.update({ freelancerId: newFreelancer.id, status: 'accepted' }, { transaction: t })
       })
       await orderService.syncStatus(job.orderId)
+      await this.clearAlertsAfterReassign(id)
       return this.findById(id)
     }
 
@@ -1041,6 +1171,7 @@ export const jobService = {
       'withdrawn',
       reason?.trim() || `Trocado pela agência por ${newFreelancer.name}.`
     )
+    await this.clearAlertsAfterReassign(id)
     if (spunOffJobId) {
       const remainder = await Job.findByPk(spunOffJobId)
       if (remainder) {
@@ -1051,6 +1182,27 @@ export const jobService = {
     }
     // Turno único, já totalmente concluído: não sobrou nada pra reatribuir.
     return this.findById(id)
+  },
+
+  /** Fecha as ocorrências do colaborador que saiu numa troca. */
+  async clearAlertsAfterReassign(jobId: string) {
+    try {
+      await jobAlertService.resolveForJob(
+        jobId,
+        [
+          'late_checkin',
+          'no_show',
+          'missing_checkout',
+          'break_overrun',
+          'break_not_resumed',
+          'shift_unfilled_soon',
+          'shift_unfilled_started',
+        ],
+        { code: 'acted', by: 'agency' }
+      )
+    } catch (err) {
+      console.error('⚠️ hook de alerta (troca):', err instanceof Error ? err.message : err)
+    }
   },
 
   /** Vagas concluídas da rede da agência com pagamento retido (hora extra acima da tolerância). */
@@ -1086,6 +1238,11 @@ export const jobService = {
     }
     await job.update(patch)
     await paymentService.settleForJob(await job.reload())
+    try {
+      await jobAlertService.resolveForJob(id, ['overtime_hold'], { code: 'acted', by: 'agency' })
+    } catch (err) {
+      console.error('⚠️ hook de alerta (liberar pagamento):', err instanceof Error ? err.message : err)
+    }
     return this.findById(id)
   },
 
