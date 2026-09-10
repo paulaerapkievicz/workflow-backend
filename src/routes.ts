@@ -122,7 +122,8 @@ router.post('/freelancers', authorize('agency', 'admin'), freelancerController.c
 router.put('/freelancers/:id', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.update);
 router.delete('/freelancers/:id', authorize('agency', 'admin'), freelancerController.delete);
 router.get('/freelancers/:id/categories', freelancerController.listCategories);
-router.get('/freelancers/:id/reviews', reviewController.getByFreelancerId);
+router.get('/freelancers/:id/reviews', authorize('agency', 'leader', 'admin'), reviewController.getByFreelancerId);
+router.get('/agency/reviews', authorize('agency', 'leader'), reviewController.agencyReviews);
 router.get('/freelancers/:id/reputation', authorize('agency', 'leader', 'freelancer', 'admin'), reviewController.reputation);
 router.get('/freelancers/:id/leaders', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.leaders);
 router.post('/freelancers/:id/categories', authorize('agency', 'leader', 'freelancer', 'admin'), freelancerController.addCategory);
@@ -225,6 +226,8 @@ router.post('/jobs/:id/cancel', authorize('supermarket'), jobController.cancel);
 router.post('/jobs/:id/accept', authorize('freelancer'), jobController.accept);
 router.post('/jobs/:id/withdraw', authorize('freelancer'), jobController.withdraw);
 router.post('/jobs/:id/release', authorize('agency', 'leader'), jobController.release);
+router.post('/agency/jobs/close-expired-unfilled', authorize('agency', 'leader'), jobController.closeExpiredUnfilled);
+router.post('/agency/jobs/:id/close-unfilled', authorize('agency', 'leader'), jobController.closeUnfilled);
 router.get('/agency/pending-settlement', authorize('agency'), jobController.pendingSettlement);
 router.post('/jobs/:id/release-payment', authorize('agency'), jobController.releasePayment);
 router.post('/jobs/:id/no-show', authorize('agency', 'leader'), jobController.noShow);
@@ -235,7 +238,7 @@ router.post('/agency/jobs/:id/break-start', authorize('agency', 'leader'), jobCo
 router.post('/agency/jobs/:id/break-end', authorize('agency', 'leader'), jobController.breakEnd);
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
 router.post('/jobs/:id/review-by-supermarket', authorize('supermarket'), reviewController.createBySupermarket);
-router.get('/jobs/:id/review', reviewController.getByJob);
+router.get('/jobs/:id/review', authorize('agency', 'leader', 'admin', 'supermarket'), reviewController.getByJob);
 
 // ----- Alertas de ocorrência nas vagas (atraso, falta, saída antecipada…) -----
 router.get('/alerts', authorize('agency', 'leader', 'supermarket'), alertController.list);

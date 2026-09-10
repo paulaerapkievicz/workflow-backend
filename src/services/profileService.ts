@@ -42,7 +42,18 @@ export const profileService = {
     switch (user.role) {
       case 'supermarket': {
         // inclui a agência-cliente para a UI saber, p.ex., se a avaliação de colaborador está ligada
-        const withAgency = { include: [{ model: Agency, as: 'clientAgency', attributes: ['id', 'name', 'reviewEnabled'] }] }
+        const withAgency = {
+          include: [
+            {
+              model: Agency,
+              as: 'clientAgency',
+              attributes: [
+                'id', 'name', 'reviewEnabled', 'statusColors',
+                'defaultBreakMinutes', 'maxShiftHours', 'maxJobHours',
+              ],
+            },
+          ],
+        }
         const owned = await Supermarket.findOne({ where: { ownerId: user.id }, ...withAgency })
         if (owned) return owned
         const member = await SupermarketMember.findOne({ where: { userId: user.id } })

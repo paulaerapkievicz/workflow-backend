@@ -10,6 +10,8 @@ export interface OrderItemShiftTemplate {
   startTime: string
   endTime: string
   label?: string | null
+  /** Intervalo (min) não remunerado do turno. */
+  breakMinutes?: number | null
 }
 
 export interface OrderItem {

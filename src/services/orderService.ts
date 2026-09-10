@@ -11,8 +11,9 @@ import { Category } from '../models/Category'
 import { Supermarket } from '../models/Supermarket'
 import { Freelancer } from '../models/Freelancer'
 import { SupermarketCategoryRate } from '../models/SupermarketCategoryRate'
-import { minutesBetween } from '../helpers/time'
+import { Agency } from '../models/Agency'
 import { resolveShifts, ResolvedShift, ShiftPeriod } from '../helpers/shifts'
+import { resolveLaborLimits } from '../helpers/laborLimits'
 import { UserInstance } from '../models/User'
 import { profileService, SupermarketContext } from './profileService'
 
@@ -65,7 +66,15 @@ interface NormalizedItem {
 /** Aceita o formato novo (`shifts: [...]`) e o legado (`shiftPeriod`/`startTime`/`endTime`). */
 function rawShiftsOf(item: any) {
   if (Array.isArray(item?.shifts) && item.shifts.length) return item.shifts
-  return [{ shiftPeriod: item?.shiftPeriod, startTime: item?.startTime, endTime: item?.endTime }]
+  return [
+    {
+      shiftPeriod: item?.shiftPeriod,
+      startTime: item?.startTime,
+      endTime: item?.endTime,
+      breakMinutes: item?.breakMinutes,
+      useDefaultBreak: item?.useDefaultBreak,
+    },
+  ]
 }
 
 /** Normaliza um booleano opcional de override: true/false explícito, ou null (usa o padrão). */
@@ -83,6 +92,11 @@ function optionalPositiveInt(v: unknown): number | null {
 
 async function normalizeItems(rawItems: any[], supermarketId: string): Promise<NormalizedItem[]> {
   if (!Array.isArray(rawItems) || !rawItems.length) throw new Error('Adicione ao menos uma vaga ao pedido.')
+
+  // Tetos de jornada + intervalo padrão vêm da agência que atende este supermercado.
+  const supermarket = await Supermarket.findByPk(supermarketId)
+  const agency = supermarket?.agencyId ? await Agency.findByPk(supermarket.agencyId) : null
+  const laborLimits = resolveLaborLimits(null, agency)
 
   const categoryIds = [...new Set(rawItems.map((i) => i?.categoryId).filter(Boolean))]
   const cats = await Category.findAll({ where: { id: { [Op.in]: categoryIds } } })
@@ -124,7 +138,7 @@ async function normalizeItems(rawItems: any[], supermarketId: string): Promise<N
 
     let shifts: ResolvedShift[]
     try {
-      shifts = resolveShifts(rawShiftsOf(it), String(it.date))
+      shifts = resolveShifts(rawShiftsOf(it), String(it.date), laborLimits)
     } catch (err) {
       throw new Error(`${ctx}: ${(err as Error).message}`)
     }
@@ -171,15 +185,14 @@ async function createJobsForItems(
           startTime: s.startTime.toISOString(),
           endTime: s.endTime.toISOString(),
           label: s.label,
+          breakMinutes: s.breakMinutes,
         })) as OrderItemShiftTemplate[],
       },
       { transaction: t }
     )
 
-    const contractedMinutes = item.shifts.reduce(
-      (acc, s) => acc + minutesBetween(s.startTime, s.endTime),
-      0
-    )
+    // Contratado = janela do turno menos o intervalo (não remunerado).
+    const contractedMinutes = item.shifts.reduce((acc, s) => acc + s.netMinutes, 0)
 
     for (let n = 0; n < item.quantity; n++) {
       const job = await Job.create(
@@ -211,6 +224,7 @@ async function createJobsForItems(
             endTime: s.endTime,
             label: s.label,
             nominalPeriod: s.shiftPeriod,
+            breakMinutes: s.breakMinutes,
           },
           { transaction: t }
         )

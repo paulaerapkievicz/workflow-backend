@@ -50,6 +50,12 @@ export interface Job {
   breakLimitMinutes?: number | null
   /** Override por vaga da antecedência máxima do check-in — NULL = usa o padrão da agência. */
   checkinEarlyToleranceMinutes?: number | null
+  /** Override por vaga do intervalo padrão (min) — NULL = usa o padrão da agência. */
+  defaultBreakMinutes?: number | null
+  /** Override por vaga do teto de horas de um turno — NULL = usa o padrão da agência. */
+  maxShiftHours?: number | string | null
+  /** Override por vaga do teto de horas somadas da vaga — NULL = usa o padrão da agência. */
+  maxJobHours?: number | string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -81,6 +87,9 @@ export interface JobCreationAttributes
     | 'breaksEnabled'
     | 'breakLimitMinutes'
     | 'checkinEarlyToleranceMinutes'
+    | 'defaultBreakMinutes'
+    | 'maxShiftHours'
+    | 'maxJobHours'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -250,6 +259,18 @@ export const Job = sequelize.define<JobInstance, Job>(
     },
     checkinEarlyToleranceMinutes: {
       type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    defaultBreakMinutes: {
+      type: DataTypes.INTEGER,
+      allowNull: true
+    },
+    maxShiftHours: {
+      type: DataTypes.DECIMAL(4, 2),
+      allowNull: true
+    },
+    maxJobHours: {
+      type: DataTypes.DECIMAL(4, 2),
       allowNull: true
     },
     createdAt: {

@@ -5,6 +5,7 @@ import { Agency, AgencyCreationAttributes } from '../models/Agency';
 import { User } from '../models/User';
 import { Commission } from '../models/Commission';
 import { ALERT_SETTING_RANGES, resolveUnfilledAlertTiers, sanitizeUnfilledAlertTiers } from '../helpers/alerts';
+import { resolveStatusColors, sanitizeStatusColors } from '../helpers/statusColors';
 
 /** Campos de perfil institucional que a própria agência (ou o admin) pode editar. */
 const PROFILE_FIELDS = [
@@ -151,6 +152,9 @@ export const agencyService = {
       reviewEnabled: a.reviewEnabled,
       breaksEnabled: a.breaksEnabled,
       breakLimitMinutes: a.breakLimitMinutes ?? null,
+      defaultBreakMinutes: a.defaultBreakMinutes,
+      maxShiftHours: Number(a.maxShiftHours),
+      maxJobHours: Number(a.maxJobHours),
       checkinEarlyToleranceMinutes: a.checkinEarlyToleranceMinutes,
       alertsEnabled: a.alertsEnabled,
       notifySupermarketOnAlerts: a.notifySupermarketOnAlerts,
@@ -161,6 +165,7 @@ export const agencyService = {
       unfilledAlertLeadMinutes: a.unfilledAlertLeadMinutes,
       shortNoticeWithdrawalMinutes: a.shortNoticeWithdrawalMinutes,
       unfilledAlertTiers: resolveUnfilledAlertTiers(a),
+      statusColors: resolveStatusColors(a),
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
@@ -176,6 +181,9 @@ export const agencyService = {
       reviewEnabled: boolean
       breaksEnabled: boolean
       breakLimitMinutes: number | string | null
+      defaultBreakMinutes: number
+      maxShiftHours: number
+      maxJobHours: number
       checkinEarlyToleranceMinutes: number
       alertsEnabled: boolean
       notifySupermarketOnAlerts: boolean
@@ -186,6 +194,7 @@ export const agencyService = {
       unfilledAlertLeadMinutes: number
       shortNoticeWithdrawalMinutes: number
       unfilledAlertTiers: unknown
+      statusColors: unknown
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
@@ -242,6 +251,37 @@ export const agencyService = {
 
     if (data.unfilledAlertTiers !== undefined) {
       patch.unfilledAlertTiers = sanitizeUnfilledAlertTiers(data.unfilledAlertTiers)
+    }
+
+    if (data.statusColors !== undefined) {
+      patch.statusColors = sanitizeStatusColors(data.statusColors)
+    }
+
+    if (data.defaultBreakMinutes != null) {
+      const n = Math.trunc(Number(data.defaultBreakMinutes))
+      if (!Number.isFinite(n) || n < 0 || n > 480) {
+        throw new Error('Intervalo padrão deve ficar entre 0 e 480 minutos.')
+      }
+      patch.defaultBreakMinutes = n
+    }
+    const nextMaxShift =
+      data.maxShiftHours != null ? Number(data.maxShiftHours) : Number(a.maxShiftHours)
+    const nextMaxJob =
+      data.maxJobHours != null ? Number(data.maxJobHours) : Number(a.maxJobHours)
+    if (data.maxShiftHours != null) {
+      if (!Number.isFinite(nextMaxShift) || nextMaxShift < 1 || nextMaxShift > 24) {
+        throw new Error('Máximo de horas por turno deve ficar entre 1 e 24.')
+      }
+      patch.maxShiftHours = nextMaxShift
+    }
+    if (data.maxJobHours != null) {
+      if (!Number.isFinite(nextMaxJob) || nextMaxJob < 1 || nextMaxJob > 24) {
+        throw new Error('Máximo de horas por vaga deve ficar entre 1 e 24.')
+      }
+      patch.maxJobHours = nextMaxJob
+    }
+    if (nextMaxJob < nextMaxShift) {
+      throw new Error('O máximo de horas por vaga não pode ser menor que o de um turno.')
     }
 
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true

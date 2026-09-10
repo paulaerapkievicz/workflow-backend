@@ -4,6 +4,7 @@ import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 import { User } from './User'
 import { UnfilledAlertTier, DEFAULT_UNFILLED_ALERT_TIERS } from '../helpers/alerts'
+import { StatusColors, DEFAULT_STATUS_COLORS } from '../helpers/statusColors'
 
 export interface Agency {
   id: string
@@ -26,6 +27,12 @@ export interface Agency {
   breaksEnabled: boolean
   /** Limite de minutos de pausa por turno (NULL = sem limite). */
   breakLimitMinutes?: number | null
+  /** Intervalo padrão (min) sugerido/aplicável a um turno da vaga — descontado das horas contratadas. */
+  defaultBreakMinutes: number
+  /** Teto de horas de um único turno (jornada legal). */
+  maxShiftHours: number
+  /** Teto de horas somadas de todos os turnos de uma vaga (jornada legal). */
+  maxJobHours: number
   /** Antecedência máxima (min) para bater o check-in antes do início do turno. */
   checkinEarlyToleranceMinutes: number
   /** Controle de ocorrências das vagas (atraso, falta, saída antecipada…). */
@@ -39,6 +46,8 @@ export interface Agency {
   shortNoticeWithdrawalMinutes: number
   /** Faixas das bolinhas de "vaga sem colaborador" na tela de Convocações. */
   unfilledAlertTiers: UnfilledAlertTier[]
+  /** Cores dos 6 tons dos badges de status (personalizável pela agência). */
+  statusColors: StatusColors
   onboardingRequired: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
@@ -64,6 +73,9 @@ export interface AgencyCreationAttributes
     | 'reviewEnabled'
     | 'breaksEnabled'
     | 'breakLimitMinutes'
+    | 'defaultBreakMinutes'
+    | 'maxShiftHours'
+    | 'maxJobHours'
     | 'checkinEarlyToleranceMinutes'
     | 'alertsEnabled'
     | 'notifySupermarketOnAlerts'
@@ -74,6 +86,7 @@ export interface AgencyCreationAttributes
     | 'unfilledAlertLeadMinutes'
     | 'shortNoticeWithdrawalMinutes'
     | 'unfilledAlertTiers'
+    | 'statusColors'
     | 'onboardingRequired'
     | 'uniformPrice'
     | 'allowSelfRegistration'
@@ -176,6 +189,21 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.INTEGER,
     allowNull: true
   },
+  defaultBreakMinutes: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0
+  },
+  maxShiftHours: {
+    type: DataTypes.DECIMAL(4, 2),
+    allowNull: false,
+    defaultValue: 10
+  },
+  maxJobHours: {
+    type: DataTypes.DECIMAL(4, 2),
+    allowNull: false,
+    defaultValue: 10
+  },
   checkinEarlyToleranceMinutes: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -225,6 +253,11 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.JSONB,
     allowNull: false,
     defaultValue: DEFAULT_UNFILLED_ALERT_TIERS
+  },
+  statusColors: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: DEFAULT_STATUS_COLORS
   },
   onboardingRequired: {
     type: DataTypes.BOOLEAN,

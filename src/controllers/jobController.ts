@@ -249,6 +249,28 @@ export const jobController = {
     }
   },
 
+  // POST /agency/jobs/:id/close-unfilled (agency/leader) — encerra uma vaga vencida sem colaborador
+  async closeUnfilled(req: AuthRequest, res: Response) {
+    try {
+      const actor = await profileService.agencyContextForUser(req.user!)
+      if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await jobService.closeUnfilledByAgency(req.params.id, actor))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /agency/jobs/close-expired-unfilled (agency/leader) — fecha todas as vagas vencidas sem colaborador
+  async closeExpiredUnfilled(req: AuthRequest, res: Response) {
+    try {
+      const actor = await profileService.agencyContextForUser(req.user!)
+      if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await jobService.closeExpiredUnfilled(actor, { orderId: req.body?.orderId || undefined }))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // POST /jobs/:id/review (agency) — avaliação da entrega (reputação)
   async review(req: AuthRequest, res: Response) {
     try {

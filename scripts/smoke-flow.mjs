@@ -110,6 +110,29 @@ async function main() {
   ok(savedTiers[1].label === '0 min', 'rótulo vazio ganha fallback', savedTiers[1].label)
   await req('PUT', '/agency/settings', { token: agencyT, body: { unfilledAlertTiers: settings.unfilledAlertTiers } })
 
+  section('Cores personalizáveis das tags de status')
+  ok(settings.statusColors && settings.statusColors.pending && settings.statusColors.done.bg,
+    'paleta padrão dos 6 tons vem no settings', Object.keys(settings.statusColors || {}))
+  const colorsUpd = await req('PUT', '/agency/settings', {
+    token: agencyT,
+    body: {
+      statusColors: {
+        pending: { bg: '#123456', fg: 'nao-e-hex' }, // fg inválido -> mantém o padrão
+        done: { bg: '#0a0', fg: '#fff' },
+        lixo: { bg: '#000', fg: '#000' }, // tom desconhecido -> ignorado
+      },
+    },
+  })
+  ok(colorsUpd.status === 200 && colorsUpd.data.statusColors.pending.bg === '#123456',
+    'cor de fundo válida é salva', colorsUpd.data?.statusColors?.pending)
+  ok(colorsUpd.data.statusColors.pending.fg === settings.statusColors.pending.fg,
+    'cor inválida (não-hex) volta para o padrão', colorsUpd.data?.statusColors?.pending?.fg)
+  ok(!('lixo' in colorsUpd.data.statusColors), 'tom desconhecido é ignorado')
+  const meSuperColors = (await req('GET', '/auth/me', { token: superT })).data
+  ok(meSuperColors.profile?.clientAgency?.statusColors?.done?.bg === '#0a0',
+    'supermercado-cliente recebe a paleta da agência no /auth/me', meSuperColors.profile?.clientAgency?.statusColors?.done)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { statusColors: settings.statusColors } })
+
   section('Funções: flag ativa + gestão pela agência')
   const publicCats = (await req('GET', '/categories', { token: agencyT })).data
   const manageCats = (await req('GET', '/categories/manage', { token: agencyT })).data
@@ -398,6 +421,26 @@ async function main() {
   const rel = await req('POST', `/jobs/${repToWithdraw.id}/release`, { token: agencyT })
   ok(rel.status === 200 && rel.data.status === 'pending', 'agência libera -> volta a pending')
 
+  section('Agência fecha vagas vencidas não preenchidas')
+  const expOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 2, date: day, shifts: [{ startTime: '09:00', endTime: '12:00' }] }] },
+  })
+  const expJobs = expOrder.data.orderJobs
+  await db.query(`UPDATE jobs SET start_time = NOW() - interval '2 days', end_time = NOW() - interval '2 days' + interval '3 hours' WHERE order_id = $1`, [expJobs[0].orderId])
+  const futureOrder = await req('POST', '/orders', {
+    token: superT,
+    body: { items: [{ categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day, shifts: [{ startTime: '09:00', endTime: '12:00' }] }] },
+  })
+  const closeOne = await req('POST', `/agency/jobs/${expJobs[0].id}/close-unfilled`, { token: agencyT })
+  ok(closeOne.status === 200 && closeOne.data.status === 'canceled', 'agência fecha uma vaga vencida sem colaborador', closeOne.data?.status)
+  const closeFuture = await req('POST', `/agency/jobs/${futureOrder.data.orderJobs[0].id}/close-unfilled`, { token: agencyT })
+  ok(closeFuture.status !== 200, 'vaga futura não pode ser fechada como vencida', closeFuture.status)
+  const closeBulk = await req('POST', '/agency/jobs/close-expired-unfilled', { token: agencyT })
+  ok(closeBulk.status === 200 && closeBulk.data.closed >= 1, 'ação em massa fecha as vagas vencidas restantes', closeBulk.data)
+  const stillFuture = (await req('GET', `/jobs/${futureOrder.data.orderJobs[0].id}`, { token: agencyT })).data
+  ok(stillFuture.status === 'pending', 'a vaga futura segue disponível após a ação em massa', stillFuture.status)
+
   section('Ações da agência sobre a vaga (força checkout / trocar colaborador)')
   const free2T = await login('free2@email.com')
   const free2Id = (await req('GET', '/auth/me', { token: free2T })).data.profile.id
@@ -555,6 +598,63 @@ async function main() {
   const gapJob = gapOrder.data.orderJobs[0]
   ok((gapJob.shifts?.length ?? 0) === 2 && Number(gapJob.contractedMinutes) === 300, '2 turnos, 5h contratadas (intervalo não conta)', gapJob.contractedMinutes)
 
+  // --- Intervalo do turno descontado das horas contratadas + teto legal de jornada ---
+  const brkOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [{ startTime: '08:00', endTime: '15:00', breakMinutes: 60 }],
+      }],
+    },
+  })
+  ok(brkOrder.status === 201, 'turno de 7h com intervalo de 60 min aceito')
+  ok(Number(brkOrder.data.orderJobs[0].contractedMinutes) === 360,
+    'contabilizador desconta o intervalo: 7h − 60min = 6h contratadas', brkOrder.data.orderJobs[0].contractedMinutes)
+
+  await req('PUT', '/agency/settings', { token: agencyT, body: { defaultBreakMinutes: 45 } })
+  const defBrkOrder = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [{ startTime: '08:00', endTime: '14:00', useDefaultBreak: true }],
+      }],
+    },
+  })
+  ok(defBrkOrder.status === 201 && Number(defBrkOrder.data.orderJobs[0].contractedMinutes) === 315,
+    'usar intervalo padrão da agência (45min): turno de 6h fica 5h15 contratadas', defBrkOrder.data?.orderJobs?.[0]?.contractedMinutes)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { defaultBreakMinutes: 0 } })
+
+  const overJob = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [{ startTime: '06:00', endTime: '18:00' }],
+      }],
+    },
+  })
+  ok(overJob.status === 400 && /limite/i.test(overJob.data?.message || ''),
+    'vaga com soma de turnos acima do teto (10h) é recusada', overJob.data?.message)
+
+  await req('PUT', '/agency/settings', { token: agencyT, body: { maxShiftHours: 6 } })
+  const overShift = await req('POST', '/orders', {
+    token: superT,
+    body: {
+      items: [{
+        categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
+        shifts: [{ startTime: '08:00', endTime: '15:00' }],
+      }],
+    },
+  })
+  ok(overShift.status === 400 && /turno/i.test(overShift.data?.message || ''),
+    'turno acima do teto por turno (6h) é recusado', overShift.data?.message)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { maxShiftHours: 10 } })
+
+  const badMaxJob = await req('PUT', '/agency/settings', { token: agencyT, body: { maxJobHours: 40 } })
+  ok(badMaxJob.status === 400, 'máximo de horas por vaga fora da faixa é recusado', badMaxJob.data?.message)
+
   // Turnos com nome personalizado: o supermercado escreve o rótulo que quiser; sem nome, cai em "Turno N".
   const namedOrder = await req('POST', '/orders', {
     token: superT,
@@ -562,8 +662,8 @@ async function main() {
       items: [{
         categoryId: catCaixa.id, branchId: branchCentro.id, quantity: 1, date: day,
         shifts: [
-          { startTime: '08:00', endTime: '14:00', nominalPeriod: 'manha', custom: true, label: 'Abertura da loja' },
-          { startTime: '14:00', endTime: '20:00', nominalPeriod: 'tarde', custom: true, label: '' },
+          { startTime: '08:00', endTime: '13:00', nominalPeriod: 'manha', custom: true, label: 'Abertura da loja' },
+          { startTime: '14:00', endTime: '19:00', nominalPeriod: 'tarde', custom: true, label: '' },
         ],
       }],
     },
@@ -880,7 +980,26 @@ async function main() {
   ok(Number(reputation.ratingCount) >= 2 && reputation.completedJobs >= 1 && reputation.workedMinutes > 0,
     'reputação: nota média + convocações concluídas + horas trabalhadas', reputation)
   ok(Array.isArray(reputation.reviews) && reputation.reviews.some((r) => r.authorRole === 'supermarket'),
-    'reputação lista as avaliações recentes com o autor')
+    'reputação (agência) lista as avaliações individuais com o autor')
+
+  // Visibilidade por papel: colaborador e supermercado só veem a MÉDIA (reviews vazio).
+  const repFree = (await req('GET', `/freelancers/${free2Id}/reputation`, { token: free2T })).data
+  ok(repFree.ratingAvg != null && Array.isArray(repFree.reviews) && repFree.reviews.length === 0,
+    'colaborador recebe a nota média sem a lista de avaliações', repFree.reviews?.length)
+  const jobReviewsSuper = await req('GET', `/jobs/${settledJob.id}/review`, { token: superT })
+  ok(jobReviewsSuper.status === 200 && jobReviewsSuper.data.every((r) => r.authorRole === 'supermarket'),
+    'supermercado só vê na vaga as avaliações que ele mesmo publicou', jobReviewsSuper.data?.map((r) => r.authorRole))
+  const jobReviewsAgency = await req('GET', `/jobs/${settledJob.id}/review`, { token: agencyT })
+  ok(jobReviewsAgency.status === 200 && jobReviewsAgency.data.length >= 2,
+    'agência vê todas as avaliações da vaga', jobReviewsAgency.data?.length)
+  const jobReviewsFree = await req('GET', `/jobs/${settledJob.id}/review`, { token: free2T })
+  ok(jobReviewsFree.status === 400 || jobReviewsFree.status === 403, 'colaborador não acessa as avaliações da vaga', jobReviewsFree.status)
+  const agencyReviews = await req('GET', '/agency/reviews', { token: agencyT })
+  ok(agencyReviews.status === 200 && agencyReviews.data.some((r) => r.freelancerId === free2Id && r.freelancerName),
+    'GET /agency/reviews lista as avaliações da rede com nome do colaborador', agencyReviews.data?.length)
+  const agencyReviewsFiltered = await req('GET', `/agency/reviews?jobId=${settledJob.id}`, { token: agencyT })
+  ok(agencyReviewsFiltered.status === 200 && agencyReviewsFiltered.data.every((r) => r.jobId === settledJob.id),
+    'GET /agency/reviews filtra por vaga', agencyReviewsFiltered.data?.length)
 
   section('Onboarding do colaborador (perfil contratual + trava de trabalho)')
   await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: true, uniformPrice: 80 } })

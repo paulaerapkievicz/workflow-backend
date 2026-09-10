@@ -260,7 +260,7 @@ export const jobLogService = {
       const shiftEnd = new Date(shift.endTime)
       const minsEarly = Math.round((shiftEnd.getTime() - now.getTime()) / 60000)
       if (minsEarly > settings.earlyCheckoutToleranceMinutes) {
-        const shiftContracted = minutesBetween(shift.startTime, shift.endTime)
+        const shiftContracted = Math.max(0, minutesBetween(shift.startTime, shift.endTime) - (shift.breakMinutes ?? 0))
         const critical = shiftContracted > 0 && minsEarly > shiftContracted * 0.5
         await jobAlertService.raise({
           jobId,

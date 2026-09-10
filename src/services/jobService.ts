@@ -21,7 +21,8 @@ import { UserInstance } from '../models/User'
 import { Agency } from '../models/Agency'
 import { SupermarketCategoryRate } from '../models/SupermarketCategoryRate'
 import { profileService } from './profileService'
-import { AgencyActor, assertBranchInScope, assertFreelancerInScope } from '../helpers/agencyScope'
+import { AgencyActor, assertBranchInScope, assertFreelancerInScope, inBranchScope } from '../helpers/agencyScope'
+import { resolveLaborLimits, LaborLimits } from '../helpers/laborLimits'
 import { orderService, OrderContext } from './orderService'
 import { supermarketRateService } from './supermarketRateService'
 import { freelancerService } from './freelancerService'
@@ -34,6 +35,22 @@ import { jobAlertService } from './jobAlertService'
 import { resolveAlertSettings } from '../helpers/alerts'
 
 const BR_TZ = 'America/Sao_Paulo'
+
+/** Início do dia atual no fuso de Brasília (como Date). */
+function startOfTodayBrasil(): Date {
+  const ymd = new Date().toLocaleDateString('en-CA', { timeZone: BR_TZ }) // YYYY-MM-DD
+  return new Date(`${ymd}T00:00:00-03:00`)
+}
+
+/** Vaga ainda disponível (sem colaborador) cuja data de execução já passou. */
+function isExpiredUnfilledJob(job: { status: string; freelancerId?: string | null; startTime: Date | string }, cutoff: Date): boolean {
+  return (
+    ['pending', 'awaiting_approval'].includes(job.status) &&
+    !job.freelancerId &&
+    new Date(job.startTime).getTime() < cutoff.getTime()
+  )
+}
+
 const fmtWindow = (a: Date | string, b: Date | string) => {
   const d = (x: Date | string) =>
     new Date(x).toLocaleString('pt-BR', { timeZone: BR_TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
@@ -56,9 +73,23 @@ const jobIncludes = [
   { model: OrderItem, as: 'jobOrderItem' },
 ]
 
-/** Soma dos minutos contratados dos turnos de uma vaga. */
-function sumShiftMinutes(shifts: { startTime: Date | string; endTime: Date | string }[]) {
-  return shifts.reduce((acc, s) => acc + minutesBetween(s.startTime, s.endTime), 0)
+/** Tetos de jornada + intervalo padrão para uma vaga (override da vaga → agência → padrão). */
+async function laborLimitsForJob(job: any): Promise<LaborLimits> {
+  const supermarket = job.supermarketId ? await Supermarket.findByPk(job.supermarketId) : null
+  const agency = supermarket?.agencyId ? await Agency.findByPk(supermarket.agencyId) : null
+  return resolveLaborLimits(job, agency)
+}
+
+/** Minutos contratados de um turno = janela − intervalo (não remunerado). */
+function shiftNetMinutes(s: { startTime: Date | string; endTime: Date | string; breakMinutes?: number | null }) {
+  return Math.max(0, minutesBetween(s.startTime, s.endTime) - (s.breakMinutes ?? 0))
+}
+
+/** Soma dos minutos contratados dos turnos de uma vaga (líquidos de intervalo). */
+function sumShiftMinutes(
+  shifts: { startTime: Date | string; endTime: Date | string; breakMinutes?: number | null }[]
+) {
+  return shifts.reduce((acc, s) => acc + shiftNetMinutes(s), 0)
 }
 
 /**
@@ -109,6 +140,7 @@ const JOB_CONFIG_FIELDS = [
   'breaksEnabled',
   'breakLimitMinutes',
   'checkinEarlyToleranceMinutes',
+  'defaultBreakMinutes',
 ] as const
 
 const JOB_CONFIG_BOOLEAN_FIELDS = ['requireCheckoutPhoto', 'reviewEnabled', 'breaksEnabled']
@@ -117,7 +149,7 @@ const JOB_CONFIG_BOOLEAN_FIELDS = ['requireCheckoutPhoto', 'reviewEnabled', 'bre
  * Aplica a edição de função/turno/data/título de uma vaga (usada pelo supermercado e
  * pela agência enquanto a vaga está disponível). Retorna o patch para `job.update`.
  */
-async function applyJobEdit(job: any, data: any, t: Transaction) {
+async function applyJobEdit(job: any, data: any, t: Transaction, limits?: LaborLimits) {
   const patch: any = {}
   if (data.title != null) patch.title = String(data.title).trim() || job.title
   if (data.categoryId != null && data.categoryId !== job.categoryId) {
@@ -150,7 +182,8 @@ async function applyJobEdit(job: any, data: any, t: Transaction) {
       Array.isArray(data.shifts) && data.shifts.length
         ? data.shifts
         : [{ shiftPeriod: data.shiftPeriod ?? job.shiftPeriod, startTime: data.startTime, endTime: data.endTime }]
-    const shifts = resolveShifts(rawShifts, String(date))
+    const effectiveLimits = limits ?? (await laborLimitsForJob(job))
+    const shifts = resolveShifts(rawShifts, String(date), effectiveLimits)
 
     await JobShift.destroy({ where: { jobId: job.id }, transaction: t })
     for (let position = 0; position < shifts.length; position++) {
@@ -163,6 +196,7 @@ async function applyJobEdit(job: any, data: any, t: Transaction) {
           endTime: s.endTime,
           label: s.label,
           nominalPeriod: s.shiftPeriod,
+          breakMinutes: s.breakMinutes,
         },
         { transaction: t }
       )
@@ -170,7 +204,7 @@ async function applyJobEdit(job: any, data: any, t: Transaction) {
     patch.shiftPeriod = shifts[0].shiftPeriod
     patch.startTime = shifts[0].startTime
     patch.endTime = shifts[shifts.length - 1].endTime
-    patch.contractedMinutes = shifts.reduce((acc, s) => acc + minutesBetween(s.startTime, s.endTime), 0)
+    patch.contractedMinutes = shifts.reduce((acc, s) => acc + s.netMinutes, 0)
   }
   return patch
 }
@@ -499,6 +533,28 @@ export const jobService = {
         }
       }
 
+      // Overrides de jornada por vaga (decimais; null = usa o padrão da agência).
+      for (const f of ['maxShiftHours', 'maxJobHours'] as const) {
+        if (!(f in data)) continue
+        const v = data[f]
+        if (v == null || v === '') {
+          patch[f] = null
+        } else {
+          const n = Number(v)
+          if (!Number.isFinite(n) || n < 1 || n > 24) throw new Error('Limite de horas deve ficar entre 1 e 24.')
+          patch[f] = n
+        }
+      }
+
+      // Limites efetivos considerando os overrides que estão sendo aplicados agora.
+      const mergedJob = {
+        defaultBreakMinutes: 'defaultBreakMinutes' in patch ? patch.defaultBreakMinutes : job.defaultBreakMinutes,
+        maxShiftHours: 'maxShiftHours' in patch ? patch.maxShiftHours : job.maxShiftHours,
+        maxJobHours: 'maxJobHours' in patch ? patch.maxJobHours : job.maxJobHours,
+        supermarketId: job.supermarketId,
+      }
+      const limits = await laborLimitsForJob(mergedJob)
+
       const wantsFunctionChange = data.title != null || data.categoryId != null
       const wantsReshape =
         wantsFunctionChange ||
@@ -517,7 +573,7 @@ export const jobService = {
             'A vaga já está em andamento — use "Corrigir horário e ponto" para ajustar turnos e marcações.'
           )
         }
-        Object.assign(patch, await applyJobEdit(job, data, t))
+        Object.assign(patch, await applyJobEdit(job, data, t, limits))
         if (job.status === 'accepted' && job.freelancerId && patch.startTime && patch.endTime) {
           await assertNoScheduleClash(job.freelancerId, patch.startTime, patch.endTime, {
             exceptJobId: job.id,
@@ -765,6 +821,49 @@ export const jobService = {
       console.error('⚠️ hook de alerta (liberação):', err instanceof Error ? err.message : err)
     }
     return this.findById(id)
+  },
+
+  /**
+   * A agência (ou o líder, dentro do escopo) encerra uma vaga ainda disponível cuja
+   * data de execução já passou — não adianta manter no pool uma convocação vencida.
+   */
+  async closeUnfilledByAgency(id: string, actor: AgencyActor) {
+    const job = await Job.findByPk(id, { include: [{ model: Supermarket, as: 'jobSupermarket' }] })
+    if (!job) throw new Error('Vaga não encontrada.')
+    if ((job as any).jobSupermarket?.agencyId !== actor.agencyId) {
+      throw new Error('Esta vaga não pertence à sua rede.')
+    }
+    assertBranchInScope(actor, job.branchId)
+    if (!isExpiredUnfilledJob(job, startOfTodayBrasil())) {
+      throw new Error('Só é possível fechar uma vaga ainda disponível cuja data já passou.')
+    }
+    await job.update({ status: 'canceled' })
+    await orderService.syncStatus(job.orderId)
+    return this.findById(id)
+  },
+
+  /**
+   * Fecha em lote as vagas vencidas não preenchidas — de um pedido (`orderId`) ou de
+   * toda a rede da agência (respeitando o escopo de filiais do líder).
+   */
+  async closeExpiredUnfilled(actor: AgencyActor, opts: { orderId?: string } = {}) {
+    const where: any = {
+      status: { [Op.in]: ['pending', 'awaiting_approval'] },
+      freelancerId: null,
+      startTime: { [Op.lt]: startOfTodayBrasil() },
+    }
+    if (opts.orderId) where.orderId = opts.orderId
+    const jobs = await Job.findAll({ where, include: [{ model: Supermarket, as: 'jobSupermarket' }] })
+    const eligible = jobs.filter(
+      (j) => (j as any).jobSupermarket?.agencyId === actor.agencyId && inBranchScope(actor, j.branchId)
+    )
+    const orderIds = new Set<string>()
+    for (const j of eligible) {
+      await j.update({ status: 'canceled' })
+      if (j.orderId) orderIds.add(j.orderId)
+    }
+    for (const orderId of orderIds) await orderService.syncStatus(orderId)
+    return { closed: eligible.length }
   },
 
   // Agência registra que o freelancer da sua rede não concluiu a vaga.
