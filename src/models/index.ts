@@ -22,6 +22,7 @@ import { Order } from './Order'
 import { OrderItem } from './OrderItem'
 import { SupermarketMember } from './SupermarketMember'
 import { SupermarketMemberBranch } from './SupermarketMemberBranch'
+import { TeamRole } from './TeamRole'
 import { FreelancerContract } from './FreelancerContract'
 import { UniformOrder } from './UniformOrder'
 import { Invite } from './Invite'
@@ -50,6 +51,10 @@ User.hasMany(SupermarketMember, { foreignKey: 'userId', as: 'supermarketMembersh
 SupermarketMember.hasMany(SupermarketMemberBranch, { foreignKey: 'supermarketMemberId', as: 'memberBranchLinks' })
 SupermarketMemberBranch.belongsTo(SupermarketMember, { foreignKey: 'supermarketMemberId', as: 'member' })
 SupermarketMemberBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch' })
+
+// Cargo configurável da equipe (tag: Administrador, Gerente, RH…)
+SupermarketMember.belongsTo(TeamRole, { foreignKey: 'teamRoleId', as: 'teamRole' })
+AgencyMember.belongsTo(TeamRole, { foreignKey: 'teamRoleId', as: 'teamRole' })
 
 Branch.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'parentSupermarket' })
 Branch.hasMany(Job, { foreignKey: 'branchId', as: 'branchJobs' })
@@ -196,6 +201,7 @@ export {
   OrderItem,
   SupermarketMember,
   SupermarketMemberBranch,
+  TeamRole,
   FreelancerContract,
   UniformOrder,
   Invite,

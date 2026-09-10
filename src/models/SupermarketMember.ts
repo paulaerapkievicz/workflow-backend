@@ -13,6 +13,8 @@ export interface SupermarketMember {
   canViewInvoices: boolean
   /** Além de ver, paga a fatura e lança/remove contestação. Exige (na prática) `canViewInvoices`. */
   canPayInvoices: boolean
+  /** Cargo configurável na equipe (`team_roles`, scope 'supermarket'). NULL = sem cargo. */
+  teamRoleId?: string | null
   isOwner: boolean
   createdAt: Date
   updatedAt: Date
@@ -26,6 +28,7 @@ export interface SupermarketMemberCreationAttributes
     | 'canApproveOrders'
     | 'canViewInvoices'
     | 'canPayInvoices'
+    | 'teamRoleId'
     | 'isOwner'
     | 'createdAt'
     | 'updatedAt'
@@ -57,6 +60,13 @@ export const SupermarketMember = sequelize.define<SupermarketMemberInstance, Sup
     canApproveOrders: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     canViewInvoices: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     canPayInvoices: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+    teamRoleId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'team_roles', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL',
+    },
     isOwner: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     createdAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updatedAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },

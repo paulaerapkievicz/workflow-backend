@@ -1,4 +1,5 @@
 import { Agency, AgencyCreationAttributes } from '../models/Agency';
+import { teamRoleService } from './teamRoleService';
 
 export const agencyService = {
   // Busca todas as agências
@@ -13,7 +14,9 @@ export const agencyService = {
 
   // Cria uma nova agência
   async create(data: AgencyCreationAttributes) {
-    return await Agency.create(data);
+    const agency = await Agency.create(data);
+    await teamRoleService.seedDefaults('agency', agency.id);
+    return agency;
   },
 
   // Atualiza uma agência pelo ID

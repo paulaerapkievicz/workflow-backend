@@ -42,11 +42,18 @@ module.exports = {
     await queryInterface.bulkInsert('agencies', [agency]);
     await queryInterface.bulkInsert('commissions', [{ id: uid(), agency_id: agency.id, percentage: 15, ...ts }]);
 
+    // ---- Cargos configuráveis da equipe (tags) ----
+    const teamRole = (scope, ownerId, name, position) => ({ id: uid(), scope, owner_id: ownerId, name, position, ...ts });
+    const agencyRoles = ['Administrador', 'Gerente', 'RH', 'Operações', 'Comercial'].map((n, i) => teamRole('agency', agency.id, n, i));
+    await queryInterface.bulkInsert('team_roles', agencyRoles);
+
     // ---- Supermercado (cliente da agência acima) + filiais ----
     const supermarket = { id: uid(), owner_id: superUser.id, agency_id: agency.id, name: 'Mercado Central', cnpj: '11222333000144', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0000', ...ts };
     await queryInterface.bulkInsert('supermarkets', [supermarket]);
+    const superRoles = ['Administrador', 'Gerente', 'RH', 'Financeiro', 'Comprador'].map((n, i) => teamRole('supermarket', supermarket.id, n, i));
+    await queryInterface.bulkInsert('team_roles', superRoles);
     await queryInterface.bulkInsert('supermarket_members', [
-      { id: uid(), supermarket_id: supermarket.id, user_id: superUser.id, can_submit_orders: true, can_approve_orders: true, can_view_invoices: true, can_pay_invoices: true, is_owner: true, ...ts },
+      { id: uid(), supermarket_id: supermarket.id, user_id: superUser.id, can_submit_orders: true, can_approve_orders: true, can_view_invoices: true, can_pay_invoices: true, team_role_id: superRoles[0].id, is_owner: true, ...ts },
     ]);
 
     const branchCentro = { id: uid(), supermarket_id: supermarket.id, name: 'Filial Centro', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0001', latitude: -28.269151, longitude: -52.374602, geocoded_at: now(), geocode_query: 'Rua Dirceu Sander, 719, Passo Fundo RS', service_status: 'approved', ...ts };
@@ -88,7 +95,7 @@ module.exports = {
     // ---- Líder da agência (escopo: Filial Centro + Joana) ----
     const leaderMember = {
       id: uid(), agency_id: agency.id, user_id: leaderUser.id, active: true,
-      pay_type: 'mensal', pay_amount: 2500.0, available_balance: 0, ...ts,
+      pay_type: 'mensal', pay_amount: 2500.0, available_balance: 0, team_role_id: agencyRoles[1].id, ...ts,
     };
     await queryInterface.bulkInsert('agency_members', [leaderMember]);
     await queryInterface.bulkInsert('agency_member_freelancers', [
@@ -174,7 +181,7 @@ module.exports = {
       'freelancer_locations', 'jobs', 'order_items', 'orders', 'supermarket_category_rates',
       'agency_member_payments', 'agency_member_freelancers', 'agency_member_branches', 'agency_members',
       'freelancer_categories', 'reviews', 'commissions', 'supermarket_member_branches', 'supermarket_members',
-      'freelancers', 'branches', 'supermarkets', 'agencies', 'categories', 'sessions', 'users',
+      'freelancers', 'branches', 'team_roles', 'supermarkets', 'agencies', 'categories', 'sessions', 'users',
     ]) {
       await queryInterface.bulkDelete(table, null, {});
     }

@@ -10,7 +10,9 @@ import { AgencyMember, AGENCY_MEMBER_PAY_TYPES, AgencyMemberPayType } from '../m
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer'
 import { AgencyMemberBranch } from '../models/AgencyMemberBranch'
 import { AgencyMemberPayment } from '../models/AgencyMemberPayment'
+import { TeamRole } from '../models/TeamRole'
 import { leaderJobCreditService } from './leaderJobCreditService'
+import { teamRoleService } from './teamRoleService'
 
 function parsePay(payType: unknown, payAmount: unknown): { payType: AgencyMemberPayType; payAmount: number } {
   if (!payType || !AGENCY_MEMBER_PAY_TYPES.includes(payType as AgencyMemberPayType)) {
@@ -24,7 +26,7 @@ function parsePay(payType: unknown, payAmount: unknown): { payType: AgencyMember
 }
 
 async function serialize(member: AgencyMember & { id: string }) {
-  const [user, freelancers, branches, payments, jobCredits] = await Promise.all([
+  const [user, freelancers, branches, payments, jobCredits, teamRole] = await Promise.all([
     User.findByPk(member.userId, { attributes: ['id', 'name', 'email', 'phone'] }),
     AgencyMemberFreelancer.findAll({ where: { agencyMemberId: member.id }, attributes: ['freelancerId'] }),
     AgencyMemberBranch.findAll({ where: { agencyMemberId: member.id }, attributes: ['branchId'] }),
@@ -33,6 +35,7 @@ async function serialize(member: AgencyMember & { id: string }) {
       order: [['createdAt', 'DESC']],
     }),
     leaderJobCreditService.listForMember(member.id),
+    member.teamRoleId ? TeamRole.findByPk(member.teamRoleId) : Promise.resolve(null),
   ])
   const creditsReleasedTotal = jobCredits
     .filter((c) => c.status === 'released')
@@ -51,6 +54,8 @@ async function serialize(member: AgencyMember & { id: string }) {
     payType: member.payType ?? null,
     payAmount: member.payAmount != null ? Number(member.payAmount) : null,
     availableBalance: Number(member.availableBalance ?? 0),
+    teamRoleId: member.teamRoleId ?? null,
+    teamRole: teamRoleService.serialize(teamRole),
     scope: {
       freelancerIds: freelancers.map((f) => f.freelancerId),
       branchIds: branches.map((b) => b.branchId),
@@ -125,6 +130,7 @@ export const agencyMemberService = {
       phone?: string
       payType?: unknown
       payAmount?: unknown
+      teamRoleId?: unknown
       freelancerIds?: string[]
       branchIds?: string[]
     }
@@ -148,8 +154,9 @@ export const agencyMemberService = {
         { name, email, passwordHash, role: 'leader', phone: data.phone ?? null },
         { transaction: t }
       )
+      const teamRoleId = await teamRoleService.resolveId(data.teamRoleId, 'agency', agencyId, t)
       const created = await AgencyMember.create(
-        { agencyId, userId: user.id, active: true, payType: pay.payType, payAmount: pay.payAmount },
+        { agencyId, userId: user.id, active: true, payType: pay.payType, payAmount: pay.payAmount, teamRoleId },
         { transaction: t }
       )
       await replaceScope(created.id, freelancerIds, branchIds, t)
@@ -161,7 +168,7 @@ export const agencyMemberService = {
   async update(
     id: string,
     agencyId: string,
-    data: { payType?: unknown; payAmount?: unknown; active?: unknown }
+    data: { payType?: unknown; payAmount?: unknown; active?: unknown; teamRoleId?: unknown }
   ) {
     const member = await AgencyMember.findOne({ where: { id, agencyId } })
     if (!member) throw new Error('Líder não encontrado.')
@@ -172,6 +179,9 @@ export const agencyMemberService = {
       patch.payAmount = pay.payAmount
     }
     if (data.active !== undefined) patch.active = data.active === true || data.active === 'true'
+    if (data.teamRoleId !== undefined) {
+      patch.teamRoleId = await teamRoleService.resolveId(data.teamRoleId, 'agency', agencyId)
+    }
     await member.update(patch)
     return serialize(member)
   },

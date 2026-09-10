@@ -13,6 +13,7 @@ import { UniformOrder } from '../models/UniformOrder'
 import { jwtService } from '../services/jwtService'
 import { profileService } from '../services/profileService'
 import { inviteService } from '../services/inviteService'
+import { teamRoleService } from '../services/teamRoleService'
 import { AuthRequest, Role } from '../middlewares/auth'
 
 /** Serializa o perfil e anexa contexto extra por papel (permissões do supermercado, onboarding do colaborador). */
@@ -142,6 +143,7 @@ export const authController = {
             },
             { transaction: t }
           )
+          await teamRoleService.seedDefaults('supermarket', createdProfile.id, t)
           await SupermarketMember.create(
             {
               supermarketId: createdProfile.id,
@@ -150,6 +152,7 @@ export const authController = {
               canApproveOrders: true,
               canViewInvoices: true,
               canPayInvoices: true,
+              teamRoleId: await teamRoleService.adminRoleId('supermarket', createdProfile.id, t),
               isOwner: true,
             },
             { transaction: t }
@@ -160,6 +163,7 @@ export const authController = {
             { ownerId: user.id, name: profile.companyName, cnpj: profile.cnpj, address: profile.address, phone: phone ?? undefined, commissionPercentage: pct },
             { transaction: t }
           )
+          await teamRoleService.seedDefaults('agency', createdProfile.id, t)
           await Commission.create({ agencyId: createdProfile.id, percentage: pct }, { transaction: t })
         } else if (role === 'freelancer') {
           let agencyId: string

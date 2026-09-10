@@ -9,8 +9,10 @@ import { Supermarket } from '../models/Supermarket';
 import { SupermarketMember } from '../models/SupermarketMember';
 import { SupermarketMemberBranch } from '../models/SupermarketMemberBranch';
 import { Branch } from '../models/Branch';
+import { TeamRole } from '../models/TeamRole';
 import { AuthRequest } from '../middlewares/auth';
 import { Transaction } from 'sequelize';
+import { teamRoleService } from '../services/teamRoleService';
 
 /**
  * Substitui as filiais de escopo de um gerente. `branchIds` vazio/indefinido = rede toda
@@ -78,6 +80,7 @@ export const supermarketController = {
           { ownerId: user.id, agencyId, name, cnpj, address, phone: phone ?? undefined },
           { transaction: t }
         );
+        await teamRoleService.seedDefaults('supermarket', market.id, t);
         await SupermarketMember.create(
           {
             supermarketId: market.id,
@@ -86,6 +89,7 @@ export const supermarketController = {
             canApproveOrders: true,
             canViewInvoices: true,
             canPayInvoices: true,
+            teamRoleId: await teamRoleService.adminRoleId('supermarket', market.id, t),
             isOwner: true,
           },
           { transaction: t }
@@ -115,6 +119,7 @@ export const supermarketController = {
         where: { supermarketId: req.params.id },
         include: [
           { model: User, as: 'memberUser', attributes: ['id', 'name', 'email'] },
+          { model: TeamRole, as: 'teamRole', attributes: ['id', 'name', 'position'] },
           {
             model: SupermarketMemberBranch,
             as: 'memberBranchLinks',
@@ -128,6 +133,7 @@ export const supermarketController = {
         const links: any[] = (m as any).memberBranchLinks ?? [];
         return {
           ...(m as any).toJSON(),
+          teamRole: teamRoleService.serialize((m as any).teamRole),
           memberBranches: links.map((l) => l.branch).filter(Boolean),
           branchIds: links.map((l) => l.branchId),
         };
@@ -146,7 +152,7 @@ export const supermarketController = {
         return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
       }
       const {
-        name, email, password, branchIds,
+        name, email, password, branchIds, teamRoleId,
         canSubmitOrders, canApproveOrders, canViewInvoices, canPayInvoices,
       } = req.body ?? {};
       if (!name || !email || !password) {
@@ -170,6 +176,7 @@ export const supermarketController = {
             // Pagar exige ver.
             canViewInvoices: canViewInvoices === true || canPayInvoices === true,
             canPayInvoices: canPayInvoices === true,
+            teamRoleId: await teamRoleService.resolveId(teamRoleId, 'supermarket', supermarketId, t),
             isOwner: false,
           },
           { transaction: t }
@@ -191,18 +198,35 @@ export const supermarketController = {
       if (!(await canManageTeam(req, member.supermarketId))) {
         return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
       }
-      if (member.isOwner) return res.status(400).json({ message: 'O dono não pode ser alterado.' });
       const patch: any = {};
-      if (req.body.canSubmitOrders !== undefined) patch.canSubmitOrders = req.body.canSubmitOrders === true;
-      if (req.body.canApproveOrders !== undefined) patch.canApproveOrders = req.body.canApproveOrders === true;
-      if (req.body.canViewInvoices !== undefined) patch.canViewInvoices = req.body.canViewInvoices === true;
-      if (req.body.canPayInvoices !== undefined) patch.canPayInvoices = req.body.canPayInvoices === true;
-      // Ver e pagar andam juntos: tirar o "ver" tira o "pagar"; ligar o "pagar" liga o "ver".
-      if (patch.canViewInvoices === false) patch.canPayInvoices = false;
-      if (patch.canPayInvoices === true && patch.canViewInvoices === undefined) patch.canViewInvoices = true;
+      // O cargo (tag) pode ser trocado inclusive para o dono/administrador.
+      if (req.body.teamRoleId !== undefined) {
+        patch.teamRoleId = await teamRoleService.resolveId(
+          req.body.teamRoleId,
+          'supermarket',
+          member.supermarketId
+        );
+      }
+      if (!member.isOwner) {
+        if (req.body.canSubmitOrders !== undefined) patch.canSubmitOrders = req.body.canSubmitOrders === true;
+        if (req.body.canApproveOrders !== undefined) patch.canApproveOrders = req.body.canApproveOrders === true;
+        if (req.body.canViewInvoices !== undefined) patch.canViewInvoices = req.body.canViewInvoices === true;
+        if (req.body.canPayInvoices !== undefined) patch.canPayInvoices = req.body.canPayInvoices === true;
+        // Ver e pagar andam juntos: tirar o "ver" tira o "pagar"; ligar o "pagar" liga o "ver".
+        if (patch.canViewInvoices === false) patch.canPayInvoices = false;
+        if (patch.canPayInvoices === true && patch.canViewInvoices === undefined) patch.canViewInvoices = true;
+      } else if (
+        req.body.canSubmitOrders !== undefined ||
+        req.body.canApproveOrders !== undefined ||
+        req.body.canViewInvoices !== undefined ||
+        req.body.canPayInvoices !== undefined ||
+        req.body.branchIds !== undefined
+      ) {
+        return res.status(400).json({ message: 'O responsável pela rede só pode ter o cargo alterado.' });
+      }
       await sequelize.transaction(async (t) => {
         await member.update(patch, { transaction: t });
-        if (req.body.branchIds !== undefined) {
+        if (!member.isOwner && req.body.branchIds !== undefined) {
           await syncMemberBranches(member.id, member.supermarketId, req.body.branchIds, t);
         }
       });

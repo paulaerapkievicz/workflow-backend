@@ -20,6 +20,8 @@ export interface AgencyMember {
   payType?: AgencyMemberPayType | null
   payAmount?: number | null
   availableBalance: number
+  /** Cargo configurável na equipe (`team_roles`, scope 'agency'). NULL = sem cargo. */
+  teamRoleId?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -27,7 +29,14 @@ export interface AgencyMember {
 export interface AgencyMemberCreationAttributes
   extends Optional<
     AgencyMember,
-    'id' | 'active' | 'payType' | 'payAmount' | 'availableBalance' | 'createdAt' | 'updatedAt'
+    | 'id'
+    | 'active'
+    | 'payType'
+    | 'payAmount'
+    | 'availableBalance'
+    | 'teamRoleId'
+    | 'createdAt'
+    | 'updatedAt'
   > {}
 
 export interface AgencyMemberInstance
@@ -60,6 +69,13 @@ export const AgencyMember = sequelize.define<AgencyMemberInstance, AgencyMember>
     },
     payAmount: { type: DataTypes.DECIMAL(10, 2), allowNull: true },
     availableBalance: { type: DataTypes.DECIMAL(10, 2), allowNull: false, defaultValue: 0 },
+    teamRoleId: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'team_roles', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL',
+    },
     createdAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updatedAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   },

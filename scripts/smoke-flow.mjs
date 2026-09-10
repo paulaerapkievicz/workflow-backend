@@ -200,7 +200,41 @@ async function main() {
   ok(noBranch.status === 400 && /filial/i.test(noBranch.data?.message || ''), 'gerente multi-filial sem filial na vaga é recusado', noBranch.data?.message)
   await req('PUT', `/supermarket-members/${mkMember.data.id}`, { token: superT, body: { branchIds: [branchSul.id] } })
 
-  section('Editar / remover vaga ainda disponível')
+  section('Cargos configuráveis da equipe (tags)')
+  const superRoles = (await req('GET', '/team-roles', { token: superT })).data
+  ok(Array.isArray(superRoles) && superRoles.some((r) => r.name === 'Administrador') && superRoles.some((r) => r.name === 'RH'),
+    'supermercado já nasce com a lista padrão de cargos', superRoles.map((r) => r.name))
+  const ownerMember = (await req('GET', `/supermarkets/${supermarketId}/members`, { token: superT })).data.find((m) => m.isOwner)
+  ok(ownerMember?.teamRole?.name === 'Administrador', 'o dono nasce com o cargo "Administrador" (no lugar do selo "dono")', ownerMember?.teamRole)
+
+  const newRole = await req('POST', '/team-roles', { token: superT, body: { name: 'Supervisor de Loja' } })
+  ok(newRole.status === 201 && newRole.data.name === 'Supervisor de Loja', 'dono cria um cargo novo')
+  const dupRole = await req('POST', '/team-roles', { token: superT, body: { name: 'RH' } })
+  ok(dupRole.status === 400, 'cargo duplicado é recusado')
+
+  const roleMgrEmail = `gerente-cargo-${Date.now()}@email.com`
+  const roleMgr = await req('POST', `/supermarkets/${supermarketId}/members`, {
+    token: superT,
+    body: { name: 'Gerente com Cargo', email: roleMgrEmail, password: '123456', teamRoleId: newRole.data.id },
+  })
+  ok(roleMgr.status === 201, 'gerente criado com cargo')
+  const roleMgrListed = (await req('GET', `/supermarkets/${supermarketId}/members`, { token: superT })).data.find((m) => m.id === roleMgr.data.id)
+  ok(roleMgrListed?.teamRole?.name === 'Supervisor de Loja', 'cargo do gerente aparece na listagem', roleMgrListed?.teamRole)
+
+  const renamed = await req('PUT', `/team-roles/${newRole.data.id}`, { token: superT, body: { name: 'Supervisor' } })
+  ok(renamed.status === 200 && renamed.data.name === 'Supervisor', 'cargo renomeado')
+  const delRole = await req('DELETE', `/team-roles/${newRole.data.id}`, { token: superT })
+  ok(delRole.status === 200, 'cargo removido')
+  const afterDel = (await req('GET', `/supermarkets/${supermarketId}/members`, { token: superT })).data.find((m) => m.id === roleMgr.data.id)
+  ok(afterDel && afterDel.teamRoleId == null, 'remover o cargo solta quem estava com ele (fica sem cargo)', afterDel?.teamRoleId)
+
+  const agencyOwnRoles = (await req('GET', '/team-roles', { token: agencyT })).data
+  ok(agencyOwnRoles.some((r) => r.name === 'Comercial'), 'agência tem a própria lista de cargos (líderes)', agencyOwnRoles.map((r) => r.name))
+  const agencyViewClientRoles = (await req('GET', `/team-roles?supermarketId=${supermarketId}`, { token: agencyT })).data
+  ok(agencyViewClientRoles.some((r) => r.name === 'Administrador') && !agencyViewClientRoles.some((r) => r.name === 'Comercial'),
+    'agência lê a lista de cargos do supermercado-cliente via ?supermarketId', agencyViewClientRoles.map((r) => r.name))
+  const leaderRoleBlocked = await req('POST', '/team-roles', { token: await login('leader@email.com'), body: { name: 'x' } })
+  ok(leaderRoleBlocked.status === 403, 'líder de agência não gerencia cargos')
   const editable = caixaJobs[2]
   const edited = await req('PUT', `/jobs/${editable.id}`, { token: superT, body: { shiftPeriod: 'tarde', date: day } })
   ok(edited.status === 200 && edited.data.shiftPeriod === 'tarde', 'vaga pendente editada (turno)', edited.data?.shiftPeriod)
@@ -838,6 +872,14 @@ async function main() {
   const members = (await req('GET', '/agency/members', { token: agencyT })).data
   const leaderMember = members.find((m) => m.email === leaderEmail)
   ok(!!leaderMember && leaderMember.scope.freelancerIds.length === 0, 'líder aparece na lista da agência, sem escopo', leaderMember)
+
+  // Cargo (tag) do líder: a agência define pela própria lista.
+  const agRoles = (await req('GET', '/team-roles', { token: agencyT })).data
+  const gerenteRole = agRoles.find((r) => r.name === 'Gerente')
+  const setLeaderRole = await req('PUT', `/agency/members/${leaderMember.id}`, { token: agencyT, body: { teamRoleId: gerenteRole.id } })
+  ok(setLeaderRole.status === 200 && setLeaderRole.data.teamRole?.name === 'Gerente', 'agência define o cargo do líder', setLeaderRole.data?.teamRole)
+  const leaderRoleFromClient = await req('PUT', `/agency/members/${leaderMember.id}`, { token: agencyT, body: { teamRoleId: superRoles[0].id } })
+  ok(leaderRoleFromClient.status === 400, 'cargo de outra lista (do supermercado) é recusado para o líder', leaderRoleFromClient.status)
 
   // Sem escopo: líder enxerga a rede toda.
   const freelancersAll = (await req('GET', '/freelancers', { token: leaderT })).data

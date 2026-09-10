@@ -22,6 +22,7 @@ import { pendingController } from './controllers/pendingController';
 import { inviteController } from './controllers/inviteController';
 import { invoiceAdjustmentController } from './controllers/invoiceAdjustmentController';
 import { agencyMemberController } from './controllers/agencyMemberController';
+import { teamRoleController } from './controllers/teamRoleController';
 import { ensureAuth, authorize, ensureCanViewInvoices, ensureCanPayInvoices } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
@@ -61,6 +62,12 @@ router.get('/supermarkets/:id/members', authorize('supermarket', 'agency'), supe
 router.post('/supermarkets/:id/members', authorize('supermarket', 'agency'), supermarketController.addMember);
 router.put('/supermarket-members/:id', authorize('supermarket', 'agency'), supermarketController.updateMember);
 router.delete('/supermarket-members/:id', authorize('supermarket', 'agency'), supermarketController.deleteMember);
+
+// ----- Cargos configuráveis da equipe (supermercado gerencia os seus; agência os dela) -----
+router.get('/team-roles', authorize('supermarket', 'agency'), teamRoleController.index);
+router.post('/team-roles', authorize('supermarket', 'agency'), teamRoleController.create);
+router.put('/team-roles/:id', authorize('supermarket', 'agency'), teamRoleController.update);
+router.delete('/team-roles/:id', authorize('supermarket', 'agency'), teamRoleController.remove);
 router.put('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.update);
 router.delete('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), supermarketController.delete);
 // Valores/hora por função que a agência cobra de cada supermercado (definidos no cadastro do supermercado)
