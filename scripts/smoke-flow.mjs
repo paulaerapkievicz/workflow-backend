@@ -976,10 +976,44 @@ async function main() {
   const pdfAdjBuf = Buffer.from(await pdfAdj.arrayBuffer())
   ok(pdfAdj.ok && pdfAdjBuf.slice(0, 5).toString() === '%PDF-', 'PDF do fechamento gera com a seção de abatimentos')
 
-  const payInv = await req('POST', `/invoices/${close.data.id}/pay`, { token: superT })
-  ok(payInv.status === 200 && payInv.data.status === 'paid', 'supermercado paga a fatura mensal (valor líquido)')
+  section('Pagamento da fatura pelo app configurável (chave-mestra + por cliente) + baixa manual')
+  const disableSuperPay = await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForSupermarkets: false } })
+  ok(disableSuperPay.status === 200 && disableSuperPay.data.appPaymentEnabledForSupermarkets === false, 'agência desliga a chave-mestra do pagamento pelo app pros mercados')
+
+  const payBlockedByToggle = await req('POST', `/invoices/${invId}/pay`, { token: superT })
+  ok(payBlockedByToggle.status === 400 && /habilitad/i.test(payBlockedByToggle.data?.message || ''), 'mercado não paga com a chave-mestra desligada', payBlockedByToggle.data)
+
+  const marketMarkPaidBlocked = await req('POST', `/invoices/${invId}/mark-paid`, { token: superT })
+  ok(marketMarkPaidBlocked.status === 403, 'mercado não pode usar a baixa manual — só a agência', marketMarkPaidBlocked.status)
+
+  const enableSuperPay = await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForSupermarkets: true } })
+  ok(enableSuperPay.status === 200 && enableSuperPay.data.appPaymentEnabledForSupermarkets === true, 'agência religa a chave-mestra')
+
+  const disableClientPay = await req('PUT', `/supermarkets/${supermarketId}/app-payment`, { token: agencyT, body: { enabled: false } })
+  ok(disableClientPay.status === 200 && disableClientPay.data.appPaymentEnabled === false, 'agência desliga o pagamento pelo app só pra este cliente')
+  const payBlockedByClient = await req('POST', `/invoices/${invId}/pay`, { token: superT })
+  ok(payBlockedByClient.status === 400, 'mercado não paga com o override do cliente desligado (mesmo com a chave-mestra ligada)', payBlockedByClient.data)
+
+  const markPaidManually = await req('POST', `/invoices/${invId}/mark-paid`, { token: agencyT })
+  ok(markPaidManually.status === 200 && markPaidManually.data.status === 'paid' && markPaidManually.data.paymentProvider === 'manual', 'agência dá baixa manual na fatura', markPaidManually.data)
+  const markPaidTwice = await req('POST', `/invoices/${invId}/mark-paid`, { token: agencyT })
+  ok(markPaidTwice.status === 400, 'baixa manual recusada numa fatura que já não está pendente', markPaidTwice.status)
+
+  const enableClientPay = await req('PUT', `/supermarkets/${supermarketId}/app-payment`, { token: agencyT, body: { enabled: true } })
+  ok(enableClientPay.status === 200 && enableClientPay.data.appPaymentEnabled === true, 'agência religa o pagamento pelo app pro cliente (deixa tudo ligado de novo pro resto do teste)')
+
+  // Fatura já paga manualmente — cria uma segunda pra continuar com o fluxo normal de pagamento pelo app.
+  const secondInvId = crypto.randomUUID()
+  await db.query(
+    `INSERT INTO invoices (id, supermarket_id, agency_id, type, reference_month, total_amount, adjustments_total, status, created_at, updated_at)
+     VALUES ($1,$2,$3,'monthly',$4,50,0,'pending', NOW(), NOW())`,
+    [secondInvId, supermarketId, agencyId, ref]
+  )
+
+  const payInv = await req('POST', `/invoices/${secondInvId}/pay`, { token: superT })
+  ok(payInv.status === 200 && payInv.data.status === 'paid', 'supermercado paga a fatura mensal com o pagamento pelo app religado')
   // Item 11: rota de confirmação do pagamento via gateway (no-op quando já está paga).
-  const syncInv = await req('POST', `/invoices/${close.data.id}/sync-payment`, { token: superT })
+  const syncInv = await req('POST', `/invoices/${secondInvId}/sync-payment`, { token: superT })
   ok(syncInv.status === 200 && syncInv.data.status === 'paid', 'rota de confirmação de pagamento da fatura responde', syncInv.data?.status)
 
   section('Relatório do freelancer')
@@ -1046,6 +1080,35 @@ async function main() {
   ok(ct.status === 200 && ct.data.completedAt, 'perfil contratual concluído', ct.data?.completedAt)
   const accStillLocked = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
   ok(accStillLocked.status === 400 && /uniforme/i.test(accStillLocked.data?.message || ''), 'ainda bloqueado até o uniforme ser aprovado', accStillLocked.data?.message)
+
+  section('Compra do uniforme pelo app configurável + baixa manual')
+  const disableFreePay = await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForFreelancers: false } })
+  ok(disableFreePay.status === 200 && disableFreePay.data.appPaymentEnabledForFreelancers === false, 'agência desliga a compra de uniforme pelo app')
+
+  const uniformNoGateway = await req('POST', '/freelancer/uniform', { token: freeT, body: { shirtSize: 'M' } })
+  ok(
+    uniformNoGateway.status === 201 && uniformNoGateway.data.status === 'pending_payment' && !uniformNoGateway.data.paymentUrl,
+    'pedido de uniforme registrado sem link de pagamento (pagamento pelo app desligado)',
+    uniformNoGateway.data
+  )
+
+  const uniformMarkBlocked = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/mark-paid`, { token: freeT })
+  ok(uniformMarkBlocked.status === 403, 'colaborador não pode dar baixa manual no próprio uniforme', uniformMarkBlocked.status)
+
+  const uniformMarkPaid = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/mark-paid`, { token: agencyT })
+  ok(
+    uniformMarkPaid.status === 200 && uniformMarkPaid.data.status === 'paid' && uniformMarkPaid.data.paymentProvider === 'manual',
+    'agência dá baixa manual no uniforme',
+    uniformMarkPaid.data
+  )
+  const uniformMarkPaidTwice = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/mark-paid`, { token: agencyT })
+  ok(uniformMarkPaidTwice.status === 400, 'baixa manual recusada num uniforme que já não está aguardando pagamento', uniformMarkPaidTwice.status)
+
+  // Segue o fluxo normal de envio/revisão do uniforme, sem nenhuma mudança por causa da baixa manual.
+  const uniformShip = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/ship`, { token: agencyT, body: { trackingCode: 'BR123' } })
+  ok(uniformShip.status === 200 && uniformShip.data.status === 'shipped', 'uniforme pago manualmente segue pro envio normalmente', uniformShip.data)
+
+  await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForFreelancers: true } })
 
   // Simula a aprovação do uniforme (o fluxo com Mercado Pago exige credenciais reais).
   await db.query(`UPDATE freelancers SET onboarding_approved_at = NOW() WHERE id = $1`, [freelancerId])

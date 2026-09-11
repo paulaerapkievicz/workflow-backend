@@ -50,6 +50,7 @@ export const profileService = {
               attributes: [
                 'id', 'name', 'reviewEnabled', 'statusColors',
                 'defaultBreakMinutes', 'maxShiftHours', 'maxJobHours',
+                'appPaymentEnabledForSupermarkets',
               ],
             },
           ],

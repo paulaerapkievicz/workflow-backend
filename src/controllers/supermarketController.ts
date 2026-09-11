@@ -310,6 +310,21 @@ export const supermarketController = {
     }
   },
 
+  // PUT /supermarkets/:id/app-payment — liga/desliga o pagamento da fatura pelo app pra este cliente
+  async setAppPayment(req: AuthRequest, res: Response) {
+    try {
+      if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
+        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+      }
+      const market = await Supermarket.findByPk(req.params.id);
+      if (!market) return res.status(404).json({ message: 'Supermercado não encontrado.' });
+      await market.update({ appPaymentEnabled: req.body?.enabled === true });
+      return res.json({ id: market.id, appPaymentEnabled: market.appPaymentEnabled });
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao atualizar.' });
+    }
+  },
+
   // PUT /supermarkets/:id/profile — dados cadastrais (dono do supermercado OU agência-cliente)
   async updateProfile(req: AuthRequest, res: Response) {
     try {

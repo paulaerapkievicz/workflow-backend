@@ -53,6 +53,10 @@ export interface Agency {
   onboardingRequired: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
+  /** Liga/desliga o pagamento da fatura mensal pelo app pros mercados-clientes (chave-mestra; override por cliente em Supermarket.appPaymentEnabled). */
+  appPaymentEnabledForSupermarkets: boolean
+  /** Liga/desliga a compra do uniforme pelo app pros colaboradores (tudo ou nada, sem granularidade por pessoa). */
+  appPaymentEnabledForFreelancers: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -93,6 +97,8 @@ export interface AgencyCreationAttributes
     | 'onboardingRequired'
     | 'uniformPrice'
     | 'allowSelfRegistration'
+    | 'appPaymentEnabledForSupermarkets'
+    | 'appPaymentEnabledForFreelancers'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -280,6 +286,16 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false
+  },
+  appPaymentEnabledForSupermarkets: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true
+  },
+  appPaymentEnabledForFreelancers: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true
   },
   createdAt: {
     allowNull: false,

@@ -253,6 +253,15 @@ export const paymentService = {
     if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não pertence ao seu supermercado.')
     if (invoice.status !== 'pending') throw new Error('Esta fatura não está pendente.')
 
+    const market = await Supermarket.findByPk(supermarketId)
+    if (!market) throw new Error('Supermercado não encontrado.')
+    const agency = await Agency.findByPk(market.agencyId)
+    if (!agency?.appPaymentEnabledForSupermarkets || !market.appPaymentEnabled) {
+      throw new Error(
+        'O pagamento da fatura pelo app não está habilitado pela sua agência. Combine o pagamento com ela e aguarde a confirmação manual.'
+      )
+    }
+
     // Contestações pendentes precisam ser resolvidas pela agência antes do pagamento do líquido.
     await invoiceAdjustmentService.assertNoPending(invoice.id)
     const amountToPay = invoiceAdjustmentService.invoiceNetAmount(invoice)
@@ -262,8 +271,7 @@ export const paymentService = {
       return invoice.reload()
     }
 
-    const market = await Supermarket.findByPk(supermarketId)
-    const owner = market?.ownerId ? await User.findByPk(market.ownerId) : null
+    const owner = market.ownerId ? await User.findByPk(market.ownerId) : null
     const checkout = await paymentGatewayService.createCheckout({
       reference: `${INVOICE_REF_PREFIX}${invoice.id}`,
       title: `Fechamento mensal ${invoice.referenceMonth ?? ''}`.trim(),
@@ -291,6 +299,19 @@ export const paymentService = {
     if (approved) {
       await invoice.update({ status: 'paid', paidAt: new Date(), paymentRef: approved.id })
     }
+    return invoice.reload()
+  },
+
+  /**
+   * Baixa manual da agência — usada quando o pagamento pelo app está desligado (no geral ou pra
+   * este cliente) e a agência recebeu o valor por fora, combinado direto com o supermercado.
+   */
+  async markInvoicePaidByAgency(invoiceId: string, agencyId: string) {
+    const invoice = await Invoice.findByPk(invoiceId)
+    if (!invoice) throw new Error('Fatura não encontrada.')
+    if (invoice.agencyId !== agencyId) throw new Error('Fatura não pertence à sua agência.')
+    if (invoice.status !== 'pending') throw new Error('Esta fatura não está pendente.')
+    await invoice.update({ status: 'paid', paidAt: new Date(), paymentProvider: 'manual' })
     return invoice.reload()
   },
 

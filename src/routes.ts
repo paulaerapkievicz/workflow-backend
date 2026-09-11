@@ -92,6 +92,7 @@ router.get('/supermarkets/:id/rates', authorize('supermarket', 'agency', 'admin'
 router.post('/supermarkets/:id/rates', authorize('agency', 'admin'), supermarketController.saveRate);
 router.put('/supermarkets/:id/rates/:rateId', authorize('agency', 'admin'), supermarketController.updateRate);
 router.delete('/supermarkets/:id/rates/:rateId', authorize('agency', 'admin'), supermarketController.removeRate);
+router.put('/supermarkets/:id/app-payment', authorize('agency', 'admin'), supermarketController.setAppPayment);
 
 // ----- Filiais -----
 router.get('/branches', branchController.index);
@@ -211,6 +212,7 @@ router.post('/freelancer/profile-photo', authorize('freelancer'), upload.single(
 router.get('/agency/uniforms', authorize('agency'), onboardingController.listForAgency);
 router.get('/agency/pending-counts', authorize('agency', 'leader'), pendingController.agency);
 router.get('/supermarket/pending-counts', authorize('supermarket'), pendingController.supermarket);
+router.post('/agency/uniforms/:id/mark-paid', authorize('agency'), onboardingController.markUniformPaid);
 router.post('/agency/uniforms/:id/ship', authorize('agency'), onboardingController.shipUniform);
 router.post('/agency/uniforms/:id/review', authorize('agency'), onboardingController.reviewUniform);
 
@@ -277,6 +279,7 @@ router.put('/payments/:id/cancel', authorize('admin'), paymentController.cancel)
 router.get('/invoices/mine', authorize('supermarket'), ensureCanViewInvoices, paymentController.myInvoices);
 router.post('/invoices/:id/pay', authorize('supermarket'), ensureCanPayInvoices, paymentController.invoicePay);
 router.post('/invoices/:id/sync-payment', authorize('supermarket'), ensureCanPayInvoices, paymentController.invoiceSyncPayment);
+router.post('/invoices/:id/mark-paid', authorize('agency'), paymentController.invoiceMarkPaid);
 // Contestação/abatimento do fechamento mensal (supermercado lança, agência resolve)
 router.get('/invoices/:id/adjustments', authorize('supermarket', 'agency', 'admin'), ensureCanViewInvoices, invoiceAdjustmentController.list);
 router.post('/invoices/:id/adjustments', authorize('supermarket'), ensureCanPayInvoices, invoiceAdjustmentController.create);

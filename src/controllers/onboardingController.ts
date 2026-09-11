@@ -102,6 +102,17 @@ export const onboardingController = {
     }
   },
 
+  // POST /agency/uniforms/:id/mark-paid — baixa manual (pagamento pelo app desligado)
+  async markUniformPaid(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await uniformService.markPaidManually(req.params.id, agencyId))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // POST /agency/uniforms/:id/ship { trackingCode? }
   async shipUniform(req: AuthRequest, res: Response) {
     try {

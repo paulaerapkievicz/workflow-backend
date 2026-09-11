@@ -86,6 +86,17 @@ export const paymentController = {
     }
   },
 
+  // POST /invoices/:id/mark-paid (agency) — baixa manual quando o pagamento pelo app está desligado
+  async invoiceMarkPaid(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await paymentService.markInvoicePaidByAgency(req.params.id, agencyId))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // PUT /payments/:id/cancel (admin)
   async cancel(req: AuthRequest, res: Response) {
     try {

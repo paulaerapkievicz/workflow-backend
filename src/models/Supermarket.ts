@@ -19,6 +19,8 @@ export interface Supermarket {
   profilePhotoUrl?: string | null
   /** Ordem personalizada do menu lateral (lista de hrefs). NULL = ordem padrão. */
   sidebarOrder?: string[] | null
+  /** Override por cliente do pagamento de fatura pelo app — só tem efeito quando a chave-mestra da agência (Agency.appPaymentEnabledForSupermarkets) está ligada. */
+  appPaymentEnabled: boolean
   createdAt: Date
   updatedAt: Date
 }
@@ -27,6 +29,7 @@ export interface SupermarketCreationAttributes
   extends Optional<
     Supermarket,
     | 'id' | 'legalName' | 'phone' | 'email' | 'logoUrl' | 'profilePhotoUrl' | 'sidebarOrder'
+    | 'appPaymentEnabled'
     | 'createdAt' | 'updatedAt'
   > {}
 
@@ -96,6 +99,11 @@ export const Supermarket = sequelize.define<SupermarketInstance, Supermarket>('S
   sidebarOrder: {
     type: DataTypes.JSONB,
     allowNull: true
+  },
+  appPaymentEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: true
   },
   createdAt: {
     allowNull: false,

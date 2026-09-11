@@ -62,6 +62,12 @@ export const uniformService = {
       await existing.update({ shirtSize, amount, shippingAddress: addressSnapshot(contract) })
     }
 
+    // Pagamento pelo app desligado pra colaboradores desta agência: o pedido fica registrado
+    // (tamanho + valor) sem link de pagamento, aguardando a agência dar baixa manual.
+    if (!agency?.appPaymentEnabledForFreelancers) {
+      return order.reload()
+    }
+
     const user = freelancer.userId ? await User.findByPk(freelancer.userId) : null
     const checkout = await paymentGatewayService.createUniformCheckout({
       uniformOrderId: order.id,
@@ -108,6 +114,14 @@ export const uniformService = {
     const order = await UniformOrder.findByPk(orderId)
     if (!order || order.status !== 'pending_payment') return
     await order.update({ status: 'paid', paidAt: new Date(), paymentRef: String(paymentId) })
+  },
+
+  /** Baixa manual da agência — pagamento pelo app desligado, valor recebido por fora. */
+  async markPaidManually(id: string, agencyId: string) {
+    const order = await this.assertAgencyOrder(id, agencyId)
+    if (order.status !== 'pending_payment') throw new Error('Este pedido não está aguardando pagamento.')
+    await order.update({ status: 'paid', paidAt: new Date(), paymentProvider: 'manual' })
+    return order
   },
 
   async markShipped(id: string, agencyId: string, trackingCode?: string) {

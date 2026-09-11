@@ -181,6 +181,8 @@ export const agencyService = {
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
+      appPaymentEnabledForSupermarkets: a.appPaymentEnabledForSupermarkets,
+      appPaymentEnabledForFreelancers: a.appPaymentEnabledForFreelancers,
     }
   },
 
@@ -211,6 +213,8 @@ export const agencyService = {
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
+      appPaymentEnabledForSupermarkets: boolean
+      appPaymentEnabledForFreelancers: boolean
     }>
   ) {
     const a = await Agency.findByPk(agencyId)
@@ -307,6 +311,12 @@ export const agencyService = {
       const n = Number(data.uniformPrice)
       if (!Number.isFinite(n) || n < 0) throw new Error('Preço do uniforme inválido.')
       patch.uniformPrice = n
+    }
+    if (data.appPaymentEnabledForSupermarkets != null) {
+      patch.appPaymentEnabledForSupermarkets = data.appPaymentEnabledForSupermarkets === true
+    }
+    if (data.appPaymentEnabledForFreelancers != null) {
+      patch.appPaymentEnabledForFreelancers = data.appPaymentEnabledForFreelancers === true
     }
     await a.update(patch)
     return this.getSettings(agencyId)
