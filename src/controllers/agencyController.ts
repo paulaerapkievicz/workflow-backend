@@ -72,6 +72,17 @@ export const agencyController = {
     }
   },
 
+  // GET /agencies/:id/public-landing - dados públicos pra landing da agência (/p/:id), sem login
+  async showPublicLanding(req: Request, res: Response) {
+    try {
+      const data = await agencyService.publicLanding(req.params.id);
+      if (!data) return res.status(404).json({ message: 'Página não encontrada.' });
+      return res.json(data);
+    } catch (error) {
+      return res.status(500).json({ message: 'Erro ao buscar agência.' });
+    }
+  },
+
   // GET /agencies/:id - Busca uma agência pelo ID
   async show(req: Request, res: Response) {
     try {

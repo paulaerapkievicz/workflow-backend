@@ -41,6 +41,8 @@ router.get('/categories', categoryController.index);
 router.get('/agencies', agencyController.index);
 router.get('/invites/:token', inviteController.show);
 router.get('/contracts/verify/:id', contractSignatureController.verify);
+// Landing pública da agência (/p/:id) — payload whitelisted, sem dado financeiro/privado.
+router.get('/agencies/:id/public-landing', agencyController.showPublicLanding);
 
 // Webhook do Mercado Pago (chamado pelo provedor, sem token)
 router.post('/payments/mercadopago/webhook', onboardingController.mercadoPagoWebhook);

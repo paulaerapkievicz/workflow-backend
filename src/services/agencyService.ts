@@ -12,7 +12,10 @@ import { assertField } from '../helpers/validation';
 /** Campos de perfil institucional que a própria agência (ou o admin) pode editar. */
 const PROFILE_FIELDS = [
   'name', 'legalName', 'cnpj', 'address', 'phone', 'email', 'logoUrl', 'profilePhotoUrl',
+  'whatsappNumber', 'whatsappMessage',
 ] as const;
+
+const WHATSAPP_MESSAGE_MAX_LENGTH = 300;
 
 function trimOrNull(v: unknown): string | null {
   const s = String(v ?? '').trim();
@@ -35,6 +38,22 @@ export const agencyService = {
   // Busca uma agência pelo ID
   async findById(id: string) {
     return await Agency.findByPk(id);
+  },
+
+  /**
+   * Dados públicos da landing da agência (/p/:id) — usado por visitante sem login, então
+   * é uma lista branca (nada financeiro/privado), e só para agência ativa.
+   */
+  async publicLanding(id: string) {
+    const agency = await Agency.findByPk(id);
+    if (!agency || !agency.active) return null;
+    return {
+      id: agency.id,
+      name: agency.name,
+      logoUrl: agency.logoUrl,
+      whatsappNumber: agency.whatsappNumber ?? null,
+      whatsappMessage: agency.whatsappMessage ?? null,
+    };
   },
 
   // Cria uma nova agência (linha crua — usado pelo AdminJS/legado)
@@ -129,6 +148,14 @@ export const agencyService = {
         patch.phone = assertField(data.phone, 'O telefone da agência', 'phone') || null;
       } else if (field === 'email') {
         patch.email = assertField(data.email, 'O e-mail da agência', 'email') || null;
+      } else if (field === 'whatsappNumber') {
+        patch.whatsappNumber = assertField(data.whatsappNumber, 'O WhatsApp da landing', 'whatsapp') || null;
+      } else if (field === 'whatsappMessage') {
+        const message = trimOrNull(data.whatsappMessage);
+        if (message && message.length > WHATSAPP_MESSAGE_MAX_LENGTH) {
+          throw new Error(`A mensagem do WhatsApp deve ter no máximo ${WHATSAPP_MESSAGE_MAX_LENGTH} caracteres.`);
+        }
+        patch.whatsappMessage = message;
       } else {
         patch[field] = trimOrNull(data[field]);
       }

@@ -191,6 +191,18 @@ export function formatPhone(value: unknown): string {
 }
 
 // ----------------------------------------------------------------------------
+// WhatsApp — mesma validação de telefone celular BR, mas guarda com o DDI (55)
+// pronto pro link `wa.me/<numero>`, ao contrário de `phone` (que guarda sem DDI).
+// ----------------------------------------------------------------------------
+
+export function normalizeWhatsappNumber(value: unknown): string {
+  const local = normalizePhone(value)
+  return local ? `55${local}` : ''
+}
+
+export const isValidWhatsappNumber = (value: unknown): boolean => isValidBrPhone(value)
+
+// ----------------------------------------------------------------------------
 // Orquestrador
 // ----------------------------------------------------------------------------
 
@@ -200,6 +212,7 @@ export type FieldKind =
   | 'document'
   | 'email'
   | 'phone'
+  | 'whatsapp'
   | 'cep'
   | 'uf'
   | 'date'
@@ -222,6 +235,7 @@ const KIND_RULES: Record<
   document: { valid: isValidDocument, normalize: normalizeDocument, problem: 'não é um CPF/CNPJ válido' },
   email: { valid: isValidEmail, normalize: normalizeEmail, problem: 'não é um e-mail válido' },
   phone: { valid: isValidBrPhone, normalize: normalizePhone, problem: 'não é um telefone válido' },
+  whatsapp: { valid: isValidWhatsappNumber, normalize: normalizeWhatsappNumber, problem: 'não é um número de WhatsApp válido' },
   cep: { valid: isValidCep, normalize: normalizeCep, problem: 'não é um CEP válido' },
   uf: { valid: isValidUf, normalize: normalizeUf, problem: 'não é uma UF válida' },
   date: { valid: isValidDateOnly, normalize: (v) => String(v ?? '').trim(), problem: 'não é uma data válida' },

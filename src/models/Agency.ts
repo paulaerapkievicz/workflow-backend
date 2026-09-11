@@ -57,6 +57,10 @@ export interface Agency {
   appPaymentEnabledForSupermarkets: boolean
   /** Liga/desliga a compra do uniforme pelo app pros colaboradores (tudo ou nada, sem granularidade por pessoa). */
   appPaymentEnabledForFreelancers: boolean
+  /** Número de WhatsApp (com DDI) usado no botão de contato da landing pública (/p/:id). */
+  whatsappNumber?: string | null
+  /** Mensagem pré-preenchida do botão de WhatsApp da landing. */
+  whatsappMessage?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -99,6 +103,8 @@ export interface AgencyCreationAttributes
     | 'allowSelfRegistration'
     | 'appPaymentEnabledForSupermarkets'
     | 'appPaymentEnabledForFreelancers'
+    | 'whatsappNumber'
+    | 'whatsappMessage'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -296,6 +302,14 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: true
+  },
+  whatsappNumber: {
+    type: DataTypes.STRING(20),
+    allowNull: true
+  },
+  whatsappMessage: {
+    type: DataTypes.TEXT,
+    allowNull: true
   },
   createdAt: {
     allowNull: false,
