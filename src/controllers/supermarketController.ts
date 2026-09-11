@@ -351,10 +351,16 @@ export const supermarketController = {
     }
   },
 
-  // GET /supermarkets - Lista todos os supermercados
-  async index(req: Request, res: Response) {
+  // GET /supermarkets - Lista os supermercados (agência/líder: só os clientes da própria agência; admin: todos)
+  async index(req: AuthRequest, res: Response) {
     try {
-      const supermarkets = await supermarketService.findAll();
+      let agencyId: string | undefined;
+      if (req.user!.role === 'agency' || req.user!.role === 'leader') {
+        const id = await profileService.agencyIdForUser(req.user!);
+        if (!id) return res.json([]);
+        agencyId = id;
+      }
+      const supermarkets = await supermarketService.findAll(agencyId);
       return res.json(supermarkets);
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao buscar supermercados.' });

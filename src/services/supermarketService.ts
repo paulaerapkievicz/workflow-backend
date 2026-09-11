@@ -14,9 +14,12 @@ function trimOrNull(v: unknown): string | null {
 }
 
 export const supermarketService = {
-  // Lista todos os supermercados
-  async findAll() {
-    return await Supermarket.findAll({ include: { model: User, as: 'owner' } });
+  // Lista os supermercados — opcionalmente restrita aos clientes de uma agência
+  async findAll(agencyId?: string) {
+    return await Supermarket.findAll({
+      where: agencyId ? { agencyId } : undefined,
+      include: { model: User, as: 'owner' },
+    });
   },
 
   // Busca um supermercado por ID
