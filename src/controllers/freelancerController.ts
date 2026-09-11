@@ -9,6 +9,8 @@ import { Freelancer } from '../models/Freelancer';
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer';
 import { AuthRequest } from '../middlewares/auth';
 import { inFreelancerScope } from '../helpers/agencyScope';
+import { resolveLoginEmail, emailAlreadyRegistered } from '../helpers/loginCredentials';
+import { passwordResetService } from '../services/passwordResetService';
 
 /**
  * Garante que o usuário (agência dona OU líder) pode gerenciar aquele colaborador:
@@ -63,13 +65,15 @@ export const freelancerController = {
       if (!name || !email || !password) {
         return res.status(400).json({ message: 'Informe nome, e-mail e senha do freelancer.' });
       }
-      const exists = await User.findOne({ where: { email } });
-      if (exists) return res.status(409).json({ message: 'E-mail já cadastrado.' });
+      if (await emailAlreadyRegistered(email)) {
+        return res.status(409).json({ message: 'E-mail já cadastrado.' });
+      }
 
       const freelancer = await sequelize.transaction(async (t) => {
+        const loginEmail = await resolveLoginEmail(actor.agencyId, email, name);
         const passwordHash = await bcrypt.hash(password, 10);
         const user = await User.create(
-          { name, email, passwordHash, role: 'freelancer', phone: phone ?? null },
+          { name, email: loginEmail, contactEmail: email, passwordHash, role: 'freelancer', phone: phone ?? null },
           { transaction: t }
         );
         const created = await Freelancer.create(
@@ -89,6 +93,20 @@ export const freelancerController = {
       return res.status(201).json(freelancer);
     } catch (err) {
       return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao cadastrar freelancer.' });
+    }
+  },
+
+  // POST /freelancers/:id/reset-password — agência/líder (ou sócio com permissão de
+  // colaboradores) redefine a senha do colaborador pra caso ele não consiga recuperar sozinho.
+  async resetPassword(req: AuthRequest, res: Response) {
+    try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
+      if (!freelancer.userId) return res.status(400).json({ message: 'Colaborador sem login associado.' });
+      const result = await passwordResetService.resetForUser(freelancer.userId);
+      return res.json(result);
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao redefinir senha.' });
     }
   },
 

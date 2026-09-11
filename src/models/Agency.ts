@@ -61,6 +61,10 @@ export interface Agency {
   whatsappNumber?: string | null
   /** Mensagem pré-preenchida do botão de WhatsApp da landing. */
   whatsappMessage?: string | null
+  /** Política de e-mail de login das contas criadas sob a agência: 'informed' = o e-mail que a
+   *  pessoa informou (padrão); 'pattern' = gerado como nomesobrenome@workflow.com — nesse caso
+   *  só a agência consegue redefinir a senha se a pessoa esquecer. */
+  loginEmailPolicy: 'informed' | 'pattern'
   createdAt: Date
   updatedAt: Date
 }
@@ -105,6 +109,7 @@ export interface AgencyCreationAttributes
     | 'appPaymentEnabledForFreelancers'
     | 'whatsappNumber'
     | 'whatsappMessage'
+    | 'loginEmailPolicy'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -310,6 +315,12 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
   whatsappMessage: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  loginEmailPolicy: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'informed',
+    validate: { isIn: [['informed', 'pattern']] }
   },
   createdAt: {
     allowNull: false,

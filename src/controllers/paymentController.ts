@@ -28,7 +28,7 @@ export const paymentController = {
       if (user.role === 'freelancer') {
         const f = await profileService.freelancerForUser(user)
         payments = f ? await paymentService.listForFreelancer(f.id) : []
-      } else if (user.role === 'agency') {
+      } else if (user.role === 'agency' || user.role === 'partner') {
         const agencyId = await profileService.agencyIdForUser(user)
         payments = agencyId ? await paymentService.listForAgency(agencyId) : []
       } else if (user.role === 'supermarket') {

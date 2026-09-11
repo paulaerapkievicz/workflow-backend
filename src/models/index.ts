@@ -27,6 +27,7 @@ import { FreelancerContract } from './FreelancerContract'
 import { UniformOrder } from './UniformOrder'
 import { Invite } from './Invite'
 import { AgencyMember } from './AgencyMember'
+import { AgencyPartner } from './AgencyPartner'
 import { AgencyMemberFreelancer } from './AgencyMemberFreelancer'
 import { AgencyMemberBranch } from './AgencyMemberBranch'
 import { AgencyMemberPayment } from './AgencyMemberPayment'
@@ -58,6 +59,7 @@ SupermarketMemberBranch.belongsTo(Branch, { foreignKey: 'branchId', as: 'branch'
 // Cargo configurável da equipe (tag: Administrador, Gerente, RH…)
 SupermarketMember.belongsTo(TeamRole, { foreignKey: 'teamRoleId', as: 'teamRole' })
 AgencyMember.belongsTo(TeamRole, { foreignKey: 'teamRoleId', as: 'teamRole' })
+AgencyPartner.belongsTo(TeamRole, { foreignKey: 'teamRoleId', as: 'teamRole' })
 
 Branch.belongsTo(Supermarket, { foreignKey: 'supermarketId', as: 'parentSupermarket' })
 Branch.hasMany(Job, { foreignKey: 'branchId', as: 'branchJobs' })
@@ -85,6 +87,12 @@ AgencyMember.hasMany(AgencyMemberJobCredit, { foreignKey: 'agencyMemberId', as: 
 AgencyMemberJobCredit.belongsTo(AgencyMember, { foreignKey: 'agencyMemberId', as: 'jobCreditMember' })
 AgencyMemberJobCredit.belongsTo(Job, { foreignKey: 'jobId', as: 'jobCreditJob' })
 AgencyMemberJobCredit.belongsTo(Freelancer, { foreignKey: 'freelancerId', as: 'jobCreditFreelancer' })
+
+// Sócios de agência (acesso amplo/configurável, sem escopo de colaborador/filial, sem carteira)
+Agency.hasMany(AgencyPartner, { foreignKey: 'agencyId', as: 'agencyPartners' })
+AgencyPartner.belongsTo(Agency, { foreignKey: 'agencyId', as: 'partnerAgency' })
+AgencyPartner.belongsTo(User, { foreignKey: 'userId', as: 'partnerUser' })
+User.hasOne(AgencyPartner, { foreignKey: 'userId', as: 'agencyPartnership' })
 
 Freelancer.belongsTo(Agency, { foreignKey: 'agencyId', as: 'affiliatedAgency' })
 Freelancer.belongsTo(User, { foreignKey: 'userId', as: 'freelancerUser' })
@@ -227,6 +235,7 @@ export {
   AgencyMemberBranch,
   AgencyMemberPayment,
   AgencyMemberJobCredit,
+  AgencyPartner,
   InvoiceAdjustment,
   ContractTemplate,
   FreelancerContractSignature,

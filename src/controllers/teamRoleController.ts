@@ -28,7 +28,7 @@ async function ownerScope(
     }
     return { scope: 'supermarket', ownerId: ctx.supermarketId }
   }
-  if (req.user!.role === 'agency') {
+  if (req.user!.role === 'agency' || req.user!.role === 'partner') {
     const agencyId = await profileService.agencyIdForUser(req.user!)
     if (!agencyId) {
       res.status(403).json({ message: 'Agência não encontrada.' })

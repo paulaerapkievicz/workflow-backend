@@ -7,8 +7,11 @@ export interface User {
   id: string
   name: string
   email: string
+  /** E-mail que a pessoa de fato informou no cadastro — mesmo quando `email` (login) é o
+   *  padrão nomesobrenome@workflow.com (ver Agency.loginEmailPolicy). */
+  contactEmail?: string | null
   passwordHash: string
-  role: 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader'
+  role: 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader' | 'partner'
   phone?: string | null
   birthDate?: string | null
   createdAt: Date
@@ -16,7 +19,7 @@ export interface User {
 }
 
 export interface UserCreationAttributes
-  extends Optional<User, 'id' | 'phone' | 'birthDate' | 'createdAt' | 'updatedAt'> {}
+  extends Optional<User, 'id' | 'contactEmail' | 'phone' | 'birthDate' | 'createdAt' | 'updatedAt'> {}
 
 export interface UserInstance extends Model<User, UserCreationAttributes>, User {}
 
@@ -38,16 +41,21 @@ export const User = sequelize.define<UserInstance, User>('User', {
     // Rede de segurança — a validação com mensagem amigável fica nos serviços/controllers.
     validate: { isEmail: { msg: 'E-mail inválido.' } }
   },
+  contactEmail: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   passwordHash: {
     type: DataTypes.STRING,
     allowNull: false
   },
   // Coluna convertida de ENUM para VARCHAR (migration 20260909010000) para caber o papel 'leader'
   // sem recriar o tipo a cada valor novo — mesmo padrão de jobs.status / job_logs.event_type.
+  // 'partner' (sócio de agência) reaproveita o mesmo VARCHAR — ver AgencyPartner.
   role: {
     type: DataTypes.STRING,
     allowNull: false,
-    validate: { isIn: [['admin', 'supermarket', 'freelancer', 'agency', 'leader']] }
+    validate: { isIn: [['admin', 'supermarket', 'freelancer', 'agency', 'leader', 'partner']] }
   },
   phone: {
     type: DataTypes.STRING,

@@ -14,6 +14,8 @@ import { TeamRole } from '../models/TeamRole'
 import { leaderJobCreditService } from './leaderJobCreditService'
 import { teamRoleService } from './teamRoleService'
 import { assertField } from '../helpers/validation'
+import { resolveLoginEmail, emailAlreadyRegistered } from '../helpers/loginCredentials'
+import { passwordResetService } from './passwordResetService'
 
 function parsePay(payType: unknown, payAmount: unknown): { payType: AgencyMemberPayType; payAmount: number } {
   if (!payType || !AGENCY_MEMBER_PAY_TYPES.includes(payType as AgencyMemberPayType)) {
@@ -121,6 +123,13 @@ export const agencyMemberService = {
     return serialize(member)
   },
 
+  /** A agência redefine a senha do líder pra caso ele não consiga recuperar sozinho. */
+  async resetPassword(id: string, agencyId: string) {
+    const member = await AgencyMember.findOne({ where: { id, agencyId } })
+    if (!member) throw new Error('Líder não encontrado.')
+    return passwordResetService.resetForUser(member.userId)
+  },
+
   /** Cria o líder direto (login + AgencyMember), sem passar por convite. */
   async createDirect(
     agencyId: string,
@@ -144,17 +153,17 @@ export const agencyMemberService = {
     const email = assertField(data.email, 'O e-mail do líder', 'email', { required: true })
     const phone = assertField(data.phone, 'O telefone do líder', 'phone') || null
     const pay = parsePay(data.payType, data.payAmount)
-    const exists = await User.findOne({ where: { email } })
-    if (exists) throw new Error('Este e-mail já está cadastrado.')
+    if (await emailAlreadyRegistered(email)) throw new Error('Este e-mail já está cadastrado.')
 
     const freelancerIds = data.freelancerIds ?? []
     const branchIds = data.branchIds ?? []
     await assertScopeBelongsToAgency(agencyId, freelancerIds, branchIds)
 
     const member = await sequelize.transaction(async (t) => {
+      const loginEmail = await resolveLoginEmail(agencyId, email, name)
       const passwordHash = await bcrypt.hash(String(password), 10)
       const user = await User.create(
-        { name, email, passwordHash, role: 'leader', phone },
+        { name, email: loginEmail, contactEmail: email, passwordHash, role: 'leader', phone },
         { transaction: t }
       )
       const teamRoleId = await teamRoleService.resolveId(data.teamRoleId, 'agency', agencyId, t)

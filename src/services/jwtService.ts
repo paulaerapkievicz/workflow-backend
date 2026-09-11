@@ -4,7 +4,7 @@ const secret = process.env.JWT_SECRET || 'dev-workflow-jwt-secret-change-me'
 
 export interface AuthTokenPayload extends JwtPayload {
   sub: string
-  role: 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader'
+  role: 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader' | 'partner'
   email: string
 }
 

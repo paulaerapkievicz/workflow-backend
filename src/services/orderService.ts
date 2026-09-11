@@ -262,7 +262,7 @@ export const orderService = {
     if (user.role === 'agency') {
       return Order.findAll({ include: orderIncludes, order: [['createdAt', 'DESC'], ...orderJobsOrder] })
     }
-    if (user.role === 'leader') {
+    if (user.role === 'leader' || user.role === 'partner') {
       const actor = await profileService.agencyContextForUser(user)
       if (!actor) return []
       const all = await Order.findAll({ include: orderIncludes, order: [['createdAt', 'DESC'], ...orderJobsOrder] })

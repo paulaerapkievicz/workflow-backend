@@ -7,7 +7,7 @@ import { Agency } from './Agency'
 export interface Invite {
   id: string
   agencyId: string
-  role: 'supermarket' | 'freelancer' | 'leader'
+  role: 'supermarket' | 'freelancer' | 'leader' | 'partner'
   token: string
   status: 'pending' | 'used' | 'revoked'
   /** Só para convite de líder: o pagamento dele, copiado para o AgencyMember no resgate. */
@@ -47,7 +47,7 @@ export const Invite = sequelize.define<InviteInstance, Invite>('Invite', {
   role: {
     type: DataTypes.STRING,
     allowNull: false,
-    validate: { isIn: [['supermarket', 'freelancer', 'leader']] }
+    validate: { isIn: [['supermarket', 'freelancer', 'leader', 'partner']] }
   },
   token: {
     type: DataTypes.STRING,

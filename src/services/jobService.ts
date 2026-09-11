@@ -338,7 +338,7 @@ export const jobService = {
       return null
     }
 
-    if (user.role === 'agency' || user.role === 'leader') {
+    if (user.role === 'agency' || user.role === 'leader' || user.role === 'partner') {
       const actor = await profileService.agencyContextForUser(user)
       if (!actor) return null
       if ((job as any).jobSupermarket?.agencyId !== actor.agencyId) return null
@@ -380,7 +380,7 @@ export const jobService = {
       })
     }
 
-    if (user.role === 'agency' || user.role === 'leader') {
+    if (user.role === 'agency' || user.role === 'leader' || user.role === 'partner') {
       const actor = await profileService.agencyContextForUser(user)
       if (!actor) return []
       // A agência só vê vagas de supermercados que são clientes dela — sem pool entre agências.

@@ -14,6 +14,8 @@ import { AuthRequest } from '../middlewares/auth';
 import { Transaction } from 'sequelize';
 import { teamRoleService } from '../services/teamRoleService';
 import { assertField } from '../helpers/validation';
+import { resolveLoginEmail, emailAlreadyRegistered } from '../helpers/loginCredentials';
+import { passwordResetService } from '../services/passwordResetService';
 
 /**
  * Substitui as filiais de escopo de um gerente. `branchIds` vazio/indefinido = rede toda
@@ -50,9 +52,9 @@ async function assertAgencyOwnsSupermarket(req: AuthRequest, supermarketId: stri
   return !!market && market.agencyId === agencyId;
 }
 
-/** Pode gerenciar a equipe: agência dona do supermercado OU dono do supermercado. */
+/** Pode gerenciar a equipe: agência (ou sócio dela) dona do supermercado OU dono do supermercado. */
 async function canManageTeam(req: AuthRequest, supermarketId: string): Promise<boolean> {
-  if (req.user!.role === 'agency') return assertAgencyOwnsSupermarket(req, supermarketId);
+  if (req.user!.role === 'agency' || req.user!.role === 'partner') return assertAgencyOwnsSupermarket(req, supermarketId);
   const ctx = await profileService.supermarketContextForUser(req.user!);
   return !!ctx && ctx.supermarketId === supermarketId && ctx.isOwner;
 }
@@ -71,13 +73,15 @@ export const supermarketController = {
       const cnpj = assertField(req.body.cnpj, 'O CNPJ do supermercado', 'cnpj', { required: true });
       const email = assertField(req.body.email, 'O e-mail do supermercado', 'email', { required: true });
       const phone = assertField(req.body.phone, 'O telefone do supermercado', 'phone') || null;
-      const exists = await User.findOne({ where: { email } });
-      if (exists) return res.status(409).json({ message: 'E-mail já cadastrado.' });
+      if (await emailAlreadyRegistered(email)) {
+        return res.status(409).json({ message: 'E-mail já cadastrado.' });
+      }
 
       const supermarket = await sequelize.transaction(async (t) => {
+        const loginEmail = await resolveLoginEmail(agencyId, email, name);
         const passwordHash = await bcrypt.hash(password, 10);
         const user = await User.create(
-          { name, email, passwordHash, role: 'supermarket', phone: phone ?? null },
+          { name, email: loginEmail, contactEmail: email, passwordHash, role: 'supermarket', phone: phone ?? null },
           { transaction: t }
         );
         const market = await Supermarket.create(
@@ -163,13 +167,15 @@ export const supermarketController = {
         return res.status(400).json({ message: 'Informe nome, e-mail e senha do gerente.' });
       }
       const email = assertField(req.body.email, 'O e-mail do gerente', 'email', { required: true });
-      if (await User.findOne({ where: { email } })) {
+      if (await emailAlreadyRegistered(email)) {
         return res.status(409).json({ message: 'E-mail já cadastrado.' });
       }
+      const market = await Supermarket.findByPk(supermarketId);
       const member = await sequelize.transaction(async (t) => {
+        const loginEmail = await resolveLoginEmail(market?.agencyId ?? null, email, name);
         const passwordHash = await bcrypt.hash(password, 10);
         const user = await User.create(
-          { name, email, passwordHash, role: 'supermarket', phone: null },
+          { name, email: loginEmail, contactEmail: email, passwordHash, role: 'supermarket', phone: null },
           { transaction: t }
         );
         const created = await SupermarketMember.create(
@@ -257,6 +263,39 @@ export const supermarketController = {
     }
   },
 
+  // POST /supermarkets/:id/reset-password — a agência-cliente redefine a senha do dono do
+  // supermercado pra caso ele não consiga recuperar sozinho.
+  async resetOwnerPassword(req: AuthRequest, res: Response) {
+    try {
+      const supermarketId = req.params.id;
+      if (!(await assertAgencyOwnsSupermarket(req, supermarketId))) {
+        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+      }
+      const market = await Supermarket.findByPk(supermarketId);
+      if (!market) return res.status(404).json({ message: 'Supermercado não encontrado.' });
+      const result = await passwordResetService.resetForUser(market.ownerId);
+      return res.json(result);
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao redefinir senha.' });
+    }
+  },
+
+  // POST /supermarket-members/:id/reset-password — agência-cliente ou o dono do supermercado
+  // redefine a senha de um gerente de loja.
+  async resetMemberPassword(req: AuthRequest, res: Response) {
+    try {
+      const member = await SupermarketMember.findByPk(req.params.id);
+      if (!member) return res.status(404).json({ message: 'Membro não encontrado.' });
+      if (!(await canManageTeam(req, member.supermarketId))) {
+        return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
+      }
+      const result = await passwordResetService.resetForUser(member.userId);
+      return res.json(result);
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro ao redefinir senha.' });
+    }
+  },
+
   // GET /supermarkets/:id/rates — valores/hora por função que a agência cobra deste supermercado
   async listRates(req: AuthRequest, res: Response) {
     try {
@@ -265,7 +304,7 @@ export const supermarketController = {
         if (!ctx || ctx.supermarketId !== req.params.id) {
           return res.status(403).json({ message: 'Sem permissão para ver estes valores.' });
         }
-      } else if (req.user!.role === 'agency' && !(await assertAgencyOwnsSupermarket(req, req.params.id))) {
+      } else if ((req.user!.role === 'agency' || req.user!.role === 'partner') && !(await assertAgencyOwnsSupermarket(req, req.params.id))) {
         return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
       }
       return res.json(await supermarketRateService.listForSupermarket(req.params.id));
@@ -370,7 +409,7 @@ export const supermarketController = {
   async index(req: AuthRequest, res: Response) {
     try {
       let agencyId: string | undefined;
-      if (req.user!.role === 'agency' || req.user!.role === 'leader') {
+      if (req.user!.role === 'agency' || req.user!.role === 'leader' || req.user!.role === 'partner') {
         const id = await profileService.agencyIdForUser(req.user!);
         if (!id) return res.json([]);
         agencyId = id;

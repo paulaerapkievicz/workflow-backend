@@ -1628,6 +1628,100 @@ async function main() {
     { open: alertCounts.alertsOpen, critical: alertCounts.alertsCritical }
   )
 
+  section('Política de e-mail de login + reset de senha pela agência')
+  const loginEmailOfFreelancer = async (freelancerId) => {
+    const r = await db.query(
+      `SELECT u.email, u.contact_email AS "contactEmail" FROM freelancers f JOIN users u ON u.id = f.user_id WHERE f.id = $1`,
+      [freelancerId]
+    )
+    return r.rows[0]
+  }
+
+  const settingsBefore = (await req('GET', '/agency/settings', { token: agencyT })).data
+  ok(settingsBefore.loginEmailPolicy === 'informed', 'política de e-mail de login nasce como "informed"', settingsBefore.loginEmailPolicy)
+
+  const patternOn = await req('PUT', '/agency/settings', { token: agencyT, body: { loginEmailPolicy: 'pattern' } })
+  ok(patternOn.status === 200 && patternOn.data.loginEmailPolicy === 'pattern', 'agência liga o padrão nomesobrenome@workflow.com')
+
+  const patternSuffix = Date.now()
+  const patternFullName = `Renata Oliveira${patternSuffix}`
+  const expectedPatternEmail = `renataoliveira${patternSuffix}@workflow.com`
+  const patternFree1Informed = `renata-informado-${patternSuffix}@email.com`
+  const patternFree1 = await req('POST', '/agency/freelancers', {
+    token: agencyT, body: { name: patternFullName, email: patternFree1Informed, password: '123456' },
+  })
+  ok(patternFree1.status === 201, 'colaborador cadastrado com a política padrão ligada', patternFree1.data)
+  const loginRow1 = await loginEmailOfFreelancer(patternFree1.data.id)
+  ok(loginRow1?.email === expectedPatternEmail, 'login gerado como nomesobrenome@workflow.com', loginRow1)
+  ok(loginRow1?.contactEmail === patternFree1Informed, 'e-mail informado no cadastro fica guardado em contactEmail', loginRow1)
+
+  // Mesmo nome de novo -> colisão resolvida com sufixo numérico antes do @.
+  const patternFree2 = await req('POST', '/agency/freelancers', {
+    token: agencyT, body: { name: patternFullName, email: `renata-informado2-${patternSuffix}@email.com`, password: '123456' },
+  })
+  const loginRow2 = await loginEmailOfFreelancer(patternFree2.data.id)
+  ok(
+    loginRow2?.email === `renataoliveira${patternSuffix}2@workflow.com`,
+    'colisão de e-mail padrão é resolvida com sufixo numérico',
+    loginRow2
+  )
+
+  // Cadastro via convite também respeita a política da agência.
+  const patternInvite = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'freelancer' } })
+  const patternInviteName = `Bruno Almeida${patternSuffix}`
+  const patternInviteReg = await req('POST', '/auth/register', {
+    body: {
+      name: patternInviteName, email: `bruno-informado-${patternSuffix}@email.com`, password: '123456',
+      inviteToken: patternInvite.data.token, profile: { document: validCpf() },
+    },
+  })
+  ok(
+    patternInviteReg.status === 201 && patternInviteReg.data.user.email === `brunoalmeida${patternSuffix}@workflow.com`,
+    'cadastro via convite também usa o padrão de e-mail quando a política está ligada',
+    patternInviteReg.data.user?.email
+  )
+
+  // Voltando pra "informed", novos cadastros usam o e-mail informado (sem regressão).
+  await req('PUT', '/agency/settings', { token: agencyT, body: { loginEmailPolicy: 'informed' } })
+  const informedFreeEmail = `carla-informado-${patternSuffix}@email.com`
+  const informedFree = await req('POST', '/agency/freelancers', {
+    token: agencyT, body: { name: `Carla Souza${patternSuffix}`, email: informedFreeEmail, password: '123456' },
+  })
+  const loginRow3 = await loginEmailOfFreelancer(informedFree.data.id)
+  ok(loginRow3?.email === informedFreeEmail, 'com a política "informed", o login volta a ser o e-mail informado', loginRow3)
+
+  // A agência redefine a senha do colaborador com login padrão e consegue logar com ela.
+  const resetRes = await req('POST', `/freelancers/${patternFree1.data.id}/reset-password`, { token: agencyT })
+  ok(
+    resetRes.status === 200 && resetRes.data.email === expectedPatternEmail && !!resetRes.data.password,
+    'agência redefine a senha do colaborador e recebe e-mail + senha nova',
+    resetRes.data
+  )
+  const loginAfterReset = await req('POST', '/auth/login', { body: { email: resetRes.data.email, password: resetRes.data.password } })
+  ok(loginAfterReset.status === 200, 'colaborador consegue logar com a senha redefinida pela agência', loginAfterReset.data)
+
+  // Sócio sem a permissão "colaboradores" é barrado; sócio com acesso total (padrão) consegue.
+  const noPermPartnerEmail = `socio-sem-permissao-${patternSuffix}@email.com`
+  const noPermPartner = await req('POST', '/agency/partners', {
+    token: agencyT,
+    body: {
+      name: 'Sócio Sem Permissão', email: noPermPartnerEmail, password: '123456',
+      permissions: { vagas: true, clientes: true, colaboradores: false, financeiro: true, equipe: true, configuracoes: true },
+    },
+  })
+  ok(noPermPartner.status === 201, 'sócio sem a permissão "colaboradores" cadastrado', noPermPartner.data)
+  const noPermPartnerT = await login(noPermPartnerEmail)
+  const deniedReset = await req('POST', `/freelancers/${informedFree.data.id}/reset-password`, { token: noPermPartnerT })
+  ok(deniedReset.status === 403, 'sócio sem a permissão "colaboradores" é barrado ao tentar redefinir senha', deniedReset.data)
+
+  const withPermPartnerEmail = `socio-com-permissao-${patternSuffix}@email.com`
+  await req('POST', '/agency/partners', {
+    token: agencyT, body: { name: 'Sócio Com Permissão', email: withPermPartnerEmail, password: '123456' },
+  })
+  const withPermPartnerT = await login(withPermPartnerEmail)
+  const allowedReset = await req('POST', `/freelancers/${informedFree.data.id}/reset-password`, { token: withPermPartnerT })
+  ok(allowedReset.status === 200, 'sócio com acesso total (padrão) consegue redefinir a senha', allowedReset.data)
+
   console.log(`\n----------\n${pass} passaram, ${fail} falharam`)
   await db.end()
   process.exit(fail ? 1 : 0)

@@ -3,20 +3,35 @@ import { Invite, InviteCreationAttributes } from '../models/Invite'
 import { Agency } from '../models/Agency'
 
 interface CreateOptions {
-  /** true quando quem gera o convite é um líder (não o dono) — não pode gerar supermercado/líder. */
-  createdByLeader?: boolean
+  /**
+   * Quem está gerando o convite. O dono ('agency') pode convidar qualquer papel; um líder
+   * só convida colaborador; um sócio convida cliente ou colaborador, nunca líder/sócio
+   * (evita um sócio se auto-replicar ou criar líderes sem o dono saber).
+   */
+  callerRole?: 'agency' | 'leader' | 'partner'
   /** Só para role 'leader': pagamento do líder, copiado para o AgencyMember no resgate. */
   payType?: 'hora' | 'diaria' | 'mensal' | 'por_colaborador' | null
   payAmount?: number | null
 }
 
+const CALLER_ALLOWED_ROLES: Record<'agency' | 'leader' | 'partner', string[]> = {
+  agency: ['supermarket', 'freelancer', 'leader', 'partner'],
+  leader: ['freelancer'],
+  partner: ['supermarket', 'freelancer'],
+}
+
 export const inviteService = {
   async create(agencyId: string, role: string, options: CreateOptions = {}) {
-    if (!['supermarket', 'freelancer', 'leader'].includes(role)) {
+    if (!['supermarket', 'freelancer', 'leader', 'partner'].includes(role)) {
       throw new Error('Papel de convite inválido.')
     }
-    if (options.createdByLeader && role !== 'freelancer') {
-      throw new Error('Um líder só pode convidar colaboradores.')
+    const callerRole = options.callerRole ?? 'agency'
+    if (!CALLER_ALLOWED_ROLES[callerRole].includes(role)) {
+      throw new Error(
+        callerRole === 'leader'
+          ? 'Um líder só pode convidar colaboradores.'
+          : 'Um sócio só pode convidar clientes ou colaboradores.'
+      )
     }
 
     const attrs: InviteCreationAttributes = {

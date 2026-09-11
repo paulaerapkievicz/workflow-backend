@@ -210,6 +210,7 @@ export const agencyService = {
       allowSelfRegistration: a.allowSelfRegistration,
       appPaymentEnabledForSupermarkets: a.appPaymentEnabledForSupermarkets,
       appPaymentEnabledForFreelancers: a.appPaymentEnabledForFreelancers,
+      loginEmailPolicy: a.loginEmailPolicy,
     }
   },
 
@@ -242,6 +243,7 @@ export const agencyService = {
       allowSelfRegistration: boolean
       appPaymentEnabledForSupermarkets: boolean
       appPaymentEnabledForFreelancers: boolean
+      loginEmailPolicy: string
     }>
   ) {
     const a = await Agency.findByPk(agencyId)
@@ -344,6 +346,12 @@ export const agencyService = {
     }
     if (data.appPaymentEnabledForFreelancers != null) {
       patch.appPaymentEnabledForFreelancers = data.appPaymentEnabledForFreelancers === true
+    }
+    if (data.loginEmailPolicy != null) {
+      if (data.loginEmailPolicy !== 'informed' && data.loginEmailPolicy !== 'pattern') {
+        throw new Error('Política de e-mail de login inválida.')
+      }
+      patch.loginEmailPolicy = data.loginEmailPolicy
     }
     await a.update(patch)
     return this.getSettings(agencyId)

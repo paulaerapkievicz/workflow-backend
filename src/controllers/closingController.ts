@@ -11,7 +11,7 @@ function fail(res: Response, err: unknown, code = 400) {
 /** Só a agência dona do fechamento ou o supermercado que o recebeu podem vê-lo. */
 async function assertCanViewClosing(req: AuthRequest, closing: any): Promise<boolean> {
   if (req.user!.role === 'admin') return true
-  if (req.user!.role === 'agency') {
+  if (req.user!.role === 'agency' || req.user!.role === 'partner') {
     const agencyId = await profileService.agencyIdForUser(req.user!)
     return !!agencyId && closing.agencyId === agencyId
   }
@@ -26,7 +26,7 @@ export const closingController = {
   // GET /closings — agência: seus fechamentos; supermercado: fechamentos recebidos
   async index(req: AuthRequest, res: Response) {
     try {
-      if (req.user!.role === 'agency') {
+      if (req.user!.role === 'agency' || req.user!.role === 'partner') {
         const agencyId = await profileService.agencyIdForUser(req.user!)
         return res.json(agencyId ? await closingService.listForAgency(agencyId) : [])
       }

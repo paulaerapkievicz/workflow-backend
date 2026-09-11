@@ -6,8 +6,10 @@ import { SupermarketMemberBranch } from '../models/SupermarketMemberBranch'
 import { AgencyMember } from '../models/AgencyMember'
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer'
 import { AgencyMemberBranch } from '../models/AgencyMemberBranch'
+import { AgencyPartner } from '../models/AgencyPartner'
 import { UserInstance } from '../models/User'
 import { AgencyActor } from '../helpers/agencyScope'
+import { sanitizePartnerPermissions } from '../helpers/agencyPartnerPermissions'
 
 export interface SupermarketContext {
   supermarketId: string
@@ -73,6 +75,11 @@ export const profileService = {
           where: { userId: user.id },
           include: [{ model: Agency, as: 'memberAgency' }],
         })
+      case 'partner':
+        return AgencyPartner.findOne({
+          where: { userId: user.id },
+          include: [{ model: Agency, as: 'partnerAgency' }],
+        })
       default:
         return null
     }
@@ -105,6 +112,14 @@ export const profileService = {
         scopeFreelancerIds: freelancerIds.length ? freelancerIds : null,
         scopeBranchIds: branchIds.length ? branchIds : null,
       }
+    }
+    // Sócio: acesso irrestrito em vagas/colaboradores (sem escopo, ao contrário do líder) —
+    // o que ele PODE acessar é controlado à parte por `agency_partners.permissions`
+    // (checado no middleware `requireAgencyFeature`, não aqui).
+    if (user.role === 'partner') {
+      const p = await AgencyPartner.findOne({ where: { userId: user.id, active: true } })
+      if (!p) return null
+      return { agencyId: p.agencyId, isOwner: false, memberId: null, scopeFreelancerIds: null, scopeBranchIds: null }
     }
     return null
   },
@@ -153,6 +168,12 @@ export const profileService = {
     if (user.role === 'leader') {
       const m = await AgencyMember.findOne({ where: { userId: user.id, active: true } })
       return m?.agencyId ?? null
+    }
+    // Sócio resolve para a agência dele — o que ele pode fazer nela é limitado por
+    // `agency_partners.permissions` (middleware `requireAgencyFeature`), não aqui.
+    if (user.role === 'partner') {
+      const p = await AgencyPartner.findOne({ where: { userId: user.id, active: true } })
+      return p?.agencyId ?? null
     }
     return null
   },

@@ -2,8 +2,10 @@ import { NextFunction, Request, Response } from 'express'
 import { jwtService } from '../services/jwtService'
 import { User, UserInstance } from '../models/User'
 import { profileService } from '../services/profileService'
+import { AgencyPartner } from '../models/AgencyPartner'
+import { AgencyPartnerFeature, sanitizePartnerPermissions } from '../helpers/agencyPartnerPermissions'
 
-export type Role = 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader'
+export type Role = 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader' | 'partner'
 
 export interface AuthRequest extends Request {
   user?: UserInstance
@@ -60,6 +62,29 @@ function ensureInvoicePermission(kind: 'view' | 'pay') {
 
 export const ensureCanViewInvoices = ensureInvoicePermission('view')
 export const ensureCanPayInvoices = ensureInvoicePermission('pay')
+
+/**
+ * Gate de funcionalidade pro sócio de agência (`role: 'partner'`) — o dono liga/desliga cada
+ * área em `agency_partners.permissions`. No-op para todo mundo que não for sócio: dono e
+ * líder seguem só sob o `authorize()` da rota, como sempre.
+ */
+export function requireAgencyFeature(feature: AgencyPartnerFeature) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) return res.status(401).json({ message: 'Não autorizado.' })
+    if (req.user.role !== 'partner') return next()
+    try {
+      const partner = await AgencyPartner.findOne({ where: { userId: req.user.id, active: true } })
+      if (!partner) return res.status(403).json({ message: 'Sócio não encontrado ou inativo.' })
+      const permissions = sanitizePartnerPermissions(partner.permissions)
+      if (!permissions[feature]) {
+        return res.status(403).json({ message: 'Você não tem permissão para acessar esta área.' })
+      }
+      return next()
+    } catch {
+      return res.status(500).json({ message: 'Erro ao verificar permissão.' })
+    }
+  }
+}
 
 export function authorize(...roles: Role[]) {
   return (req: AuthRequest, res: Response, next: NextFunction) => {

@@ -66,6 +66,17 @@ export const agencyMemberController = {
     }
   },
 
+  // POST /agency/members/:id/reset-password
+  async resetPassword(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await ownerAgencyId(req, res)
+      if (!agencyId) return
+      return res.json(await agencyMemberService.resetPassword(req.params.id, agencyId))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // DELETE /agency/members/:id — desativa (mantém histórico e carteira)
   async remove(req: AuthRequest, res: Response) {
     try {

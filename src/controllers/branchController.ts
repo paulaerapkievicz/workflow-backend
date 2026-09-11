@@ -10,7 +10,7 @@ async function canManageBranch(req: AuthRequest, branchId: string): Promise<bool
   if (req.user!.role === 'admin') return true;
   const branch = await Branch.findByPk(branchId);
   if (!branch) return false;
-  if (req.user!.role === 'agency') {
+  if (req.user!.role === 'agency' || req.user!.role === 'partner') {
     const agencyId = await profileService.agencyIdForUser(req.user!);
     const market = await Supermarket.findByPk(branch.supermarketId);
     return !!agencyId && !!market && market.agencyId === agencyId;
@@ -67,7 +67,7 @@ export const branchController = {
           return res.status(400).json({ message: 'Cadastre o supermercado antes de criar filiais.' });
         }
         serviceStatus = 'pending';
-      } else if (req.user && req.user.role === 'agency') {
+      } else if (req.user && (req.user.role === 'agency' || req.user.role === 'partner')) {
         const agencyId = await profileService.agencyIdForUser(req.user);
         const market = await Supermarket.findByPk(supermarketId);
         if (!agencyId || !market || market.agencyId !== agencyId) {

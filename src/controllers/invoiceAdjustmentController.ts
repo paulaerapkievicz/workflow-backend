@@ -15,7 +15,7 @@ export const invoiceAdjustmentController = {
       const scope =
         role === 'supermarket'
           ? { supermarketId: (await profileService.supermarketIdForUser(req.user!)) ?? '—' }
-          : role === 'agency'
+          : role === 'agency' || role === 'partner'
           ? { agencyId: (await profileService.agencyIdForUser(req.user!)) ?? '—' }
           : undefined
       return res.json(await invoiceAdjustmentService.listForInvoice(req.params.id, scope))

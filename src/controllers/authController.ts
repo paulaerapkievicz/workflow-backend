@@ -8,6 +8,8 @@ import { Freelancer } from '../models/Freelancer'
 import { Commission } from '../models/Commission'
 import { SupermarketMember } from '../models/SupermarketMember'
 import { AgencyMember } from '../models/AgencyMember'
+import { AgencyPartner } from '../models/AgencyPartner'
+import { defaultPartnerPermissions, sanitizePartnerPermissions } from '../helpers/agencyPartnerPermissions'
 import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
 import { ContractTemplate } from '../models/ContractTemplate'
@@ -18,6 +20,7 @@ import { inviteService } from '../services/inviteService'
 import { teamRoleService } from '../services/teamRoleService'
 import { AuthRequest, Role } from '../middlewares/auth'
 import { assertField } from '../helpers/validation'
+import { resolveLoginEmail, emailAlreadyRegistered } from '../helpers/loginCredentials'
 
 /** Serializa o perfil e anexa contexto extra por papel (permissões do supermercado, onboarding do colaborador). */
 async function profileWithContext(user: { id: string; role: Role }) {
@@ -40,6 +43,19 @@ async function profileWithContext(user: { id: string; role: Role }) {
       payType: m.payType ?? null,
       payAmount: m.payAmount != null ? Number(m.payAmount) : null,
       availableBalance: Number(m.availableBalance ?? 0),
+    }
+  }
+
+  if (user.role === 'partner') {
+    const p = profile as any
+    return {
+      id: p.id,
+      role: 'partner',
+      agencyId: p.agencyId,
+      agencyName: p.partnerAgency?.name ?? null,
+      active: p.active,
+      teamRoleId: p.teamRoleId ?? null,
+      permissions: sanitizePartnerPermissions(p.permissions),
     }
   }
 
@@ -129,11 +145,14 @@ export const authController = {
     } catch (err) {
       return res.status(400).json({ message: err instanceof Error ? err.message : 'Dados inválidos.' })
     }
-    // 'leader' só é aceito quando vem de um convite de líder gerado pela agência.
+    // 'leader'/'partner' só são aceitos quando vêm de um convite gerado pela agência.
     if (role === 'leader' && !invite) {
       return res.status(400).json({ message: 'Cadastro de líder requer um convite da agência.' })
     }
-    if (role !== 'leader' && (!VALID_ROLES.includes(role) || role === 'admin')) {
+    if (role === 'partner' && !invite) {
+      return res.status(400).json({ message: 'Cadastro de sócio requer um convite da agência.' })
+    }
+    if (role !== 'leader' && role !== 'partner' && (!VALID_ROLES.includes(role) || role === 'admin')) {
       return res.status(400).json({ message: 'Perfil inválido para cadastro.' })
     }
     // Supermercado não tem mais autocadastro aberto — precisa ser convidado por uma agência,
@@ -142,8 +161,7 @@ export const authController = {
       return res.status(400).json({ message: 'Cadastro de supermercado requer um convite da agência.' })
     }
 
-    const exists = await User.findOne({ where: { email } })
-    if (exists) {
+    if (await emailAlreadyRegistered(email)) {
       return res.status(409).json({ message: 'Este e-mail já está cadastrado.' })
     }
 
@@ -153,8 +171,22 @@ export const authController = {
 
     try {
       const result = await sequelize.transaction(async (t) => {
+        // Agência "dona" pra fins da política de e-mail de login (nomesobrenome@workflow.com
+        // vs. e-mail informado) — null quando o cadastro é de uma agência nova, que não tem
+        // agência mãe e por isso sempre usa o e-mail informado.
+        let policyAgencyId: string | null = null
+        if (role === 'supermarket' || role === 'leader' || role === 'partner') {
+          policyAgencyId = invite!.agencyId
+        } else if (role === 'freelancer') {
+          policyAgencyId = invite ? invite.agencyId : profile.agencyId ?? null
+        }
+
+        const loginEmail = await resolveLoginEmail(policyAgencyId, email, name)
         const passwordHash = await bcrypt.hash(password, 10)
-        const user = await User.create({ name, email, passwordHash, role, phone: phone || null }, { transaction: t })
+        const user = await User.create(
+          { name, email: loginEmail, contactEmail: email, passwordHash, role, phone: phone || null },
+          { transaction: t }
+        )
 
         let createdProfile: any = null
 
@@ -235,6 +267,18 @@ export const authController = {
               active: true,
               payType: invite!.payType ?? null,
               payAmount: invite!.payAmount != null ? Number(invite!.payAmount) : null,
+            },
+            { transaction: t }
+          )
+        } else if (role === 'partner') {
+          // `invite` está garantido pela checagem acima. Nasce com acesso total — o dono
+          // restringe funcionalidade por funcionalidade depois na tela de Equipe.
+          createdProfile = await AgencyPartner.create(
+            {
+              agencyId: invite!.agencyId,
+              userId: user.id,
+              active: true,
+              permissions: defaultPartnerPermissions(),
             },
             { transaction: t }
           )
