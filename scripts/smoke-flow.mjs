@@ -1424,6 +1424,19 @@ async function main() {
   ok(putAgProfile.status === 200 && putAgProfile.data.legalName === 'Console Servicos S.A.', 'agência edita o próprio perfil (razão social/e-mail)')
   ok((await req('GET', '/auth/me', { token: newAgToken })).data.profile.email === 'contato@console.com', '/auth/me reflete o perfil da agência')
 
+  section('Ordem personalizada do menu lateral (agência e supermercado)')
+  const setAgOrder = await req('PUT', '/agency/settings', { token: agencyT, body: { sidebarOrder: ['/agency/payments', '/agency/dashboard'] } })
+  ok(setAgOrder.status === 200 && setAgOrder.data.sidebarOrder?.[0] === '/agency/payments', 'agência salva a ordem personalizada do menu', setAgOrder.data?.sidebarOrder)
+  ok((await req('GET', '/agency/settings', { token: agencyT })).data.sidebarOrder?.[0] === '/agency/payments', 'GET /agency/settings reflete a ordem salva')
+  const clearAgOrder = await req('PUT', '/agency/settings', { token: agencyT, body: { sidebarOrder: null } })
+  ok(clearAgOrder.status === 200 && clearAgOrder.data.sidebarOrder === null, 'agência restaura a ordem padrão (null)')
+
+  const setMkOrderBlocked = await req('PUT', '/supermarket/sidebar-order', { token: mgrT, body: { sidebarOrder: ['/supermarket/payments'] } })
+  ok(setMkOrderBlocked.status === 403, 'gerente (não-dono) não reordena o menu do supermercado')
+  const setMkOrder = await req('PUT', '/supermarket/sidebar-order', { token: superT, body: { sidebarOrder: ['/supermarket/jobs', '/supermarket/dashboard'] } })
+  ok(setMkOrder.status === 200 && setMkOrder.data.sidebarOrder?.[0] === '/supermarket/jobs', 'dono do supermercado salva a ordem personalizada do menu', setMkOrder.data)
+  ok((await req('GET', '/auth/me', { token: superT })).data.profile.sidebarOrder?.[0] === '/supermarket/jobs', '/auth/me reflete a ordem salva do supermercado')
+
   await req('PUT', `/platform/agencies/${createAg.data.agency.id}`, { token: adminTok, body: { active: false } })
   ok((await req('POST', '/auth/login', { body: { email: newAgEmail, password: '123456' } })).status === 403, 'agência desativada pelo admin não consegue logar')
   await req('PUT', `/platform/agencies/${createAg.data.agency.id}`, { token: adminTok, body: { active: true } })

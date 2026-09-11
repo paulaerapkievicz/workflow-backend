@@ -338,6 +338,19 @@ export const supermarketController = {
     }
   },
 
+  // PUT /supermarket/sidebar-order — só o dono da rede reordena o próprio menu
+  async updateSidebarOrder(req: AuthRequest, res: Response) {
+    try {
+      const ctx = await profileService.supermarketContextForUser(req.user!);
+      if (!ctx) return res.status(400).json({ message: 'Supermercado não encontrado.' });
+      if (!ctx.isOwner) return res.status(403).json({ message: 'Só o responsável pela rede reordena o menu.' });
+      const updated = await supermarketService.updateSidebarOrder(ctx.supermarketId, req.body?.sidebarOrder);
+      return res.json({ sidebarOrder: updated.sidebarOrder ?? null });
+    } catch (error) {
+      return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro.' });
+    }
+  },
+
   // GET /supermarkets - Lista todos os supermercados
   async index(req: Request, res: Response) {
     try {

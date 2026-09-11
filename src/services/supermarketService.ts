@@ -1,6 +1,7 @@
 import { Supermarket, SupermarketCreationAttributes } from '../models/Supermarket';
 import { User } from '../models/User';
 import { assertField } from '../helpers/validation';
+import { sanitizeSidebarOrder } from '../helpers/sidebarOrder';
 
 /** Campos de perfil/cadastro que o dono do supermercado (ou a agência-cliente) pode editar. */
 const PROFILE_FIELDS = [
@@ -62,6 +63,14 @@ export const supermarketService = {
       }
     }
     await supermarket.update(patch);
+    return supermarket.reload();
+  },
+
+  /** Ordem personalizada do menu lateral — só o dono da rede edita (controller checa). */
+  async updateSidebarOrder(id: string, raw: unknown) {
+    const supermarket = await Supermarket.findByPk(id);
+    if (!supermarket) throw new Error('Supermercado não encontrado.');
+    await supermarket.update({ sidebarOrder: sanitizeSidebarOrder(raw) });
     return supermarket.reload();
   },
 

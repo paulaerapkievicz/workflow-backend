@@ -48,6 +48,8 @@ export interface Agency {
   unfilledAlertTiers: UnfilledAlertTier[]
   /** Cores dos 6 tons dos badges de status (personalizável pela agência). */
   statusColors: StatusColors
+  /** Ordem personalizada do menu lateral (lista de hrefs). NULL = ordem padrão. */
+  sidebarOrder?: string[] | null
   onboardingRequired: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
@@ -87,6 +89,7 @@ export interface AgencyCreationAttributes
     | 'shortNoticeWithdrawalMinutes'
     | 'unfilledAlertTiers'
     | 'statusColors'
+    | 'sidebarOrder'
     | 'onboardingRequired'
     | 'uniformPrice'
     | 'allowSelfRegistration'
@@ -258,6 +261,10 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     type: DataTypes.JSONB,
     allowNull: false,
     defaultValue: DEFAULT_STATUS_COLORS
+  },
+  sidebarOrder: {
+    type: DataTypes.JSONB,
+    allowNull: true
   },
   onboardingRequired: {
     type: DataTypes.BOOLEAN,

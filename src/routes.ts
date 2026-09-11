@@ -85,6 +85,8 @@ router.delete('/supermarkets/:id', authorize('supermarket', 'agency', 'admin'), 
 router.put('/supermarkets/:id/profile', authorize('supermarket', 'agency', 'admin'), supermarketController.updateProfile);
 router.post('/supermarkets/:id/profile/logo', authorize('supermarket', 'agency', 'admin'), upload.single('file'), supermarketController.uploadProfileImage);
 router.post('/supermarkets/:id/profile/photo', authorize('supermarket', 'agency', 'admin'), upload.single('file'), supermarketController.uploadProfileImage);
+// Ordem personalizada do menu lateral — só o dono da rede
+router.put('/supermarket/sidebar-order', authorize('supermarket'), supermarketController.updateSidebarOrder);
 // Valores/hora por função que a agência cobra de cada supermercado (definidos no cadastro do supermercado)
 router.get('/supermarkets/:id/rates', authorize('supermarket', 'agency', 'admin'), supermarketController.listRates);
 router.post('/supermarkets/:id/rates', authorize('agency', 'admin'), supermarketController.saveRate);

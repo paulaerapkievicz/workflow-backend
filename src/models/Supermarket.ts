@@ -17,6 +17,8 @@ export interface Supermarket {
   email?: string | null
   logoUrl?: string | null
   profilePhotoUrl?: string | null
+  /** Ordem personalizada do menu lateral (lista de hrefs). NULL = ordem padrão. */
+  sidebarOrder?: string[] | null
   createdAt: Date
   updatedAt: Date
 }
@@ -24,7 +26,8 @@ export interface Supermarket {
 export interface SupermarketCreationAttributes
   extends Optional<
     Supermarket,
-    'id' | 'legalName' | 'phone' | 'email' | 'logoUrl' | 'profilePhotoUrl' | 'createdAt' | 'updatedAt'
+    | 'id' | 'legalName' | 'phone' | 'email' | 'logoUrl' | 'profilePhotoUrl' | 'sidebarOrder'
+    | 'createdAt' | 'updatedAt'
   > {}
 
 export interface SupermarketInstance
@@ -88,6 +91,10 @@ export const Supermarket = sequelize.define<SupermarketInstance, Supermarket>('S
   },
   profilePhotoUrl: {
     type: DataTypes.STRING,
+    allowNull: true
+  },
+  sidebarOrder: {
+    type: DataTypes.JSONB,
     allowNull: true
   },
   createdAt: {

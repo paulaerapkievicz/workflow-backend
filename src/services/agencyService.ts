@@ -6,6 +6,7 @@ import { User } from '../models/User';
 import { Commission } from '../models/Commission';
 import { ALERT_SETTING_RANGES, resolveUnfilledAlertTiers, sanitizeUnfilledAlertTiers } from '../helpers/alerts';
 import { resolveStatusColors, sanitizeStatusColors } from '../helpers/statusColors';
+import { sanitizeSidebarOrder } from '../helpers/sidebarOrder';
 import { assertField } from '../helpers/validation';
 
 /** Campos de perfil institucional que a própria agência (ou o admin) pode editar. */
@@ -176,6 +177,7 @@ export const agencyService = {
       shortNoticeWithdrawalMinutes: a.shortNoticeWithdrawalMinutes,
       unfilledAlertTiers: resolveUnfilledAlertTiers(a),
       statusColors: resolveStatusColors(a),
+      sidebarOrder: a.sidebarOrder ?? null,
       onboardingRequired: a.onboardingRequired,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
@@ -205,6 +207,7 @@ export const agencyService = {
       shortNoticeWithdrawalMinutes: number
       unfilledAlertTiers: unknown
       statusColors: unknown
+      sidebarOrder: unknown
       onboardingRequired: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
@@ -265,6 +268,10 @@ export const agencyService = {
 
     if (data.statusColors !== undefined) {
       patch.statusColors = sanitizeStatusColors(data.statusColors)
+    }
+
+    if (data.sidebarOrder !== undefined) {
+      patch.sidebarOrder = sanitizeSidebarOrder(data.sidebarOrder)
     }
 
     if (data.defaultBreakMinutes != null) {
