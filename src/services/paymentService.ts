@@ -5,6 +5,7 @@ import { Job, JobInstance } from '../models/Job'
 import { Branch } from '../models/Branch'
 import { Category } from '../models/Category'
 import { Freelancer } from '../models/Freelancer'
+import { FreelancerContract } from '../models/FreelancerContract'
 import { Agency } from '../models/Agency'
 import { Invoice } from '../models/Invoice'
 import { JobShift } from '../models/JobShift'
@@ -34,6 +35,29 @@ const paymentIncludes = [
   { model: Freelancer, as: 'paymentFreelancer' },
 ]
 
+/**
+ * Inclui os turnos (janela solicitada + check-in/checkout real) e a chave Pix do
+ * onboarding — só usado pela agência, para o relatório de pagamento aos colaboradores
+ * (`/agency/payments`). Não entra no include padrão para não vazar a chave Pix ao
+ * supermercado nem inflar o payload do colaborador.
+ */
+const agencyPaymentIncludes = [
+  {
+    model: Job,
+    as: 'paymentJob',
+    include: [
+      { model: Branch, as: 'jobBranch' },
+      { model: Category, as: 'jobCategory' },
+      { model: JobShift, as: 'shifts' },
+    ],
+  },
+  {
+    model: Freelancer,
+    as: 'paymentFreelancer',
+    include: [{ model: FreelancerContract, as: 'contract' }],
+  },
+]
+
 export const paymentService = {
   async findAll() {
     return Payment.findAll({ include: paymentIncludes, order: [['createdAt', 'DESC']] })
@@ -57,7 +81,7 @@ export const paymentService = {
     if (!ids.length) return []
     return Payment.findAll({
       where: { freelancerId: { [Op.in]: ids } },
-      include: paymentIncludes,
+      include: agencyPaymentIncludes,
       order: [['createdAt', 'DESC']],
     })
   },
