@@ -5,6 +5,7 @@ import { FreelancerCategory } from '../models/FreelancerCategory';
 import { Category } from '../models/Category';
 import { User } from '../models/User';
 import { AgencyActor } from '../helpers/agencyScope';
+import { assertField } from '../helpers/validation';
 
 export const freelancerService = {
   async createFreelancer(data: any) {
@@ -38,9 +39,12 @@ export const freelancerService = {
 
     // Só campos de perfil — nunca agencyId / saldo / userId.
     const patch: Record<string, unknown> = {};
-    for (const field of ['name', 'email', 'phone', 'skills'] as const) {
+    for (const field of ['name', 'skills'] as const) {
       if (data[field] !== undefined) patch[field] = data[field];
     }
+    if (data.email !== undefined) patch.email = assertField(data.email, 'O e-mail', 'email', { required: true });
+    if (data.phone !== undefined) patch.phone = assertField(data.phone, 'O telefone', 'phone') || null;
+    if (data.document !== undefined) patch.document = assertField(data.document, 'O CPF', 'cpf') || null;
     return await freelancer.update(patch);
   },
 

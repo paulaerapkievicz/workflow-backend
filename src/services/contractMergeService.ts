@@ -8,6 +8,7 @@ import { Freelancer } from '../models/Freelancer'
 import { FreelancerContract } from '../models/FreelancerContract'
 import { Agency } from '../models/Agency'
 import { escapeHtml } from '../helpers/contractDocument'
+import { formatCpf, formatCnpj, formatCep, formatPhone } from '../helpers/validation'
 
 const MONTHS = [
   'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
@@ -85,12 +86,12 @@ export const contractMergeService = {
       c.addressComplement,
       c.addressNeighborhood,
       c.addressCity && c.addressState ? `${c.addressCity}/${c.addressState}` : c.addressCity,
-      c.addressCep ? `CEP ${c.addressCep}` : null,
+      c.addressCep ? `CEP ${formatCep(c.addressCep)}` : null,
     ].filter(Boolean)
 
     const raw: Record<string, unknown> = {
       fullName: c.fullName || freelancer.name,
-      cpf: c.cpf,
+      cpf: formatCpf(c.cpf),
       rg: c.rg,
       rgIssuer: c.rgIssuer,
       pisNis: c.pisNis,
@@ -108,21 +109,21 @@ export const contractMergeService = {
       addressNeighborhood: c.addressNeighborhood,
       addressCity: c.addressCity,
       addressState: c.addressState,
-      addressCep: c.addressCep,
+      addressCep: formatCep(c.addressCep),
       bankName: c.bankName,
       bankBranch: c.bankBranch,
       bankAccount: c.bankAccount,
       pixKey: c.pixKey,
-      phone: freelancer.phone,
+      phone: formatPhone(freelancer.phone),
       email: freelancer.email,
       emergencyContactName: c.emergencyContactName,
-      emergencyContactPhone: c.emergencyContactPhone,
+      emergencyContactPhone: formatPhone(c.emergencyContactPhone),
       shirtSize: c.shirtSize,
       agencyName: agency?.name,
       agencyLegalName: agency?.legalName || agency?.name,
-      agencyCnpj: agency?.cnpj,
+      agencyCnpj: formatCnpj(agency?.cnpj),
       agencyAddress: agency?.address,
-      agencyPhone: agency?.phone,
+      agencyPhone: formatPhone(agency?.phone),
       agencyEmail: agency?.email,
       dataAtual: fmtDateBR(new Date()),
       dataPorExtenso: dateInExtenso(c.addressCity || agency?.address?.split(',').pop()?.trim() || ''),

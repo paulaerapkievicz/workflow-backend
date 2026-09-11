@@ -50,6 +50,32 @@ const db = new pg.Client({
 const yyyymm = (d = new Date()) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
 const dateInDays = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10)
 
+// Geradores de documento válido — os cadastros agora validam CPF/CNPJ (helpers/validation.ts).
+const mod11Dv = (nums, weights) => {
+  const sum = nums.reduce((s, n, i) => s + n * weights[i], 0)
+  const r = sum % 11
+  return r < 2 ? 0 : 11 - r
+}
+const validCnpj = () => {
+  const base = Array.from({ length: 12 }, () => Math.floor(Math.random() * 10))
+  const d1 = mod11Dv(base, [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+  const d2 = mod11Dv([...base, d1], [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2])
+  return [...base, d1, d2].join('')
+}
+const validCpf = () => {
+  const base = Array.from({ length: 9 }, () => Math.floor(Math.random() * 10))
+  const dv = (nums, start) => {
+    let sum = 0
+    let f = start
+    for (const n of nums) sum += n * f--
+    const r = (sum * 10) % 11
+    return r === 10 ? 0 : r
+  }
+  const d1 = dv(base, 10)
+  const d2 = dv([...base, d1], 11)
+  return [...base, d1, d2].join('')
+}
+
 // Traz o próximo turno pendente da vaga para "agora" — as vagas de teste são criadas para
 // amanhã, mas o check-in real só é aceito perto do horário do turno (tolerância de 30 min).
 const startShiftNow = (jobId) =>
@@ -1010,7 +1036,7 @@ async function main() {
   ok(accLocked.status === 400 && /perfil contratual/i.test(accLocked.data?.message || ''), 'aceite bloqueado sem perfil contratual', accLocked.data?.message)
 
   const contractBody = {
-    fullName: 'Joana Freelancer', cpf: '123.456.789-00', rg: '12.345.678-9', pisNis: '123.45678.90-1',
+    fullName: 'Joana Freelancer', cpf: '123.456.789-09', rg: '12.345.678-9', pisNis: '123.45678.90-1',
     birthDate: '1995-05-10', maritalStatus: 'solteira', nationality: 'brasileira', motherName: 'Maria',
     addressCep: '01000-000', addressStreet: 'Rua A', addressNumber: '10', addressNeighborhood: 'Centro',
     addressCity: 'São Paulo', addressState: 'SP', bankName: 'Banco X', bankBranch: '0001', bankAccount: '12345-6',
@@ -1037,20 +1063,20 @@ async function main() {
     body: {
       name: 'Dono Mercado Convidado', email: `mercado-convite-${Date.now()}@email.com`, password: '123456',
       inviteToken: inviteMarketToken,
-      profile: { companyName: 'Mercado Convidado', cnpj: `${Date.now()}`.slice(0, 14), address: 'Rua Convite, 1' },
+      profile: { companyName: 'Mercado Convidado', cnpj: validCnpj(), address: 'Rua Convite, 1' },
     },
   })
   ok(regMarket.status === 201 && regMarket.data.profile.agencyId === agencyId, 'supermercado cadastrado via convite já nasce vinculado à agência', regMarket.data)
   const reuseMarket = await req('POST', '/auth/register', {
     body: {
       name: 'Outro', email: `outro-${Date.now()}@email.com`, password: '123456', inviteToken: inviteMarketToken,
-      profile: { companyName: 'X', cnpj: `${Date.now() + 1}`.slice(0, 14), address: 'Rua X' },
+      profile: { companyName: 'X', cnpj: validCnpj(), address: 'Rua X' },
     },
   })
   ok(reuseMarket.status === 400, 'convite de supermercado não pode ser reaproveitado', reuseMarket.data)
   const openMarketReg = await req('POST', '/auth/register', {
     body: { name: 'Sem convite', email: `semconvite-${Date.now()}@email.com`, password: '123456', role: 'supermarket',
-      profile: { companyName: 'X', cnpj: `${Date.now() + 2}`.slice(0, 14), address: 'Rua Y' } },
+      profile: { companyName: 'X', cnpj: validCnpj(), address: 'Rua Y' } },
   })
   ok(openMarketReg.status === 400, 'autocadastro aberto de supermercado (sem convite) é recusado', openMarketReg.data)
 
@@ -1058,7 +1084,7 @@ async function main() {
   const regFree = await req('POST', '/auth/register', {
     body: {
       name: 'Colaborador Convidado', email: `colab-convite-${Date.now()}@email.com`, password: '123456',
-      inviteToken: inviteFreeRes.data.token, profile: { document: '00011122233' },
+      inviteToken: inviteFreeRes.data.token, profile: { document: validCpf() },
     },
   })
   ok(
@@ -1320,7 +1346,7 @@ async function main() {
   const otherAgencyReg = await req('POST', '/auth/register', {
     body: {
       name: 'Outra Agência', email: otherAgencyEmail, password: '123456', role: 'agency',
-      profile: { companyName: 'Agência Rival', cnpj: `${Date.now() + 3}`.slice(0, 14), address: 'Rua Rival, 1' },
+      profile: { companyName: 'Agência Rival', cnpj: validCnpj(), address: 'Rua Rival, 1' },
     },
   })
   const otherAgencyT = await login(otherAgencyEmail)
@@ -1333,7 +1359,7 @@ async function main() {
   const otherFreeReg = await req('POST', '/auth/register', {
     body: {
       name: 'Freelancer Rival', email: otherFreeEmail, password: '123456', role: 'freelancer',
-      profile: { agencyId: otherAgencyId, document: '99988877766' },
+      profile: { agencyId: otherAgencyId, document: validCpf() },
     },
   })
   ok(otherFreeReg.status === 201, 'freelancer da agência rival cadastrado')
@@ -1359,7 +1385,7 @@ async function main() {
   const adminTok = await login('admin@email.com')
   const newAgEmail = `nova-agencia-${Date.now()}@x.com`
   const createAg = await req('POST', '/platform/agencies', { token: adminTok, body: {
-    name: 'Agência Console', legalName: 'Console Servicos Ltda', cnpj: `${Date.now()}`.slice(0, 14),
+    name: 'Agência Console', legalName: 'Console Servicos Ltda', cnpj: validCnpj(),
     address: TEST_ADDRESS, ownerEmail: newAgEmail, ownerName: 'Dono Console', password: '123456',
   } })
   ok(createAg.status === 201 && !!createAg.data.agency?.id, 'admin cadastra agência via /platform/agencies', createAg.data?.message)
@@ -1370,6 +1396,29 @@ async function main() {
   } })
   ok(dupCnpj.status === 400, 'CNPJ de agência duplicado é recusado')
   ok((await req('GET', '/platform/agencies', { token: agencyT })).status === 403, 'agência comum não acessa /platform/agencies (só admin)')
+
+  section('Validação de campos tipados nos cadastros (documento, e-mail, telefone)')
+  const badCnpj = await req('POST', '/platform/agencies', { token: adminTok, body: {
+    name: 'Y', cnpj: '11111111111111', address: 'a', ownerEmail: `y-${Date.now()}@x.com`, ownerName: 'Y', password: '1234',
+  } })
+  ok(badCnpj.status === 400 && /CNPJ/i.test(badCnpj.data?.message || ''), 'CNPJ com dígito verificador inválido é recusado', badCnpj.data?.message)
+  const badEmail = await req('POST', '/platform/agencies', { token: adminTok, body: {
+    name: 'Z', cnpj: validCnpj(), address: 'a', ownerEmail: 'sem-arroba', ownerName: 'Z', password: '1234',
+  } })
+  ok(badEmail.status === 400 && /e-mail/i.test(badEmail.data?.message || ''), 'e-mail do responsável malformado é recusado', badEmail.data?.message)
+  const maskedCnpj = validCnpj()
+  const fmtCnpj = `${maskedCnpj.slice(0, 2)}.${maskedCnpj.slice(2, 5)}.${maskedCnpj.slice(5, 8)}/${maskedCnpj.slice(8, 12)}-${maskedCnpj.slice(12)}`
+  const normAg = await req('POST', '/platform/agencies', { token: adminTok, body: {
+    name: 'Normalizada', cnpj: fmtCnpj, address: TEST_ADDRESS, ownerEmail: `norm-${Date.now()}@x.com`,
+    ownerName: 'Norm', password: '123456', phone: '(54) 99999-8877',
+  } })
+  ok(normAg.status === 201 && normAg.data.agency.cnpj === maskedCnpj, 'CNPJ com máscara é salvo só com dígitos', normAg.data?.agency?.cnpj)
+  const badFreeDoc = await req('POST', '/auth/register', {
+    body: { name: 'Doc Ruim', email: `docruim-${Date.now()}@x.com`, password: '123456',
+      inviteToken: (await req('POST', '/agency/invites', { token: agencyT, body: { role: 'freelancer' } })).data.token,
+      profile: { document: '12345678900' } },
+  })
+  ok(badFreeDoc.status === 400 && /CPF/i.test(badFreeDoc.data?.message || ''), 'CPF de colaborador inválido é recusado no cadastro por convite', badFreeDoc.data?.message)
 
   const putAgProfile = await req('PUT', '/agency/profile', { token: newAgToken, body: { legalName: 'Console Servicos S.A.', email: 'contato@console.com' } })
   ok(putAgProfile.status === 200 && putAgProfile.data.legalName === 'Console Servicos S.A.', 'agência edita o próprio perfil (razão social/e-mail)')
@@ -1382,9 +1431,9 @@ async function main() {
   await req('PUT', `/supermarkets/${supermarketId}/profile`, { token: superT, body: { legalName: 'Central Matriz Ltda' } })
   const brProfile = (await req('GET', `/branches/${branchCentro.id}/profile`, { token: superT })).data
   ok(brProfile.profile.legalName === 'Central Matriz Ltda' && brProfile.profile.inherited.includes('legalName'), 'filial sem razão social herda a da matriz')
-  await req('PUT', `/branches/${branchCentro.id}/profile`, { token: superT, body: { cnpj: '11222333000199' } })
+  await req('PUT', `/branches/${branchCentro.id}/profile`, { token: superT, body: { cnpj: '12345678000195' } })
   const brProfile2 = (await req('GET', `/branches/${branchCentro.id}/profile`, { token: superT })).data
-  ok(brProfile2.profile.cnpj === '11222333000199' && !brProfile2.profile.inherited.includes('cnpj'), 'CNPJ próprio da filial deixa de ser herdado')
+  ok(brProfile2.profile.cnpj === '12345678000195' && !brProfile2.profile.inherited.includes('cnpj'), 'CNPJ próprio da filial deixa de ser herdado')
 
   section('Contrato eletrônico do colaborador')
   const free2Tok = await login('free2@email.com')

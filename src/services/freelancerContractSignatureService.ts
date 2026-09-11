@@ -11,6 +11,7 @@ import { FreelancerContractSignature } from '../models/FreelancerContractSignatu
 import { contractTemplateService } from './contractTemplateService'
 import { contractMergeService } from './contractMergeService'
 import { contractPdfService } from './contractPdfService'
+import { assertField, maskCpfForDisplay } from '../helpers/validation'
 
 const CONTRACTS_DIR = path.resolve(__dirname, '..', '..', 'public', 'uploads', 'contracts')
 
@@ -19,12 +20,6 @@ export const ACCEPTANCE_TEXT =
   'concordo com todos os seus termos, assinando-o eletronicamente.'
 
 const sha256 = (text: string) => crypto.createHash('sha256').update(text, 'utf8').digest('hex')
-
-function maskCpf(cpf: string): string {
-  const digits = String(cpf ?? '').replace(/\D/g, '')
-  if (digits.length !== 11) return '***'
-  return `${digits.slice(0, 3)}.***.***-${digits.slice(9)}`
-}
 
 async function renderActiveTemplate(freelancer: FreelancerInstance) {
   const template = freelancer.agencyId
@@ -90,8 +85,9 @@ export const freelancerContractSignatureService = {
     if (missing.length) throw new Error(`Faltam dados para preencher o contrato: ${missing.join(', ')}.`)
 
     const signerName = String(opts.signerName || contract.fullName || freelancer.name).trim()
-    const signerCpf = String(opts.signerCpf || contract.cpf || '').trim()
-    if (!signerName || !signerCpf) throw new Error('Confirme o nome e o CPF do signatário.')
+    const rawSignerCpf = String(opts.signerCpf || contract.cpf || '').trim()
+    if (!signerName || !rawSignerCpf) throw new Error('Confirme o nome e o CPF do signatário.')
+    const signerCpf = assertField(rawSignerCpf, 'O CPF do signatário', 'cpf', { required: true })
 
     const contentHash = sha256(renderedHtml)
     const existing = await FreelancerContractSignature.findOne({
@@ -199,7 +195,7 @@ export const freelancerContractSignatureService = {
       agencyName: ag?.legalName || ag?.name || null,
       documentTitle: signature.templateTitle,
       signerFirstName: signature.signerName.split(' ')[0],
-      signerCpfMasked: maskCpf(signature.signerCpf),
+      signerCpfMasked: maskCpfForDisplay(signature.signerCpf),
       signedAt: signature.signedAt,
       contentHash: signature.contentHash,
     }

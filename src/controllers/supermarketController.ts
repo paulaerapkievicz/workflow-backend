@@ -13,6 +13,7 @@ import { TeamRole } from '../models/TeamRole';
 import { AuthRequest } from '../middlewares/auth';
 import { Transaction } from 'sequelize';
 import { teamRoleService } from '../services/teamRoleService';
+import { assertField } from '../helpers/validation';
 
 /**
  * Substitui as filiais de escopo de um gerente. `branchIds` vazio/indefinido = rede toda
@@ -63,10 +64,13 @@ export const supermarketController = {
       const agencyId = await profileService.agencyIdForUser(req.user!);
       if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
 
-      const { name, cnpj, address, phone, email, password } = req.body ?? {};
-      if (!name || !cnpj || !address || !email || !password) {
+      const { name, address, password } = req.body ?? {};
+      if (!name || !req.body?.cnpj || !address || !req.body?.email || !password) {
         return res.status(400).json({ message: 'Informe nome, CNPJ, endereço, e-mail e senha do supermercado.' });
       }
+      const cnpj = assertField(req.body.cnpj, 'O CNPJ do supermercado', 'cnpj', { required: true });
+      const email = assertField(req.body.email, 'O e-mail do supermercado', 'email', { required: true });
+      const phone = assertField(req.body.phone, 'O telefone do supermercado', 'phone') || null;
       const exists = await User.findOne({ where: { email } });
       if (exists) return res.status(409).json({ message: 'E-mail já cadastrado.' });
 
@@ -152,12 +156,13 @@ export const supermarketController = {
         return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
       }
       const {
-        name, email, password, branchIds, teamRoleId,
+        name, password, branchIds, teamRoleId,
         canSubmitOrders, canApproveOrders, canViewInvoices, canPayInvoices,
       } = req.body ?? {};
-      if (!name || !email || !password) {
+      if (!name || !req.body?.email || !password) {
         return res.status(400).json({ message: 'Informe nome, e-mail e senha do gerente.' });
       }
+      const email = assertField(req.body.email, 'O e-mail do gerente', 'email', { required: true });
       if (await User.findOne({ where: { email } })) {
         return res.status(409).json({ message: 'E-mail já cadastrado.' });
       }

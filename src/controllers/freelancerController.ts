@@ -148,7 +148,7 @@ export const freelancerController = {
       const updated = await freelancerService.updateFreelancer(req.params.id, req.body);
       return res.json(updated);
     } catch (err) {
-      return res.status(500).json({ message: 'Erro ao atualizar freelancer.' });
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao atualizar freelancer.' });
     }
   },
 

@@ -7,6 +7,7 @@ import { Agency } from '../models/Agency'
 import { AgencyMember } from '../models/AgencyMember'
 import { User, UserInstance } from '../models/User'
 import { profileService } from './profileService'
+import { assertField } from '../helpers/validation'
 
 interface Beneficiary {
   type: BeneficiaryType
@@ -62,12 +63,17 @@ export const withdrawalService = {
     const amount = Number(rawAmount)
     if (!(amount > 0)) throw new Error('Informe um valor de saque válido.')
 
-    const pixKey = pix.key?.trim() || null
+    let pixKey = pix.key?.trim() || null
     if (!pixKey) throw new Error('Informe a chave Pix para receber o saque.')
     const pixKeyType = pix.keyType?.trim() || null
     if (pixKeyType && !PIX_KEY_TYPES.includes(pixKeyType as PixKeyType)) {
       throw new Error('Tipo de chave Pix inválido.')
     }
+    // Com o tipo informado, a chave é validada e guardada sem máscara.
+    if (pixKeyType === 'cpf') pixKey = assertField(pixKey, 'A chave Pix (CPF)', 'cpf', { required: true })
+    else if (pixKeyType === 'cnpj') pixKey = assertField(pixKey, 'A chave Pix (CNPJ)', 'cnpj', { required: true })
+    else if (pixKeyType === 'email') pixKey = assertField(pixKey, 'A chave Pix (e-mail)', 'email', { required: true })
+    else if (pixKeyType === 'telefone') pixKey = assertField(pixKey, 'A chave Pix (telefone)', 'phone', { required: true })
 
     const beneficiary = await resolveBeneficiary(user)
     if (amount > beneficiary.balance) throw new Error('Valor solicitado maior que o saldo disponível.')

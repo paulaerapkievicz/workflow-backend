@@ -40,7 +40,7 @@ module.exports = {
     // Vaga concluída (Padeiro, 4h): supermercado paga 33/h = 132 ; colaborador recebe 19/h = 76 ; agência 56.
     const agencyAmountPaid = 56.0;
     const freelancerAmountPaid = 76.0;
-    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', legal_name: 'Prime Serviços de Mão de Obra Ltda', cnpj: '55666777000188', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 4000-0000', email: 'contato@agenciaprime.com.br', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, checkin_early_tolerance_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: false, active: true, ...ts };
+    const agency = { id: uid(), owner_id: agencyUser.id, name: 'Agência Prime', legal_name: 'Prime Serviços de Mão de Obra Ltda', cnpj: '55666777000181', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 4000-0000', email: 'contato@agenciaprime.com.br', available_balance: agencyAmountPaid, commission_percentage: 15, checkin_radius: 300, cancellation_window_minutes: 30, checkin_early_tolerance_minutes: 30, require_checkout_photo: true, review_enabled: true, allow_self_registration: false, active: true, ...ts };
     await queryInterface.bulkInsert('agencies', [agency]);
     await queryInterface.bulkInsert('commissions', [{ id: uid(), agency_id: agency.id, percentage: 15, ...ts }]);
 
@@ -50,7 +50,7 @@ module.exports = {
     await queryInterface.bulkInsert('team_roles', agencyRoles);
 
     // ---- Supermercado (cliente da agência acima) + filiais ----
-    const supermarket = { id: uid(), owner_id: superUser.id, agency_id: agency.id, name: 'Mercado Central', legal_name: 'Mercado Central Comércio de Alimentos Ltda', cnpj: '11222333000144', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0000', email: 'contato@mercadocentral.com.br', ...ts };
+    const supermarket = { id: uid(), owner_id: superUser.id, agency_id: agency.id, name: 'Mercado Central', legal_name: 'Mercado Central Comércio de Alimentos Ltda', cnpj: '11222333000181', address: 'Rua Dirceu Sander, 719, Passo Fundo RS', phone: '(54) 3000-0000', email: 'contato@mercadocentral.com.br', ...ts };
     await queryInterface.bulkInsert('supermarkets', [supermarket]);
     const superRoles = ['Administrador', 'Gerente', 'RH', 'Financeiro', 'Comprador'].map((n, i) => teamRole('supermarket', supermarket.id, n, i));
     await queryInterface.bulkInsert('team_roles', superRoles);

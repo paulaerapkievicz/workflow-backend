@@ -81,7 +81,8 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
   email: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true
+    unique: true,
+    validate: { isEmail: { msg: 'E-mail inválido.' } }
   },
   phone: {
     type: DataTypes.STRING

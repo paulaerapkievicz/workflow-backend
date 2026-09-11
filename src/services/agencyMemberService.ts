@@ -13,6 +13,7 @@ import { AgencyMemberPayment } from '../models/AgencyMemberPayment'
 import { TeamRole } from '../models/TeamRole'
 import { leaderJobCreditService } from './leaderJobCreditService'
 import { teamRoleService } from './teamRoleService'
+import { assertField } from '../helpers/validation'
 
 function parsePay(payType: unknown, payAmount: unknown): { payType: AgencyMemberPayType; payAmount: number } {
   if (!payType || !AGENCY_MEMBER_PAY_TYPES.includes(payType as AgencyMemberPayType)) {
@@ -135,11 +136,13 @@ export const agencyMemberService = {
       branchIds?: string[]
     }
   ) {
-    const { name, email, password } = data
-    if (!name || !email || !password) {
+    const { name, password } = data
+    if (!name || !data.email || !password) {
       throw new Error('Informe nome, e-mail e senha do líder.')
     }
     if (String(password).length < 6) throw new Error('A senha do líder precisa ter ao menos 6 caracteres.')
+    const email = assertField(data.email, 'O e-mail do líder', 'email', { required: true })
+    const phone = assertField(data.phone, 'O telefone do líder', 'phone') || null
     const pay = parsePay(data.payType, data.payAmount)
     const exists = await User.findOne({ where: { email } })
     if (exists) throw new Error('Este e-mail já está cadastrado.')
@@ -151,7 +154,7 @@ export const agencyMemberService = {
     const member = await sequelize.transaction(async (t) => {
       const passwordHash = await bcrypt.hash(String(password), 10)
       const user = await User.create(
-        { name, email, passwordHash, role: 'leader', phone: data.phone ?? null },
+        { name, email, passwordHash, role: 'leader', phone },
         { transaction: t }
       )
       const teamRoleId = await teamRoleService.resolveId(data.teamRoleId, 'agency', agencyId, t)

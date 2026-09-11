@@ -17,6 +17,7 @@ import { profileService } from '../services/profileService'
 import { inviteService } from '../services/inviteService'
 import { teamRoleService } from '../services/teamRoleService'
 import { AuthRequest, Role } from '../middlewares/auth'
+import { assertField } from '../helpers/validation'
 
 /** Serializa o perfil e anexa contexto extra por papel (permissões do supermercado, onboarding do colaborador). */
 async function profileWithContext(user: { id: string; role: Role }) {
@@ -91,9 +92,11 @@ function publicUser(user: User) {
 export const authController = {
   // POST /auth/register
   async register(req: Request, res: Response) {
-    const { name, email, password, phone, inviteToken } = req.body ?? {}
+    const { name, password, inviteToken } = req.body ?? {}
     let { role } = req.body ?? {}
     const profile = req.body?.profile ?? {}
+    const rawEmail = req.body?.email
+    const rawPhone = req.body?.phone
 
     // Um convite manda no papel do cadastro — ignora o que veio do cliente, pra um
     // `role` adulterado não furar a intenção do convite gerado pela agência.
@@ -107,8 +110,24 @@ export const authController = {
       role = invite.role
     }
 
-    if (!name || !email || !password || !role) {
+    if (!name || !rawEmail || !password || !role) {
       return res.status(400).json({ message: 'Informe nome, e-mail, senha e perfil.' })
+    }
+
+    // Normaliza/valida os campos tipados; guarda no banco sem máscara.
+    let email: string
+    let phone: string
+    try {
+      email = assertField(rawEmail, 'O e-mail', 'email', { required: true })
+      phone = assertField(rawPhone, 'O telefone', 'phone')
+      if (role === 'agency' || role === 'supermarket') {
+        profile.cnpj = assertField(profile.cnpj, 'O CNPJ', 'cnpj', { required: true })
+      }
+      if (role === 'freelancer' && profile.document) {
+        profile.document = assertField(profile.document, 'O CPF', 'cpf')
+      }
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Dados inválidos.' })
     }
     // 'leader' só é aceito quando vem de um convite de líder gerado pela agência.
     if (role === 'leader' && !invite) {
@@ -135,7 +154,7 @@ export const authController = {
     try {
       const result = await sequelize.transaction(async (t) => {
         const passwordHash = await bcrypt.hash(password, 10)
-        const user = await User.create({ name, email, passwordHash, role, phone: phone ?? null }, { transaction: t })
+        const user = await User.create({ name, email, passwordHash, role, phone: phone || null }, { transaction: t })
 
         let createdProfile: any = null
 
@@ -149,7 +168,7 @@ export const authController = {
               legalName: profile.legalName ?? undefined,
               cnpj: profile.cnpj,
               address: profile.address,
-              phone: phone ?? undefined,
+              phone: phone || undefined,
             },
             { transaction: t }
           )
@@ -170,7 +189,7 @@ export const authController = {
         } else if (role === 'agency') {
           const pct = profile.commissionPercentage != null ? Number(profile.commissionPercentage) : 10
           createdProfile = await Agency.create(
-            { ownerId: user.id, name: profile.companyName, cnpj: profile.cnpj, address: profile.address, phone: phone ?? undefined, commissionPercentage: pct },
+            { ownerId: user.id, name: profile.companyName, cnpj: profile.cnpj, address: profile.address, phone: phone || undefined, commissionPercentage: pct },
             { transaction: t }
           )
           await teamRoleService.seedDefaults('agency', createdProfile.id, t)
@@ -199,7 +218,7 @@ export const authController = {
               agencyId,
               name,
               email,
-              phone: phone ?? undefined,
+              phone: phone || undefined,
               document: profile.document ?? undefined,
               skills: profile.skills ?? undefined,
               registrationStatus: invite ? 'approved' : 'pending',

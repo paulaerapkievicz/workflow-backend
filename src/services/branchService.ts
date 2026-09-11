@@ -2,6 +2,7 @@ import { Branch, BranchCreationAttributes } from '../models/Branch';
 import { Supermarket } from '../models/Supermarket';
 import { geocodeAddress } from '../helpers/geocode';
 import { resolveBranchProfile } from '../helpers/branchProfile';
+import { assertField } from '../helpers/validation';
 
 /** Dados cadastrais próprios da filial (vazio = herda da matriz). */
 const PROFILE_FIELDS = [
@@ -46,7 +47,8 @@ export const branchService = {
     const supermarketExists = await Supermarket.findByPk(data.supermarketId);
     if (!supermarketExists) throw new Error('Supermercado não encontrado.');
 
-    const payload: any = { ...data, ...manualCoords(data as any) };
+    const phone = assertField((data as Record<string, unknown>).phone, 'O telefone da filial', 'phone');
+    const payload: any = { ...data, phone: phone || null, ...manualCoords(data as any) };
     if (payload.latitude == null || payload.longitude == null) {
       const point = await geocodeAddress(data.address);
       if (point) {
@@ -101,6 +103,12 @@ export const branchService = {
         const value = String(data[field] ?? '').trim();
         if (!value) throw new Error('Nome e endereço da filial são obrigatórios.');
         patch[field] = value;
+      } else if (field === 'cnpj') {
+        patch.cnpj = assertField(data.cnpj, 'O CNPJ da filial', 'cnpj') || null;
+      } else if (field === 'phone') {
+        patch.phone = assertField(data.phone, 'O telefone da filial', 'phone') || null;
+      } else if (field === 'email') {
+        patch.email = assertField(data.email, 'O e-mail da filial', 'email') || null;
       } else {
         patch[field] = trimOrNull(data[field]);
       }

@@ -1,5 +1,6 @@
 import { Supermarket, SupermarketCreationAttributes } from '../models/Supermarket';
 import { User } from '../models/User';
+import { assertField } from '../helpers/validation';
 
 /** Campos de perfil/cadastro que o dono do supermercado (ou a agência-cliente) pode editar. */
 const PROFILE_FIELDS = [
@@ -46,10 +47,16 @@ export const supermarketService = {
     const patch: Record<string, unknown> = {};
     for (const field of PROFILE_FIELDS) {
       if (data[field] === undefined) continue;
-      if (field === 'name' || field === 'cnpj' || field === 'address') {
+      if (field === 'name' || field === 'address') {
         const value = String(data[field] ?? '').trim();
         if (!value) throw new Error('Nome, CNPJ e endereço são obrigatórios.');
         patch[field] = value;
+      } else if (field === 'cnpj') {
+        patch.cnpj = assertField(data.cnpj, 'O CNPJ do supermercado', 'cnpj', { required: true });
+      } else if (field === 'phone') {
+        patch.phone = assertField(data.phone, 'O telefone do supermercado', 'phone') || null;
+      } else if (field === 'email') {
+        patch.email = assertField(data.email, 'O e-mail do supermercado', 'email') || null;
       } else {
         patch[field] = trimOrNull(data[field]);
       }

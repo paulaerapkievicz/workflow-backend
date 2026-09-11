@@ -6,6 +6,7 @@ import { User } from '../models/User';
 import { Commission } from '../models/Commission';
 import { ALERT_SETTING_RANGES, resolveUnfilledAlertTiers, sanitizeUnfilledAlertTiers } from '../helpers/alerts';
 import { resolveStatusColors, sanitizeStatusColors } from '../helpers/statusColors';
+import { assertField } from '../helpers/validation';
 
 /** Campos de perfil institucional que a própria agência (ou o admin) pode editar. */
 const PROFILE_FIELDS = [
@@ -57,16 +58,19 @@ export const agencyService = {
     commissionPercentage?: number
   }) {
     const name = String(data.name ?? '').trim();
-    const cnpj = String(data.cnpj ?? '').trim();
     const address = String(data.address ?? '').trim();
     const ownerName = String(data.ownerName ?? '').trim();
-    const ownerEmail = String(data.ownerEmail ?? '').trim().toLowerCase();
 
-    if (!name || !cnpj || !address) throw new Error('Informe nome, CNPJ e endereço da agência.');
-    if (!ownerName || !ownerEmail || !data.password) {
+    if (!name || !address) throw new Error('Informe nome, CNPJ e endereço da agência.');
+    if (!ownerName || !data.ownerEmail || !data.password) {
       throw new Error('Informe nome, e-mail e senha do responsável (login da agência).');
     }
     if (String(data.password).length < 4) throw new Error('A senha deve ter ao menos 4 caracteres.');
+
+    const cnpj = assertField(data.cnpj, 'O CNPJ da agência', 'cnpj', { required: true });
+    const ownerEmail = assertField(data.ownerEmail, 'O e-mail do responsável', 'email', { required: true });
+    const phone = assertField(data.phone, 'O telefone da agência', 'phone');
+    const email = assertField(data.email, 'O e-mail de contato da agência', 'email');
 
     const emailTaken = await User.findOne({ where: { email: ownerEmail } });
     if (emailTaken) throw new Error('Este e-mail já está cadastrado.');
@@ -77,7 +81,7 @@ export const agencyService = {
     return sequelize.transaction(async (t) => {
       const passwordHash = await bcrypt.hash(String(data.password), 10);
       const owner = await User.create(
-        { name: ownerName, email: ownerEmail, passwordHash, role: 'agency', phone: trimOrNull(data.phone) },
+        { name: ownerName, email: ownerEmail, passwordHash, role: 'agency', phone: phone || null },
         { transaction: t }
       );
       const agency = await Agency.create(
@@ -87,8 +91,8 @@ export const agencyService = {
           legalName: trimOrNull(data.legalName),
           cnpj,
           address,
-          phone: trimOrNull(data.phone) ?? undefined,
-          email: trimOrNull(data.email),
+          phone: phone || undefined,
+          email: email || null,
           commissionPercentage: pct,
         },
         { transaction: t }
@@ -114,10 +118,16 @@ export const agencyService = {
     const patch: Record<string, unknown> = {};
     for (const field of PROFILE_FIELDS) {
       if (data[field] === undefined) continue;
-      if (field === 'name' || field === 'cnpj' || field === 'address') {
+      if (field === 'name' || field === 'address') {
         const value = String(data[field] ?? '').trim();
         if (!value) throw new Error('Nome, CNPJ e endereço são obrigatórios.');
         patch[field] = value;
+      } else if (field === 'cnpj') {
+        patch.cnpj = assertField(data.cnpj, 'O CNPJ da agência', 'cnpj', { required: true });
+      } else if (field === 'phone') {
+        patch.phone = assertField(data.phone, 'O telefone da agência', 'phone') || null;
+      } else if (field === 'email') {
+        patch.email = assertField(data.email, 'O e-mail da agência', 'email') || null;
       } else {
         patch[field] = trimOrNull(data[field]);
       }

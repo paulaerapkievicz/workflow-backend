@@ -34,7 +34,9 @@ export const User = sequelize.define<UserInstance, User>('User', {
   email: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true
+    unique: true,
+    // Rede de segurança — a validação com mensagem amigável fica nos serviços/controllers.
+    validate: { isEmail: { msg: 'E-mail inválido.' } }
   },
   passwordHash: {
     type: DataTypes.STRING,
