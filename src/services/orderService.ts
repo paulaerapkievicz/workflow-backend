@@ -259,13 +259,11 @@ export const orderService = {
           (o as any).orderJobs?.some((j: any) => scope.has(j.branchId))
       )
     }
-    if (user.role === 'agency') {
-      return Order.findAll({ include: orderIncludes, order: [['createdAt', 'DESC'], ...orderJobsOrder] })
-    }
-    if (user.role === 'leader' || user.role === 'partner') {
+    if (user.role === 'agency' || user.role === 'leader' || user.role === 'partner') {
       const actor = await profileService.agencyContextForUser(user)
       if (!actor) return []
       const all = await Order.findAll({ include: orderIncludes, order: [['createdAt', 'DESC'], ...orderJobsOrder] })
+      // A agência só vê pedidos de supermercados que são clientes dela — sem pool entre agências.
       let scoped = all.filter((o) => (o as any).orderSupermarket?.agencyId === actor.agencyId)
       if (actor.scopeBranchIds) {
         const inScope = (id: string | null | undefined) => !!id && actor.scopeBranchIds!.includes(id)
@@ -331,7 +329,7 @@ export const orderService = {
   async addItems(orderId: string, rawItems: any[], ctx: OrderContext) {
     const order = await Order.findByPk(orderId)
     if (!order) throw new Error('Pedido não encontrado.')
-    if (order.supermarketId !== ctx.supermarketId) throw new Error('Pedido não pertence ao seu supermercado.')
+    if (order.supermarketId !== ctx.supermarketId) throw new Error('Pedido não encontrado.')
     if (['canceled', 'completed'].includes(order.status)) {
       throw new Error('Não é possível adicionar vagas a um pedido cancelado ou concluído.')
     }
@@ -393,7 +391,7 @@ export const orderService = {
   async cancel(id: string, supermarketId: string) {
     const order = await Order.findByPk(id)
     if (!order) throw new Error('Pedido não encontrado.')
-    if (order.supermarketId !== supermarketId) throw new Error('Pedido não pertence ao seu supermercado.')
+    if (order.supermarketId !== supermarketId) throw new Error('Pedido não encontrado.')
     if (order.status === 'canceled') throw new Error('Pedido já cancelado.')
 
     await sequelize.transaction(async (t) => {

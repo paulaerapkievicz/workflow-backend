@@ -625,7 +625,7 @@ export const jobService = {
       throw new Error('Esta vaga não está mais disponível.')
     }
     if ((job as any).jobSupermarket?.agencyId !== freelancer.agencyId) {
-      throw new Error('Esta vaga não pertence à sua agência.')
+      throw new Error('Vaga não encontrada.')
     }
 
     // A vaga só pode ser assumida se houver valor/hora do colaborador para a função
@@ -807,7 +807,7 @@ export const jobService = {
     }
     const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este freelancer não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
     await cancelJobByAgency(job, freelancer.id, 'withdrawn', reason?.trim() || 'Vaga liberada pela agência.')
 
@@ -831,7 +831,7 @@ export const jobService = {
     const job = await Job.findByPk(id, { include: [{ model: Supermarket, as: 'jobSupermarket' }] })
     if (!job) throw new Error('Vaga não encontrada.')
     if ((job as any).jobSupermarket?.agencyId !== actor.agencyId) {
-      throw new Error('Esta vaga não pertence à sua rede.')
+      throw new Error('Vaga não encontrada.')
     }
     assertBranchInScope(actor, job.branchId)
     if (!isExpiredUnfilledJob(job, startOfTodayBrasil())) {
@@ -877,7 +877,7 @@ export const jobService = {
     }
     const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este freelancer não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
 
     const blockedUntil = new Date()
@@ -927,7 +927,7 @@ export const jobService = {
     }
     const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este freelancer não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
     const shift = await JobShift.findOne({ where: { jobId: id, status: 'in_progress' } })
     if (!shift) throw new Error('Nenhum turno em andamento para encerrar.')
@@ -1006,7 +1006,7 @@ export const jobService = {
     if (actor) assertBranchInScope(actor, job.branchId)
     const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este colaborador não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
     return action === 'start'
       ? jobLogService.openBreak(id, freelancer, 'agency')
@@ -1044,7 +1044,7 @@ export const jobService = {
     }
     const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este colaborador não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
     if (job.monthlyInvoiceId) {
       const inv = await Invoice.findByPk(job.monthlyInvoiceId)
@@ -1197,7 +1197,7 @@ export const jobService = {
     }
     const currentFreelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!currentFreelancer || currentFreelancer.agencyId !== agencyId) {
-      throw new Error('Este freelancer não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
     const newFreelancer = await Freelancer.findByPk(newFreelancerId)
     if (!newFreelancer || newFreelancer.agencyId !== agencyId) {
@@ -1328,7 +1328,7 @@ export const jobService = {
     }
     const freelancer = job.freelancerId ? await Freelancer.findByPk(job.freelancerId) : null
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este colaborador não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
 
     const patch: any = { settlementApprovedAt: new Date() }
@@ -1348,7 +1348,7 @@ export const jobService = {
   async assertOwned(id: string, supermarketId: string) {
     const job = await Job.findByPk(id)
     if (!job) throw new Error('Vaga não encontrada.')
-    if (job.supermarketId !== supermarketId) throw new Error('Vaga não pertence ao seu supermercado.')
+    if (job.supermarketId !== supermarketId) throw new Error('Vaga não encontrada.')
     return job
   },
 

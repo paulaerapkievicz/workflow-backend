@@ -34,8 +34,11 @@ export const paymentController = {
       } else if (user.role === 'supermarket') {
         const supermarketId = await profileService.supermarketIdForUser(user)
         payments = supermarketId ? await paymentService.listForSupermarket(supermarketId) : []
-      } else {
+      } else if (user.role === 'admin') {
         payments = await paymentService.findAll()
+      } else {
+        // Líder e demais papéis não têm acesso financeiro (nem à carteira de ninguém).
+        return res.status(403).json({ message: 'Você não tem acesso financeiro.' })
       }
 
       return res.json(payments.map((p) => paymentService.serializeForRole(p, user.role)))
@@ -48,6 +51,27 @@ export const paymentController = {
     try {
       const payment = await paymentService.findById(req.params.id)
       if (!payment) return res.status(404).json({ message: 'Pagamento não encontrado.' })
+      const user = req.user!
+      const p = payment as any
+      // Pagamento de outra agência/rede/pessoa não existe pra quem pergunta.
+      if (user.role === 'freelancer') {
+        const f = await profileService.freelancerForUser(user)
+        if (!f || f.id !== payment.freelancerId) {
+          return res.status(404).json({ message: 'Pagamento não encontrado.' })
+        }
+      } else if (user.role === 'agency' || user.role === 'partner') {
+        const agencyId = await profileService.agencyIdForUser(user)
+        if (!agencyId || p.paymentFreelancer?.agencyId !== agencyId) {
+          return res.status(404).json({ message: 'Pagamento não encontrado.' })
+        }
+      } else if (user.role === 'supermarket') {
+        const supermarketId = await profileService.supermarketIdForUser(user)
+        if (!supermarketId || p.paymentJob?.supermarketId !== supermarketId) {
+          return res.status(404).json({ message: 'Pagamento não encontrado.' })
+        }
+      } else if (user.role !== 'admin') {
+        return res.status(404).json({ message: 'Pagamento não encontrado.' })
+      }
       return res.json(paymentService.serializeForRole(payment, req.user!.role))
     } catch (error) {
       return fail(res, error, 500)

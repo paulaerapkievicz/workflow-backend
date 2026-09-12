@@ -36,10 +36,10 @@ export const invoiceAdjustmentService = {
     if (scope?.supermarketId || scope?.agencyId) {
       const invoice = await loadInvoice(invoiceId)
       if (scope.supermarketId && invoice.supermarketId !== scope.supermarketId) {
-        throw new Error('Fatura não pertence ao seu supermercado.')
+        throw new Error('Fatura não encontrada.')
       }
       if (scope.agencyId && invoice.agencyId !== scope.agencyId) {
-        throw new Error('Fatura não pertence à sua agência.')
+        throw new Error('Fatura não encontrada.')
       }
     }
     return InvoiceAdjustment.findAll({
@@ -64,7 +64,7 @@ export const invoiceAdjustmentService = {
     data: { description?: string; amount?: number | string }
   ) {
     const invoice = await loadInvoice(invoiceId)
-    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não pertence ao seu supermercado.')
+    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não encontrada.')
     if (invoice.status !== 'pending') throw new Error('Só dá para contestar uma fatura pendente.')
 
     const description = String(data.description ?? '').trim()
@@ -89,7 +89,7 @@ export const invoiceAdjustmentService = {
 
   async removeBySupermarket(invoiceId: string, adjustmentId: string, supermarketId: string) {
     const invoice = await loadInvoice(invoiceId)
-    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não pertence ao seu supermercado.')
+    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não encontrada.')
     const adjustment = await InvoiceAdjustment.findByPk(adjustmentId)
     if (!adjustment || adjustment.invoiceId !== invoiceId) throw new Error('Contestação não encontrada.')
     if (adjustment.status !== 'pending') throw new Error('Só dá para remover uma contestação que ainda não foi resolvida.')
@@ -100,7 +100,7 @@ export const invoiceAdjustmentService = {
   // A agência aprova: o abatimento passa a valer (reduz o valor líquido) e a agência o absorve.
   async approve(invoiceId: string, adjustmentId: string, agencyId: string, userId: string) {
     const invoice = await loadInvoice(invoiceId)
-    if (invoice.agencyId !== agencyId) throw new Error('Fatura não pertence à sua agência.')
+    if (invoice.agencyId !== agencyId) throw new Error('Fatura não encontrada.')
     if (invoice.status !== 'pending') throw new Error('A fatura já foi paga — não dá para aprovar abatimento.')
 
     const adjustment = await InvoiceAdjustment.findByPk(adjustmentId)
@@ -132,7 +132,7 @@ export const invoiceAdjustmentService = {
     data: { note?: string }
   ) {
     const invoice = await loadInvoice(invoiceId)
-    if (invoice.agencyId !== agencyId) throw new Error('Fatura não pertence à sua agência.')
+    if (invoice.agencyId !== agencyId) throw new Error('Fatura não encontrada.')
 
     const adjustment = await InvoiceAdjustment.findByPk(adjustmentId)
     if (!adjustment || adjustment.invoiceId !== invoiceId) throw new Error('Contestação não encontrada.')
@@ -153,7 +153,7 @@ export const invoiceAdjustmentService = {
   // Desfaz um abatimento já aprovado (enquanto a fatura ainda não foi paga): estorna os valores.
   async revert(invoiceId: string, adjustmentId: string, agencyId: string) {
     const invoice = await loadInvoice(invoiceId)
-    if (invoice.agencyId !== agencyId) throw new Error('Fatura não pertence à sua agência.')
+    if (invoice.agencyId !== agencyId) throw new Error('Fatura não encontrada.')
     if (invoice.status !== 'pending') throw new Error('A fatura já foi paga — não dá para reverter abatimento.')
 
     const adjustment = await InvoiceAdjustment.findByPk(adjustmentId)

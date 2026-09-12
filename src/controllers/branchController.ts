@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { branchService } from '../services/branchService';
 import { profileService } from '../services/profileService';
 import { Supermarket } from '../models/Supermarket';
@@ -15,25 +15,52 @@ async function canManageBranch(req: AuthRequest, branchId: string): Promise<bool
     const market = await Supermarket.findByPk(branch.supermarketId);
     return !!agencyId && !!market && market.agencyId === agencyId;
   }
+  if (req.user!.role === 'leader') {
+    const actor = await profileService.agencyContextForUser(req.user!);
+    const market = await Supermarket.findByPk(branch.supermarketId);
+    if (!actor || !market || market.agencyId !== actor.agencyId) return false;
+    return !actor.scopeBranchIds || actor.scopeBranchIds.includes(branchId);
+  }
   const ctx = await profileService.supermarketContextForUser(req.user!);
   return !!ctx && ctx.supermarketId === branch.supermarketId && ctx.isOwner;
 }
 
+/** Pode ler a filial: admin, agência-cliente (rede/escopo) ou qualquer membro do supermercado. */
+async function canReadBranch(req: AuthRequest, branchId: string): Promise<boolean> {
+  if (req.user!.role === 'admin') return true;
+  const branch = await Branch.findByPk(branchId);
+  if (!branch) return false;
+  if (req.user!.role === 'agency' || req.user!.role === 'leader' || req.user!.role === 'partner') {
+    const actor = await profileService.agencyContextForUser(req.user!);
+    const market = await Supermarket.findByPk(branch.supermarketId);
+    if (!actor || !market || market.agencyId !== actor.agencyId) return false;
+    return !actor.scopeBranchIds || actor.scopeBranchIds.includes(branchId);
+  }
+  if (req.user!.role === 'supermarket') {
+    const supermarketId = await profileService.supermarketIdForUser(req.user!);
+    return !!supermarketId && supermarketId === branch.supermarketId;
+  }
+  return false;
+}
+
 export const branchController = {
-  // GET /branches - Lista todas as filiais
-  async index(req: Request, res: Response) {
+  // GET /branches - Lista as filiais visíveis ao usuário logado (rede/escopo dele)
+  async index(req: AuthRequest, res: Response) {
     try {
-      const branches = await branchService.findAll();
+      const branches = await branchService.findAllForUser(req.user!);
       return res.json(branches);
     } catch (error) {
       return res.status(500).json({ message: 'Erro ao buscar filiais.' });
     }
   },
 
-  // GET /branches/:id - Busca uma filial pelo ID
-  async show(req: Request, res: Response) {
+  // GET /branches/:id - Busca uma filial pelo ID (só quem tem acesso a ela)
+  async show(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (!(await canReadBranch(req, id))) {
+        return res.status(404).json({ message: 'Filial não encontrada.' });
+      }
       const branch = await branchService.findById(id);
       if (!branch) return res.status(404).json({ message: 'Filial não encontrada.' });
       return res.json(branch);
@@ -71,7 +98,7 @@ export const branchController = {
         const agencyId = await profileService.agencyIdForUser(req.user);
         const market = await Supermarket.findByPk(supermarketId);
         if (!agencyId || !market || market.agencyId !== agencyId) {
-          return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+          return res.status(404).json({ message: 'Supermercado não encontrado.' });
         }
       }
       const branch = await branchService.create({ ...req.body, supermarketId, serviceStatus });
@@ -94,9 +121,12 @@ export const branchController = {
   },
 
   // PUT /branches/:id - Atualiza uma filial pelo ID
-  async update(req: Request, res: Response) {
+  async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (!(await canManageBranch(req, id))) {
+        return res.status(404).json({ message: 'Filial não encontrada.' });
+      }
       const branch = await branchService.update(id, req.body);
       return res.json(branch);
     } catch (error) {
@@ -108,7 +138,7 @@ export const branchController = {
   async resolvedProfile(req: AuthRequest, res: Response) {
     try {
       if (!(await canManageBranch(req, req.params.id))) {
-        return res.status(403).json({ message: 'Sem permissão para ver esta filial.' });
+        return res.status(404).json({ message: 'Filial não encontrada.' });
       }
       const { branch, profile } = await branchService.resolvedProfile(req.params.id);
       return res.json({ branch, profile });
@@ -121,7 +151,7 @@ export const branchController = {
   async updateProfile(req: AuthRequest, res: Response) {
     try {
       if (!(await canManageBranch(req, req.params.id))) {
-        return res.status(403).json({ message: 'Sem permissão para editar esta filial.' });
+        return res.status(404).json({ message: 'Filial não encontrada.' });
       }
       const branch = await branchService.updateProfile(req.params.id, req.body ?? {});
       return res.json(branch);
@@ -134,7 +164,7 @@ export const branchController = {
   async uploadProfileImage(req: AuthRequest, res: Response) {
     try {
       if (!(await canManageBranch(req, req.params.id))) {
-        return res.status(403).json({ message: 'Sem permissão para editar esta filial.' });
+        return res.status(404).json({ message: 'Filial não encontrada.' });
       }
       if (!req.file) return res.status(400).json({ message: 'Envie um arquivo de imagem.' });
       const field = req.path.endsWith('/photo') ? 'profilePhotoUrl' : 'logoUrl';
@@ -146,9 +176,12 @@ export const branchController = {
   },
 
   // DELETE /branches/:id - Exclui uma filial pelo ID
-  async delete(req: Request, res: Response) {
+  async delete(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (!(await canManageBranch(req, id))) {
+        return res.status(404).json({ message: 'Filial não encontrada.' });
+      }
       await branchService.delete(id);
       return res.json({ message: 'Filial excluída com sucesso.' });
     } catch (error) {

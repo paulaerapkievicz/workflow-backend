@@ -1417,6 +1417,12 @@ async function main() {
   const jobsForOtherAgency = (await req('GET', '/jobs', { token: otherAgencyT })).data
   ok(Array.isArray(jobsForOtherAgency) && jobsForOtherAgency.length === 0, 'agência nova não vê nenhuma vaga da Agência Prime', jobsForOtherAgency.length)
 
+  // Regressão: /orders (Convocações) tem que ficar tão isolado por agência quanto /jobs.
+  const ordersForOtherAgency = (await req('GET', '/orders', { token: otherAgencyT })).data
+  ok(Array.isArray(ordersForOtherAgency) && ordersForOtherAgency.length === 0, 'agência nova não vê nenhum pedido/convocação da Agência Prime', ordersForOtherAgency.length)
+  const primeOrderForOtherAgency = await req('GET', `/orders/${unblockedOrder.data.id}`, { token: otherAgencyT })
+  ok(primeOrderForOtherAgency.status === 404, 'agência nova não acessa direto um pedido da Agência Prime pelo id (404, sem revelar que existe)', primeOrderForOtherAgency.status)
+
   const otherFreeEmail = `outro-free-${Date.now()}@email.com`
   await req('PUT', '/agency/settings', { token: otherAgencyT, body: { allowSelfRegistration: true } })
   const otherFreeReg = await req('POST', '/auth/register', {

@@ -181,7 +181,7 @@ export const uniformService = {
     if (!order) throw new Error('Pedido de uniforme não encontrado.')
     const freelancer = await Freelancer.findByPk(order.freelancerId)
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este colaborador não pertence à sua agência.')
+      throw new Error('Pedido de uniforme não encontrado.')
     }
     return order
   },

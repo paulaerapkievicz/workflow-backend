@@ -79,7 +79,7 @@ export const reviewService = {
 
     const where: any = { jobId }
     if (role === 'supermarket') {
-      if (job.supermarketId !== supermarketId) throw new Error('Esta vaga não pertence ao seu supermercado.')
+      if (job.supermarketId !== supermarketId) throw new Error('Vaga não encontrada.')
       where.authorRole = 'supermarket'
     }
     return Review.findAll({ where, order: [['createdAt', 'DESC']], include: reviewRowIncludes })
@@ -131,7 +131,7 @@ export const reviewService = {
 
     const freelancer = await Freelancer.findByPk(job.freelancerId)
     if (!freelancer || freelancer.agencyId !== agencyId) {
-      throw new Error('Este freelancer não pertence à sua agência.')
+      throw new Error('Colaborador não encontrado.')
     }
 
     // A avaliação é uma decisão da agência (config), com override opcional por vaga.
@@ -175,7 +175,7 @@ export const reviewService = {
   ) {
     const job = await Job.findByPk(jobId)
     if (!job) throw new Error('Vaga não encontrada.')
-    if (job.supermarketId !== supermarketId) throw new Error('Esta vaga não pertence ao seu supermercado.')
+    if (job.supermarketId !== supermarketId) throw new Error('Vaga não encontrada.')
     if (job.status !== 'completed') throw new Error('A vaga precisa estar concluída para ser avaliada.')
     if (!job.freelancerId) throw new Error('Vaga sem colaborador.')
 

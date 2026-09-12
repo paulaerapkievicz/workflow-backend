@@ -33,22 +33,28 @@ async function loadManageableFreelancer(req: AuthRequest, res: Response, id: str
     }
     return freelancer;
   }
+  // Colaborador de outra agência (ou fora do escopo do líder) não existe pra quem pergunta.
   const actor = await profileService.agencyContextForUser(req.user!);
   if (!actor || freelancer.agencyId !== actor.agencyId) {
-    res.status(403).json({ message: 'Este colaborador não pertence à sua agência.' });
+    res.status(404).json({ message: 'Colaborador não encontrado.' });
     return null;
   }
   if (!inFreelancerScope(actor, freelancer.id)) {
-    res.status(403).json({ message: 'Este colaborador está fora do seu grupo de trabalho.' });
+    res.status(404).json({ message: 'Colaborador não encontrado.' });
     return null;
   }
   return freelancer;
 }
 
 export const freelancerController = {
-  async create(req: Request, res: Response) {
+  async create(req: AuthRequest, res: Response) {
     try {
-      const freelancer = await freelancerService.createFreelancer(req.body);
+      let agencyId = req.body?.agencyId;
+      if (req.user!.role !== 'admin') {
+        agencyId = await profileService.agencyIdForUser(req.user!);
+        if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' });
+      }
+      const freelancer = await freelancerService.createFreelancer({ ...req.body, agencyId });
       return res.status(201).json(freelancer);
     } catch (err) {
       return res.status(500).json({ message: 'Erro ao criar freelancer.' });
@@ -170,8 +176,10 @@ export const freelancerController = {
     }
   },
 
-  async delete(req: Request, res: Response) {
+  async delete(req: AuthRequest, res: Response) {
     try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
       const deleted = await freelancerService.deleteFreelancer(req.params.id);
       if (!deleted) return res.status(404).json({ message: 'Freelancer não encontrado.' });
 
@@ -181,8 +189,10 @@ export const freelancerController = {
     }
   },
 
-  async listCategories(req: Request, res: Response) {
+  async listCategories(req: AuthRequest, res: Response) {
     try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
       const categories = await freelancerService.getFreelancerCategories(req.params.id);
       return res.json(categories);
     } catch (err) {

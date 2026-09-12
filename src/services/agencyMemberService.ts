@@ -80,7 +80,7 @@ async function assertScopeBelongsToAgency(agencyId: string, freelancerIds: strin
   if (freelancerIds.length) {
     const count = await Freelancer.count({ where: { id: { [Op.in]: freelancerIds }, agencyId } })
     if (count !== new Set(freelancerIds).size) {
-      throw new Error('Algum colaborador do escopo não pertence à sua agência.')
+      throw new Error('Algum colaborador do escopo não foi encontrado.')
     }
   }
   if (branchIds.length) {
@@ -90,7 +90,7 @@ async function assertScopeBelongsToAgency(agencyId: string, freelancerIds: strin
     })
     if (branches.length !== new Set(branchIds).size) throw new Error('Filial do escopo não encontrada.')
     if (branches.some((b) => (b as any).parentSupermarket?.agencyId !== agencyId)) {
-      throw new Error('Alguma filial do escopo não é de um cliente da sua agência.')
+      throw new Error('Filial do escopo não encontrada.')
     }
   }
 }

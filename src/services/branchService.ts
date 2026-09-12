@@ -1,8 +1,11 @@
+import { Op } from 'sequelize';
 import { Branch, BranchCreationAttributes } from '../models/Branch';
 import { Supermarket } from '../models/Supermarket';
 import { geocodeAddress } from '../helpers/geocode';
 import { resolveBranchProfile } from '../helpers/branchProfile';
 import { assertField } from '../helpers/validation';
+import { UserInstance } from '../models/User';
+import { profileService } from './profileService';
 
 /** Dados cadastrais próprios da filial (vazio = herda da matriz). */
 const PROFILE_FIELDS = [
@@ -27,8 +30,29 @@ function manualCoords(data: Record<string, any>) {
 }
 
 export const branchService = {
-  async findAll() {
-    return Branch.findAll({ include: { model: Supermarket, as: 'supermarket' } });
+  /**
+   * Lista as filiais visíveis pelo usuário logado — nunca vaza filiais de clientes de
+   * outra agência (ou de outro supermercado) para quem não tem acesso a elas.
+   */
+  async findAllForUser(user: Pick<UserInstance, 'id' | 'role'>) {
+    if (user.role === 'admin') {
+      return Branch.findAll({ include: { model: Supermarket, as: 'supermarket' } });
+    }
+    if (user.role === 'agency' || user.role === 'leader' || user.role === 'partner') {
+      const actor = await profileService.agencyContextForUser(user)
+      if (!actor) return []
+      const where: any = { '$supermarket.agency_id$': actor.agencyId }
+      if (actor.scopeBranchIds) where.id = { [Op.in]: actor.scopeBranchIds }
+      return Branch.findAll({ where, include: { model: Supermarket, as: 'supermarket' } })
+    }
+    if (user.role === 'supermarket') {
+      const ctx = await profileService.supermarketContextForUser(user)
+      if (!ctx) return []
+      const where: any = { supermarketId: ctx.supermarketId }
+      if (ctx.branchIds) where.id = { [Op.in]: ctx.branchIds }
+      return Branch.findAll({ where, include: { model: Supermarket, as: 'supermarket' } })
+    }
+    return []
   },
 
   async findById(id: string) {
@@ -128,7 +152,7 @@ export const branchService = {
     const branch = await Branch.findByPk(id);
     if (!branch) throw new Error('Filial não encontrada.');
     const market = await Supermarket.findByPk(branch.supermarketId);
-    if (!market || market.agencyId !== agencyId) throw new Error('Esta filial não pertence a um cliente da sua agência.');
+    if (!market || market.agencyId !== agencyId) throw new Error('Filial não encontrada.');
     if (branch.serviceStatus === 'approved') throw new Error('Esta filial já está aprovada.');
     return branch.update({ serviceStatus: 'approved', approvedAt: new Date(), approvedBy });
   },

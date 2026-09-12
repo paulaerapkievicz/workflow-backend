@@ -121,7 +121,7 @@ export const supermarketController = {
   async listMembers(req: AuthRequest, res: Response) {
     try {
       if (!(await canManageTeam(req, req.params.id))) {
-        return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       const members = await SupermarketMember.findAll({
         where: { supermarketId: req.params.id },
@@ -157,7 +157,7 @@ export const supermarketController = {
     try {
       const supermarketId = req.params.id;
       if (!(await canManageTeam(req, supermarketId))) {
-        return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       const {
         name, password, branchIds, teamRoleId,
@@ -207,7 +207,7 @@ export const supermarketController = {
       const member = await SupermarketMember.findByPk(req.params.id);
       if (!member) return res.status(404).json({ message: 'Membro não encontrado.' });
       if (!(await canManageTeam(req, member.supermarketId))) {
-        return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       const patch: any = {};
       // O cargo (tag) pode ser trocado inclusive para o dono/administrador.
@@ -253,7 +253,7 @@ export const supermarketController = {
       const member = await SupermarketMember.findByPk(req.params.id);
       if (!member) return res.status(404).json({ message: 'Membro não encontrado.' });
       if (!(await canManageTeam(req, member.supermarketId))) {
-        return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       if (member.isOwner) return res.status(400).json({ message: 'O dono não pode ser removido.' });
       await User.destroy({ where: { id: member.userId } }); // cascata remove o vínculo
@@ -269,7 +269,7 @@ export const supermarketController = {
     try {
       const supermarketId = req.params.id;
       if (!(await assertAgencyOwnsSupermarket(req, supermarketId))) {
-        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       const market = await Supermarket.findByPk(supermarketId);
       if (!market) return res.status(404).json({ message: 'Supermercado não encontrado.' });
@@ -287,7 +287,7 @@ export const supermarketController = {
       const member = await SupermarketMember.findByPk(req.params.id);
       if (!member) return res.status(404).json({ message: 'Membro não encontrado.' });
       if (!(await canManageTeam(req, member.supermarketId))) {
-        return res.status(403).json({ message: 'Sem permissão para gerenciar a equipe.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       const result = await passwordResetService.resetForUser(member.userId);
       return res.json(result);
@@ -302,10 +302,10 @@ export const supermarketController = {
       if (req.user!.role === 'supermarket') {
         const ctx = await profileService.supermarketContextForUser(req.user!);
         if (!ctx || ctx.supermarketId !== req.params.id) {
-          return res.status(403).json({ message: 'Sem permissão para ver estes valores.' });
+          return res.status(404).json({ message: 'Supermercado não encontrado.' });
         }
       } else if ((req.user!.role === 'agency' || req.user!.role === 'partner') && !(await assertAgencyOwnsSupermarket(req, req.params.id))) {
-        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       return res.json(await supermarketRateService.listForSupermarket(req.params.id));
     } catch (error) {
@@ -317,7 +317,7 @@ export const supermarketController = {
   async saveRate(req: AuthRequest, res: Response) {
     try {
       if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
-        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       return res.status(201).json(await supermarketRateService.upsert(req.params.id, req.body));
     } catch (error) {
@@ -329,7 +329,7 @@ export const supermarketController = {
   async updateRate(req: AuthRequest, res: Response) {
     try {
       if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
-        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       return res.json(await supermarketRateService.update(req.params.rateId, req.params.id, req.body));
     } catch (error) {
@@ -341,7 +341,7 @@ export const supermarketController = {
   async removeRate(req: AuthRequest, res: Response) {
     try {
       if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
-        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       return res.json(await supermarketRateService.remove(req.params.rateId, req.params.id));
     } catch (error) {
@@ -353,7 +353,7 @@ export const supermarketController = {
   async setAppPayment(req: AuthRequest, res: Response) {
     try {
       if (!(await assertAgencyOwnsSupermarket(req, req.params.id))) {
-        return res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       const market = await Supermarket.findByPk(req.params.id);
       if (!market) return res.status(404).json({ message: 'Supermercado não encontrado.' });
@@ -368,7 +368,7 @@ export const supermarketController = {
   async updateProfile(req: AuthRequest, res: Response) {
     try {
       if (!(await canManageTeam(req, req.params.id))) {
-        return res.status(403).json({ message: 'Sem permissão para editar este supermercado.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       return res.json(await supermarketService.updateProfile(req.params.id, req.body ?? {}));
     } catch (error) {
@@ -380,7 +380,7 @@ export const supermarketController = {
   async uploadProfileImage(req: AuthRequest, res: Response) {
     try {
       if (!(await canManageTeam(req, req.params.id))) {
-        return res.status(403).json({ message: 'Sem permissão para editar este supermercado.' });
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
       }
       if (!req.file) return res.status(400).json({ message: 'Envie um arquivo de imagem.' });
       const field = req.path.endsWith('/photo') ? 'profilePhotoUrl' : 'logoUrl';
@@ -421,12 +421,23 @@ export const supermarketController = {
     }
   },
 
-  // GET /supermarkets/:id - Mostra um supermercado específico
-  async show(req: Request, res: Response) {
+  // GET /supermarkets/:id - Mostra um supermercado específico (só o dono/agência-cliente/admin)
+  async show(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
       const supermarket = await supermarketService.findById(id);
       if (!supermarket) return res.status(404).json({ message: 'Supermercado não encontrado.' });
+      if (req.user!.role === 'supermarket') {
+        const supermarketId = await profileService.supermarketIdForUser(req.user!);
+        if (supermarket.id !== supermarketId) {
+          return res.status(404).json({ message: 'Supermercado não encontrado.' });
+        }
+      } else if (['agency', 'leader', 'partner'].includes(req.user!.role)) {
+        const agencyId = await profileService.agencyIdForUser(req.user!);
+        if (!agencyId || supermarket.agencyId !== agencyId) {
+          return res.status(404).json({ message: 'Supermercado não encontrado.' });
+        }
+      }
       return res.json(supermarket);
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro ao buscar supermercado.' });
@@ -447,24 +458,30 @@ export const supermarketController = {
   },
 
   // PUT /supermarkets/:id - Atualiza um supermercado
-  async update(req: Request, res: Response) {
+  async update(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (req.user!.role !== 'admin' && !(await canManageTeam(req, id))) {
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
+      }
       const supermarket = await supermarketService.update(id, req.body);
       if (!supermarket) return res.status(404).json({ message: 'Supermercado não encontrado.' });
       return res.json(supermarket);
     } catch (error) {
-      const message = error instanceof Error && error.name === 'SequelizeForeignKeyConstraintError' 
-        ? 'O proprietário informado não existe.' 
+      const message = error instanceof Error && error.name === 'SequelizeForeignKeyConstraintError'
+        ? 'O proprietário informado não existe.'
         : 'Erro ao atualizar supermercado.';
       return res.status(400).json({ message });
     }
   },
 
   // DELETE /supermarkets/:id - Exclui um supermercado
-  async delete(req: Request, res: Response) {
+  async delete(req: AuthRequest, res: Response) {
     try {
       const { id } = req.params;
+      if (req.user!.role !== 'admin' && !(await canManageTeam(req, id))) {
+        return res.status(404).json({ message: 'Supermercado não encontrado.' });
+      }
       const result = await supermarketService.delete(id);
       if (!result) return res.status(404).json({ message: 'Supermercado não encontrado.' });
       return res.json({ message: 'Supermercado excluído com sucesso.' });

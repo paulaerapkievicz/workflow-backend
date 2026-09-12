@@ -155,7 +155,7 @@ export const leaderJobCreditService = {
     const credit = await AgencyMemberJobCredit.findByPk(id)
     if (!credit) throw new Error('Crédito não encontrado.')
     const member = await AgencyMember.findByPk(credit.agencyMemberId)
-    if (!member || member.agencyId !== agencyId) throw new Error('Este crédito não é da sua agência.')
+    if (!member || member.agencyId !== agencyId) throw new Error('Crédito não encontrado.')
     return { credit, member }
   },
 

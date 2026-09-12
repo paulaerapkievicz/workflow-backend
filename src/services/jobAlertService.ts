@@ -375,11 +375,11 @@ export const jobAlertService = {
     if (!alert) throw new Error('Ocorrência não encontrada.')
     const a = alert as any
     if (a.alertJob?.jobSupermarket?.agencyId !== actor.agencyId) {
-      throw new Error('Esta ocorrência não pertence à sua agência.')
+      throw new Error('Ocorrência não encontrada.')
     }
     if (!actor.isOwner) {
       if (!inBranchScope(actor, a.alertJob?.branchId) || !inFreelancerScope(actor, a.freelancerId)) {
-        throw new Error('Esta ocorrência está fora do seu grupo de trabalho.')
+        throw new Error('Ocorrência não encontrada.')
       }
     }
     return alert

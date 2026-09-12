@@ -14,17 +14,19 @@ function trimOrNull(v: unknown): string | null {
 }
 
 export const supermarketService = {
-  // Lista os supermercados — opcionalmente restrita aos clientes de uma agência
+  // Lista os supermercados de uma agência (o chamador sempre informa a própria agencyId).
   async findAll(agencyId?: string) {
     return await Supermarket.findAll({
       where: agencyId ? { agencyId } : undefined,
-      include: { model: User, as: 'owner' },
+      include: { model: User, as: 'owner', attributes: { exclude: ['passwordHash'] } },
     });
   },
 
   // Busca um supermercado por ID
   async findById(id: string) {
-    return await Supermarket.findByPk(id, { include: { model: User, as: 'owner' } });
+    return await Supermarket.findByPk(id, {
+      include: { model: User, as: 'owner', attributes: { exclude: ['passwordHash'] } },
+    });
   },
 
   // Cria um novo supermercado

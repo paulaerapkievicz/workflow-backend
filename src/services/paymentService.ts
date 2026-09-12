@@ -274,7 +274,7 @@ export const paymentService = {
   async invoicePay(invoiceId: string, supermarketId: string) {
     const invoice = await Invoice.findByPk(invoiceId)
     if (!invoice) throw new Error('Fatura não encontrada.')
-    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não pertence ao seu supermercado.')
+    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não encontrada.')
     if (invoice.status !== 'pending') throw new Error('Esta fatura não está pendente.')
 
     const market = await Supermarket.findByPk(supermarketId)
@@ -316,7 +316,7 @@ export const paymentService = {
   async syncInvoicePayment(invoiceId: string, supermarketId: string) {
     const invoice = await Invoice.findByPk(invoiceId)
     if (!invoice) throw new Error('Fatura não encontrada.')
-    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não pertence ao seu supermercado.')
+    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não encontrada.')
     if (invoice.status !== 'pending' || !paymentGatewayService.configured) return invoice
 
     const approved = await paymentGatewayService.findApprovedPayment(`${INVOICE_REF_PREFIX}${invoice.id}`)
@@ -333,7 +333,7 @@ export const paymentService = {
   async markInvoicePaidByAgency(invoiceId: string, agencyId: string) {
     const invoice = await Invoice.findByPk(invoiceId)
     if (!invoice) throw new Error('Fatura não encontrada.')
-    if (invoice.agencyId !== agencyId) throw new Error('Fatura não pertence à sua agência.')
+    if (invoice.agencyId !== agencyId) throw new Error('Fatura não encontrada.')
     if (invoice.status !== 'pending') throw new Error('Esta fatura não está pendente.')
     await invoice.update({ status: 'paid', paidAt: new Date(), paymentProvider: 'manual' })
     return invoice.reload()

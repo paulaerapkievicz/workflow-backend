@@ -31,10 +31,16 @@ export const orderController = {
     try {
       const order = await orderService.findById(req.params.id)
       if (!order) return res.status(404).json({ message: 'Pedido não encontrado.' })
+      // Pedido de outra rede/agência não existe pra quem pergunta — nunca revela que é "de outro".
       if (req.user!.role === 'supermarket') {
         const supermarketId = await profileService.supermarketIdForUser(req.user!)
         if (order.supermarketId !== supermarketId) {
-          return res.status(403).json({ message: 'Pedido não pertence ao seu supermercado.' })
+          return res.status(404).json({ message: 'Pedido não encontrado.' })
+        }
+      } else if (['agency', 'leader', 'partner'].includes(req.user!.role)) {
+        const actor = await profileService.agencyContextForUser(req.user!)
+        if (!actor || (order as any).orderSupermarket?.agencyId !== actor.agencyId) {
+          return res.status(404).json({ message: 'Pedido não encontrado.' })
         }
       }
       return res.json(order)

@@ -68,8 +68,8 @@ router.get('/platform/agencies/:id', authorize('admin'), adminAgencyController.s
 router.put('/platform/agencies/:id', authorize('admin'), adminAgencyController.update);
 
 // ----- Supermercados -----
-router.get('/supermarkets', supermarketController.index);
-router.get('/supermarkets/:id', supermarketController.show);
+router.get('/supermarkets', authorize('agency', 'leader', 'partner', 'admin'), supermarketController.index);
+router.get('/supermarkets/:id', authorize('supermarket', 'agency', 'leader', 'partner', 'admin'), supermarketController.show);
 router.post('/supermarkets', authorize('supermarket', 'admin'), supermarketController.create);
 router.post('/agency/supermarkets', authorize('agency', 'partner'), requireAgencyFeature('clientes'), supermarketController.createForAgency);
 router.post('/supermarkets/:id/reset-password', authorize('agency', 'partner'), requireAgencyFeature('clientes'), supermarketController.resetOwnerPassword);
@@ -100,9 +100,9 @@ router.delete('/supermarkets/:id/rates/:rateId', authorize('agency', 'partner', 
 router.put('/supermarkets/:id/app-payment', authorize('agency', 'partner', 'admin'), requireAgencyFeature('clientes'), supermarketController.setAppPayment);
 
 // ----- Filiais -----
-router.get('/branches', branchController.index);
+router.get('/branches', authorize('supermarket', 'agency', 'leader', 'partner', 'admin'), branchController.index);
 router.post('/branches/geocode', authorize('supermarket', 'agency', 'partner', 'admin'), branchController.geocode);
-router.get('/branches/:id', branchController.show);
+router.get('/branches/:id', authorize('supermarket', 'agency', 'leader', 'partner', 'admin'), branchController.show);
 router.post('/branches', authorize('supermarket', 'agency', 'partner', 'admin'), requireAgencyFeature('clientes'), branchController.create);
 router.put('/branches/:id', authorize('supermarket', 'agency', 'partner', 'admin'), requireAgencyFeature('clientes'), branchController.update);
 router.delete('/branches/:id', authorize('supermarket', 'agency', 'partner', 'admin'), requireAgencyFeature('clientes'), branchController.delete);
@@ -130,7 +130,7 @@ router.post('/freelancers', authorize('agency', 'partner', 'admin'), requireAgen
 router.put('/freelancers/:id', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), freelancerController.update);
 router.delete('/freelancers/:id', authorize('agency', 'partner', 'admin'), requireAgencyFeature('colaboradores'), freelancerController.delete);
 router.post('/freelancers/:id/reset-password', authorize('agency', 'leader', 'partner'), requireAgencyFeature('colaboradores'), freelancerController.resetPassword);
-router.get('/freelancers/:id/categories', freelancerController.listCategories);
+router.get('/freelancers/:id/categories', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), freelancerController.listCategories);
 router.get('/freelancers/:id/reviews', authorize('agency', 'leader', 'partner', 'admin'), reviewController.getByFreelancerId);
 router.get('/agency/reviews', authorize('agency', 'leader', 'partner'), reviewController.agencyReviews);
 router.get('/freelancers/:id/reputation', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), reviewController.reputation);
@@ -285,8 +285,8 @@ router.get('/freelancer-locations', freelancerLocationController.getLatestLocati
 
 // ----- Pagamentos -----
 router.get('/payments', authorize('admin'), paymentController.index);
-router.get('/payments/mine', paymentController.mine);
-router.get('/payments/:id', paymentController.show);
+router.get('/payments/mine', authorize('freelancer', 'agency', 'partner', 'supermarket', 'admin'), paymentController.mine);
+router.get('/payments/:id', authorize('freelancer', 'agency', 'partner', 'supermarket', 'admin'), paymentController.show);
 router.put('/payments/:id/cancel', authorize('admin'), paymentController.cancel);
 
 // ----- Faturas (supermercado → agência) -----

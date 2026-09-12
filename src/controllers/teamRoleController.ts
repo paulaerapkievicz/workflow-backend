@@ -38,7 +38,7 @@ async function ownerScope(
     if (supermarketId) {
       const market = await Supermarket.findByPk(supermarketId)
       if (!market || market.agencyId !== agencyId) {
-        res.status(403).json({ message: 'Este supermercado não é cliente da sua agência.' })
+        res.status(404).json({ message: 'Supermercado não encontrado.' })
         return null
       }
       return { scope: 'supermarket', ownerId: market.id }

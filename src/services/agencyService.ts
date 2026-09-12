@@ -30,9 +30,15 @@ async function assertCnpjAvailable(cnpj: string, exceptAgencyId?: string) {
 }
 
 export const agencyService = {
-  // Busca todas as agências
+  /**
+   * Lista pública de agências (usada sem login pelo autocadastro de colaborador em
+   * /register, que filtra `allowSelfRegistration`) — lista branca, nada financeiro/privado.
+   */
   async findAll() {
-    return await Agency.findAll({ order: [['name', 'ASC']] });
+    return await Agency.findAll({
+      attributes: ['id', 'name', 'logoUrl', 'allowSelfRegistration', 'active'],
+      order: [['name', 'ASC']],
+    });
   },
 
   // Busca uma agência pelo ID
