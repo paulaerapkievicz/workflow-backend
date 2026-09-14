@@ -29,7 +29,7 @@ import { adminAgencyController } from './controllers/adminAgencyController';
 import { contractTemplateController } from './controllers/contractTemplateController';
 import { contractSignatureController } from './controllers/contractSignatureController';
 import { ensureAuth, authorize, ensureCanViewInvoices, ensureCanPayInvoices, requireAgencyFeature, requireLeaderFeature } from './middlewares/auth';
-import { upload } from './middlewares/upload';
+import { upload, uploadDocument } from './middlewares/upload';
 
 const router = express.Router();
 
@@ -296,6 +296,10 @@ router.get('/invoices/mine', authorize('supermarket'), ensureCanViewInvoices, pa
 router.post('/invoices/:id/pay', authorize('supermarket'), ensureCanPayInvoices, paymentController.invoicePay);
 router.post('/invoices/:id/sync-payment', authorize('supermarket'), ensureCanPayInvoices, paymentController.invoiceSyncPayment);
 router.post('/invoices/:id/mark-paid', authorize('agency', 'partner'), requireAgencyFeature('financeiro'), paymentController.invoiceMarkPaid);
+// Comprovante de pagamento manual (supermercado anexa, agência confere)
+router.post('/invoices/:id/payment-proof', authorize('supermarket'), ensureCanPayInvoices, uploadDocument.single('file'), paymentController.submitPaymentProof);
+router.post('/invoices/:id/payment-proof/approve', authorize('agency', 'partner'), requireAgencyFeature('financeiro'), paymentController.approvePaymentProof);
+router.post('/invoices/:id/payment-proof/reject', authorize('agency', 'partner'), requireAgencyFeature('financeiro'), paymentController.rejectPaymentProof);
 // Contestação/abatimento do fechamento mensal (supermercado lança, agência resolve)
 router.get('/invoices/:id/adjustments', authorize('supermarket', 'agency', 'partner', 'admin'), requireAgencyFeature('financeiro'), ensureCanViewInvoices, invoiceAdjustmentController.list);
 router.post('/invoices/:id/adjustments', authorize('supermarket'), ensureCanPayInvoices, invoiceAdjustmentController.create);

@@ -84,6 +84,10 @@ export const billingService = {
         paymentUrl: i.paymentUrl ?? null,
         paymentRef: i.paymentRef ?? null,
         paidAt: i.paidAt ?? null,
+        paymentProofUrl: i.paymentProofUrl ?? null,
+        paymentProofStatus: i.paymentProofStatus ?? null,
+        paymentProofNote: i.paymentProofNote ?? null,
+        paymentProofUploadedAt: i.paymentProofUploadedAt ?? null,
         createdAt: i.createdAt,
       }
     })

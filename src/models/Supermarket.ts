@@ -103,7 +103,7 @@ export const Supermarket = sequelize.define<SupermarketInstance, Supermarket>('S
   appPaymentEnabled: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
-    defaultValue: true
+    defaultValue: false
   },
   createdAt: {
     allowNull: false,

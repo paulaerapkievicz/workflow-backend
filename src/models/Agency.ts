@@ -317,12 +317,12 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
   appPaymentEnabledForSupermarkets: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
-    defaultValue: true
+    defaultValue: false
   },
   appPaymentEnabledForFreelancers: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
-    defaultValue: true
+    defaultValue: false
   },
   whatsappNumber: {
     type: DataTypes.STRING(20),

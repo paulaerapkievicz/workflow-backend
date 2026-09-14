@@ -52,6 +52,28 @@ async function assertAgencyOwnsSupermarket(req: AuthRequest, supermarketId: stri
   return !!market && market.agencyId === agencyId;
 }
 
+const memberIncludes = [
+  { model: User, as: 'memberUser', attributes: ['id', 'name', 'email'] },
+  { model: TeamRole, as: 'teamRole', attributes: ['id', 'name', 'position'] },
+  {
+    model: SupermarketMemberBranch,
+    as: 'memberBranchLinks',
+    attributes: ['branchId'],
+    include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
+  },
+];
+
+/** Achata `teamRole`/filiais de escopo pro formato que o front espera (usado na listagem e após um PUT). */
+function serializeMemberRow(m: any) {
+  const links: any[] = m.memberBranchLinks ?? [];
+  return {
+    ...m.toJSON(),
+    teamRole: teamRoleService.serialize(m.teamRole),
+    memberBranches: links.map((l) => l.branch).filter(Boolean),
+    branchIds: links.map((l) => l.branchId),
+  };
+}
+
 /** Pode gerenciar a equipe: agência (ou sócio dela) dona do supermercado OU dono do supermercado. */
 async function canManageTeam(req: AuthRequest, supermarketId: string): Promise<boolean> {
   if (req.user!.role === 'agency' || req.user!.role === 'partner') return assertAgencyOwnsSupermarket(req, supermarketId);
@@ -125,28 +147,10 @@ export const supermarketController = {
       }
       const members = await SupermarketMember.findAll({
         where: { supermarketId: req.params.id },
-        include: [
-          { model: User, as: 'memberUser', attributes: ['id', 'name', 'email'] },
-          { model: TeamRole, as: 'teamRole', attributes: ['id', 'name', 'position'] },
-          {
-            model: SupermarketMemberBranch,
-            as: 'memberBranchLinks',
-            attributes: ['branchId'],
-            include: [{ model: Branch, as: 'branch', attributes: ['id', 'name'] }],
-          },
-        ],
+        include: memberIncludes,
         order: [['isOwner', 'DESC'], ['createdAt', 'ASC']],
       });
-      const serialized = members.map((m) => {
-        const links: any[] = (m as any).memberBranchLinks ?? [];
-        return {
-          ...(m as any).toJSON(),
-          teamRole: teamRoleService.serialize((m as any).teamRole),
-          memberBranches: links.map((l) => l.branch).filter(Boolean),
-          branchIds: links.map((l) => l.branchId),
-        };
-      });
-      return res.json(serialized);
+      return res.json(members.map(serializeMemberRow));
     } catch (error) {
       return res.status(500).json({ message: error instanceof Error ? error.message : 'Erro.' });
     }
@@ -241,7 +245,8 @@ export const supermarketController = {
           await syncMemberBranches(member.id, member.supermarketId, req.body.branchIds, t);
         }
       });
-      return res.json(member);
+      const reloaded = await SupermarketMember.findByPk(member.id, { include: memberIncludes });
+      return res.json(serializeMemberRow(reloaded));
     } catch (error) {
       return res.status(400).json({ message: error instanceof Error ? error.message : 'Erro.' });
     }

@@ -10,6 +10,7 @@ import { Supermarket } from '../models/Supermarket'
 import { Branch } from '../models/Branch'
 import { leaderJobCreditService } from '../services/leaderJobCreditService'
 import { invoiceAdjustmentService } from '../services/invoiceAdjustmentService'
+import { paymentService } from '../services/paymentService'
 import { jobAlertService } from '../services/jobAlertService'
 
 export const pendingController = {
@@ -50,6 +51,7 @@ export const pendingController = {
       let branchesToApprove = 0
       let memberCreditsToReview = 0
       let contestationsToReview = 0
+      let paymentProofsToReview = 0
       if (actor.isOwner) {
         const clientMarkets = await Supermarket.findAll({ where: { agencyId }, attributes: ['id'] })
         const marketIds = clientMarkets.map((m) => m.id)
@@ -60,6 +62,8 @@ export const pendingController = {
         memberCreditsToReview = await leaderJobCreditService.countPendingForAgency(agencyId)
         // Contestações de fechamento lançadas pelos supermercados aguardando a agência.
         contestationsToReview = await invoiceAdjustmentService.countPendingForAgency(agencyId)
+        // Comprovantes de pagamento manual anexados pelos supermercados aguardando conferência.
+        paymentProofsToReview = await paymentService.countPendingPaymentProofsForAgency(agencyId)
       }
 
       const scopeWhere: any = { agencyId }
@@ -75,6 +79,7 @@ export const pendingController = {
           branchesToApprove,
           memberCreditsToReview,
           contestationsToReview,
+          paymentProofsToReview,
           alertsOpen: alerts.open,
           alertsCritical: alerts.critical,
         })
@@ -93,6 +98,7 @@ export const pendingController = {
         branchesToApprove,
         memberCreditsToReview,
         contestationsToReview,
+        paymentProofsToReview,
         alertsOpen: alerts.open,
         alertsCritical: alerts.critical,
       })

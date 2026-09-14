@@ -945,6 +945,10 @@ async function main() {
   ok(mgrBillingBlockedAgain.status === 403, 'gerente volta a ser bloqueado depois da revogação')
 
   section('Contestação do fechamento (abatimento)')
+  // Pagamento pelo app nasce desligado por padrão (2026-09-14) — liga pra esta seção e a
+  // seguinte, que testam o fluxo de pagamento de verdade (bloqueio por contestação, toggles).
+  await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForSupermarkets: true } })
+  await req('PUT', `/supermarkets/${supermarketId}/app-payment`, { token: agencyT, body: { enabled: true } })
   const invId = close.data.id
   const invTotal = Number(close.data.totalAmount)
   const adj1 = await req('POST', `/invoices/${invId}/adjustments`, { token: superT, body: { description: 'Quebra de caixa 12/03', amount: 10 } })

@@ -25,3 +25,13 @@ export const upload = multer({
     cb(new Error('Envie um arquivo de imagem.'))
   },
 })
+
+// Documentos (ex.: comprovante de pagamento) aceitam imagem OU PDF.
+export const uploadDocument = multer({
+  storage,
+  limits: { fileSize: 8 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    if (/^image\//.test(file.mimetype) || file.mimetype === 'application/pdf') return cb(null, true)
+    cb(new Error('Envie uma imagem ou um PDF.'))
+  },
+})

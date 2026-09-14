@@ -121,6 +121,43 @@ export const paymentController = {
     }
   },
 
+  // POST /invoices/:id/payment-proof (supermarket, multipart "file") — anexa comprovante manual
+  async submitPaymentProof(req: AuthRequest, res: Response) {
+    try {
+      const supermarketId = await profileService.supermarketIdForUser(req.user!)
+      if (!supermarketId) return res.status(403).json({ message: 'Supermercado não encontrado.' })
+      if (!req.file) return res.status(400).json({ message: 'Nenhum arquivo enviado.' })
+      const fileUrl = `/uploads/${req.file.filename}`
+      return res.json(await paymentService.submitPaymentProof(req.params.id, supermarketId, fileUrl))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /invoices/:id/payment-proof/approve (agency) — confere e baixa a fatura
+  async approvePaymentProof(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await paymentService.approvePaymentProof(req.params.id, agencyId, req.user!.id))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /invoices/:id/payment-proof/reject (agency) — recusa com motivo, fatura segue pendente
+  async rejectPaymentProof(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(
+        await paymentService.rejectPaymentProof(req.params.id, agencyId, req.user!.id, { note: req.body?.note })
+      )
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // PUT /payments/:id/cancel (admin)
   async cancel(req: AuthRequest, res: Response) {
     try {

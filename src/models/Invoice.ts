@@ -6,6 +6,9 @@ import { DataTypes, Model, Optional } from 'sequelize'
 export const INVOICE_TYPES = ['job', 'monthly'] as const
 export type InvoiceType = (typeof INVOICE_TYPES)[number]
 
+export const PAYMENT_PROOF_STATUSES = ['pending', 'approved', 'rejected'] as const
+export type PaymentProofStatus = (typeof PAYMENT_PROOF_STATUSES)[number]
+
 export interface Invoice {
   id: string
   supermarketId: string
@@ -27,6 +30,12 @@ export interface Invoice {
   paymentRef?: string | null
   paymentUrl?: string | null
   paidAt?: Date | null
+  paymentProofUrl?: string | null
+  paymentProofStatus?: PaymentProofStatus | null
+  paymentProofNote?: string | null
+  paymentProofUploadedAt?: Date | null
+  paymentProofReviewedAt?: Date | null
+  paymentProofReviewedBy?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -51,6 +60,12 @@ export interface InvoiceCreationAttributes
     | 'paymentRef'
     | 'paymentUrl'
     | 'paidAt'
+    | 'paymentProofUrl'
+    | 'paymentProofStatus'
+    | 'paymentProofNote'
+    | 'paymentProofUploadedAt'
+    | 'paymentProofReviewedAt'
+    | 'paymentProofReviewedBy'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -163,6 +178,34 @@ export const Invoice = sequelize.define<InvoiceInstance, Invoice>(
     paidAt: {
       type: DataTypes.DATE,
       allowNull: true
+    },
+    paymentProofUrl: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    paymentProofStatus: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: { isIn: [[...PAYMENT_PROOF_STATUSES]] }
+    },
+    paymentProofNote: {
+      type: DataTypes.TEXT,
+      allowNull: true
+    },
+    paymentProofUploadedAt: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    paymentProofReviewedAt: {
+      type: DataTypes.DATE,
+      allowNull: true
+    },
+    paymentProofReviewedBy: {
+      type: DataTypes.UUID,
+      allowNull: true,
+      references: { model: 'users', key: 'id' },
+      onUpdate: 'CASCADE',
+      onDelete: 'SET NULL'
     },
     createdAt: {
       allowNull: false,

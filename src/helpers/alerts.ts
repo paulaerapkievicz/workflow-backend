@@ -67,6 +67,12 @@ export interface AlertCatalogEntry {
   audience: AlertAudience[]
   /** Orientação de tratamento mostrada na tela de alertas. */
   resolutionHint: string
+  /**
+   * Override do `resolutionHint` por papel — usado quando o texto padrão instrui uma ação que só
+   * a agência/líder pode tomar (ex.: "force o checkout pela agência"), o que soa incoerente pro
+   * supermercado, que só acompanha. Sem entrada para o papel, cai no `resolutionHint` padrão.
+   */
+  resolutionHintByRole?: Partial<Record<AlertAudience, string>>
 }
 
 export const ALERT_CATALOG: Record<JobAlertType, AlertCatalogEntry> = {
@@ -87,12 +93,18 @@ export const ALERT_CATALOG: Record<JobAlertType, AlertCatalogEntry> = {
     baseSeverity: 'warning',
     audience: ['agency', 'leader', 'supermarket'],
     resolutionHint: 'Fecha sozinho quando o colaborador bate o ponto. Se não vier, registre a falta ou troque o colaborador.',
+    resolutionHintByRole: {
+      supermarket: 'Fecha sozinho quando o colaborador bate o ponto. Se não vier, a agência foi avisada para registrar a falta ou trocar o colaborador.',
+    },
   },
   no_show: {
     label: 'Falta (sem check-in)',
     baseSeverity: 'critical',
     audience: ['agency', 'leader', 'supermarket'],
     resolutionHint: 'Registre a falta (bloqueia o colaborador por 7 dias) ou troque o colaborador da vaga.',
+    resolutionHintByRole: {
+      supermarket: 'A agência foi avisada para registrar a falta (bloqueia o colaborador por 7 dias) ou trocar o colaborador da vaga.',
+    },
   },
   early_checkout: {
     label: 'Saída antecipada',
@@ -105,6 +117,9 @@ export const ALERT_CATALOG: Record<JobAlertType, AlertCatalogEntry> = {
     baseSeverity: 'warning',
     audience: ['agency', 'leader', 'supermarket'],
     resolutionHint: 'Force o checkout pela agência (fecha o turno com as horas feitas) ou corrija o ponto.',
+    resolutionHintByRole: {
+      supermarket: 'O colaborador não bateu o check-out. A agência foi avisada para corrigir o ponto ou encerrar o turno.',
+    },
   },
   break_overrun: {
     label: 'Pausa acima do limite',
@@ -123,6 +138,9 @@ export const ALERT_CATALOG: Record<JobAlertType, AlertCatalogEntry> = {
     baseSeverity: 'warning',
     audience: ['agency', 'leader', 'supermarket'],
     resolutionHint: 'Decida entre aceitar a entrega parcial ou reabrir o restante para outro colaborador.',
+    resolutionHintByRole: {
+      supermarket: 'A agência foi avisada para decidir entre aceitar a entrega parcial ou reabrir o restante para outro colaborador.',
+    },
   },
   late_withdrawal: {
     label: 'Desistência de última hora',

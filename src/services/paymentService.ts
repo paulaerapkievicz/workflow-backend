@@ -339,6 +339,69 @@ export const paymentService = {
     return invoice.reload()
   },
 
+  /**
+   * Supermercado anexa um comprovante de pagamento manual (fora do gateway) numa fatura pendente
+   * — fica aguardando a agência conferir (`approvePaymentProof`/`rejectPaymentProof`).
+   */
+  async submitPaymentProof(invoiceId: string, supermarketId: string, fileUrl: string) {
+    const invoice = await Invoice.findByPk(invoiceId)
+    if (!invoice) throw new Error('Fatura não encontrada.')
+    if (invoice.supermarketId !== supermarketId) throw new Error('Fatura não encontrada.')
+    if (invoice.status !== 'pending') throw new Error('Esta fatura não está pendente.')
+
+    await invoice.update({
+      paymentProofUrl: fileUrl,
+      paymentProofStatus: 'pending',
+      paymentProofNote: null,
+      paymentProofUploadedAt: new Date(),
+      paymentProofReviewedAt: null,
+      paymentProofReviewedBy: null,
+    })
+    return invoice.reload()
+  },
+
+  /** A agência confere o comprovante e aprova — baixa a fatura, igual à baixa manual. */
+  async approvePaymentProof(invoiceId: string, agencyId: string, userId: string) {
+    const invoice = await Invoice.findByPk(invoiceId)
+    if (!invoice) throw new Error('Fatura não encontrada.')
+    if (invoice.agencyId !== agencyId) throw new Error('Fatura não encontrada.')
+    if (invoice.status !== 'pending') throw new Error('Esta fatura não está pendente.')
+    if (invoice.paymentProofStatus !== 'pending') throw new Error('Não há comprovante aguardando revisão nesta fatura.')
+
+    await invoice.update({
+      status: 'paid',
+      paidAt: new Date(),
+      paymentProvider: 'manual_proof',
+      paymentProofStatus: 'approved',
+      paymentProofReviewedAt: new Date(),
+      paymentProofReviewedBy: userId,
+    })
+    return invoice.reload()
+  },
+
+  /** A agência recusa o comprovante — a fatura segue pendente e o supermercado reenvia. */
+  async rejectPaymentProof(invoiceId: string, agencyId: string, userId: string, data: { note?: string }) {
+    const invoice = await Invoice.findByPk(invoiceId)
+    if (!invoice) throw new Error('Fatura não encontrada.')
+    if (invoice.agencyId !== agencyId) throw new Error('Fatura não encontrada.')
+    if (invoice.paymentProofStatus !== 'pending') throw new Error('Não há comprovante aguardando revisão nesta fatura.')
+
+    const note = String(data.note ?? '').trim()
+    if (!note) throw new Error('Informe o motivo da recusa.')
+
+    await invoice.update({
+      paymentProofStatus: 'rejected',
+      paymentProofNote: note,
+      paymentProofReviewedAt: new Date(),
+      paymentProofReviewedBy: userId,
+    })
+    return invoice.reload()
+  },
+
+  async countPendingPaymentProofsForAgency(agencyId: string) {
+    return Invoice.count({ where: { agencyId, paymentProofStatus: 'pending' } })
+  },
+
   /** Webhook do Mercado Pago: confirma a fatura quando o `external_reference` é `invoice:<id>`. */
   async handleInvoiceWebhook(body: any) {
     const type = body?.type || body?.topic

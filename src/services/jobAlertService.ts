@@ -21,6 +21,7 @@ import { minutesBetween } from '../helpers/time'
 import { resolveBreakLimitMinutes, sumClosedBreakMinutes } from './jobLogService'
 import {
   ALERT_CATALOG,
+  AlertAudience,
   AlertResolutionCode,
   AlertSeverity,
   AlertStatus,
@@ -209,16 +210,17 @@ export const jobAlertService = {
   // Leitura / ações da agência e do supermercado
   // ————————————————————————————————————————————————————————————————
 
-  serialize(a: any) {
+  serialize(a: any, role: AlertAudience = 'agency') {
     const job = a.alertJob
+    const catalogEntry = ALERT_CATALOG[a.type as JobAlertType]
     return {
       id: a.id,
       jobId: a.jobId,
       jobShiftId: a.jobShiftId ?? null,
       freelancerId: a.freelancerId ?? null,
       type: a.type,
-      typeLabel: ALERT_CATALOG[a.type as JobAlertType]?.label ?? a.type,
-      resolutionHint: ALERT_CATALOG[a.type as JobAlertType]?.resolutionHint ?? '',
+      typeLabel: catalogEntry?.label ?? a.type,
+      resolutionHint: catalogEntry?.resolutionHintByRole?.[role] ?? catalogEntry?.resolutionHint ?? '',
       severity: a.severity,
       status: a.status,
       title: a.title,
@@ -342,7 +344,7 @@ export const jobAlertService = {
         ['detectedAt', 'DESC'],
       ],
     })
-    return rows.map((a) => this.serialize(a))
+    return rows.map((a) => this.serialize(a, 'supermarket'))
   },
 
   summarize(list: { status: string; severity: string; type: string }[]) {
