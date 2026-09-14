@@ -6,6 +6,9 @@ import { DataTypes, Model, Optional } from 'sequelize'
 export const JOB_LOG_EVENTS = ['check-in', 'check-out', 'break-start', 'break-end', 'no-show', 'withdrawn', 'forced-checkout'] as const;
 export type EventType = (typeof JOB_LOG_EVENTS)[number];
 
+export const JOB_LOG_INITIATORS = ['freelancer', 'agency'] as const;
+export type JobLogInitiator = (typeof JOB_LOG_INITIATORS)[number];
+
 export interface JobLog {
   id: string
   jobId: string
@@ -13,6 +16,8 @@ export interface JobLog {
   jobShiftId?: string | null
   eventType: EventType;
   reason?: string | null
+  /** Quem disparou um log withdrawn/no-show — distingue desistência/abandono do colaborador de uma liberação/falta registrada pela agência. NULL para eventos onde não se aplica. */
+  initiatedBy?: JobLogInitiator | null
   latitude?: number | null
   longitude?: number | null
   accuracy?: number | null
@@ -27,6 +32,7 @@ export interface JobLogCreationAttributes
     | 'id'
     | 'jobShiftId'
     | 'reason'
+    | 'initiatedBy'
     | 'latitude'
     | 'longitude'
     | 'accuracy'
@@ -85,6 +91,13 @@ export const JobLog = sequelize.define<JobLogInstance, JobLog>(
     reason: {
       type: DataTypes.STRING,
       allowNull: true
+    },
+    initiatedBy: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: {
+        isIn: [[...JOB_LOG_INITIATORS]]
+      }
     },
     latitude: {
       type: DataTypes.DECIMAL(10, 6),

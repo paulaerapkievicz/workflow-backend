@@ -206,7 +206,8 @@ async function cancelJobByAgency(
   job: any,
   freelancerId: string,
   eventType: 'withdrawn' | 'no-show',
-  reason: string
+  reason: string,
+  initiatedBy: 'freelancer' | 'agency'
 ) {
   const now = new Date()
   const shifts = await JobShift.findAll({ where: { jobId: job.id }, order: [['position', 'ASC']] })
@@ -215,7 +216,7 @@ async function cancelJobByAgency(
   if (!workedShifts.length) {
     await sequelize.transaction(async (t) => {
       await JobLog.create(
-        { jobId: job.id, freelancerId, eventType, reason, timestamp: now },
+        { jobId: job.id, freelancerId, eventType, reason, initiatedBy, timestamp: now },
         { transaction: t }
       )
       await JobLog.destroy({
@@ -241,7 +242,7 @@ async function cancelJobByAgency(
 
   await sequelize.transaction(async (t) => {
     await JobLog.create(
-      { jobId: job.id, freelancerId, eventType, reason, timestamp: now },
+      { jobId: job.id, freelancerId, eventType, reason, initiatedBy, timestamp: now },
       { transaction: t }
     )
     // Turnos não trabalhados saem do registro da vaga cancelada.
@@ -683,6 +684,7 @@ export const jobService = {
           freelancerId: freelancer.id,
           eventType: 'withdrawn',
           reason: reason?.trim() || 'Freelancer desistiu da vaga.',
+          initiatedBy: 'freelancer',
           timestamp: new Date(),
         },
         { transaction: t }
@@ -755,7 +757,8 @@ export const jobService = {
       job,
       freelancer.id,
       'withdrawn',
-      reason?.trim() || 'Colaborador desistiu da vaga em andamento.'
+      reason?.trim() || 'Colaborador desistiu da vaga em andamento.',
+      'freelancer'
     )
 
     // Ocorrência crítica: desistência no meio do turno.
@@ -795,7 +798,7 @@ export const jobService = {
     if (!freelancer || freelancer.agencyId !== agencyId) {
       throw new Error('Colaborador não encontrado.')
     }
-    await cancelJobByAgency(job, freelancer.id, 'withdrawn', reason?.trim() || 'Vaga liberada pela agência.')
+    await cancelJobByAgency(job, freelancer.id, 'withdrawn', reason?.trim() || 'Vaga liberada pela agência.', 'agency')
 
     try {
       await jobAlertService.resolveForJob(
@@ -870,7 +873,7 @@ export const jobService = {
     blockedUntil.setDate(blockedUntil.getDate() + 7)
     await freelancer.update({ blockedUntil })
 
-    await cancelJobByAgency(job, freelancer.id, 'no-show', reason.trim())
+    await cancelJobByAgency(job, freelancer.id, 'no-show', reason.trim(), 'agency')
 
     // Ocorrência: registra a falta confirmada e fecha o alerta de falta/atraso.
     try {
@@ -1223,6 +1226,7 @@ export const jobService = {
             freelancerId: currentFreelancer.id,
             eventType: 'withdrawn',
             reason: reason?.trim() || `Trocado pela agência por ${newFreelancer.name}.`,
+            initiatedBy: 'agency',
             timestamp: new Date(),
           },
           { transaction: t }
@@ -1254,7 +1258,8 @@ export const jobService = {
       job,
       currentFreelancer.id,
       'withdrawn',
-      reason?.trim() || `Trocado pela agência por ${newFreelancer.name}.`
+      reason?.trim() || `Trocado pela agência por ${newFreelancer.name}.`,
+      'agency'
     )
     await this.clearAlertsAfterReassign(id)
     if (spunOffJobId) {

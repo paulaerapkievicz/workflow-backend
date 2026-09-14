@@ -213,6 +213,8 @@ router.get('/closings/:id/pdf', authorize('agency', 'partner', 'supermarket', 'a
 // ----- Faturamento e relatórios -----
 router.get('/billing/summary', authorize('supermarket'), ensureCanViewInvoices, billingController.summary);
 router.get('/reports/freelancer', authorize('freelancer'), billingController.freelancerReport);
+router.get('/reports/freelancer/pdf', authorize('freelancer'), billingController.freelancerReportPdf);
+router.get('/freelancer/outcomes', authorize('freelancer'), billingController.freelancerOutcomes);
 
 // ----- Onboarding do colaborador (perfil contratual + uniforme + foto) -----
 router.get('/freelancer/contract', authorize('freelancer'), onboardingController.getContract);

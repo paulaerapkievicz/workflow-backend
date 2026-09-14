@@ -14,6 +14,12 @@ export const CHECKOUT_OVERTIME_TOLERANCE_MINUTES = 15
  */
 export const CHECKIN_EARLY_TOLERANCE_MINUTES = 30
 
+/**
+ * Dias com o pagamento retido (`settlementHold`) sem liberação a partir dos quais o relatório
+ * do colaborador passa a marcar o item como "atrasado" em vez de só "a receber".
+ */
+export const PAYMENT_OVERDUE_HOLD_DAYS = 3
+
 export const minutesBetween = (start: Date | string, end: Date | string) =>
   Math.max(0, Math.round((new Date(end).getTime() - new Date(start).getTime()) / 60000))
 
