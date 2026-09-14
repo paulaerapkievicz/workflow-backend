@@ -28,7 +28,7 @@ import { teamRoleController } from './controllers/teamRoleController';
 import { adminAgencyController } from './controllers/adminAgencyController';
 import { contractTemplateController } from './controllers/contractTemplateController';
 import { contractSignatureController } from './controllers/contractSignatureController';
-import { ensureAuth, authorize, ensureCanViewInvoices, ensureCanPayInvoices, requireAgencyFeature } from './middlewares/auth';
+import { ensureAuth, authorize, ensureCanViewInvoices, ensureCanPayInvoices, requireAgencyFeature, requireLeaderFeature } from './middlewares/auth';
 import { upload } from './middlewares/upload';
 
 const router = express.Router();
@@ -135,9 +135,9 @@ router.get('/freelancers/:id/reviews', authorize('agency', 'leader', 'partner', 
 router.get('/agency/reviews', authorize('agency', 'leader', 'partner'), reviewController.agencyReviews);
 router.get('/freelancers/:id/reputation', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), reviewController.reputation);
 router.get('/freelancers/:id/leaders', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), freelancerController.leaders);
-router.post('/freelancers/:id/categories', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), freelancerController.addCategory);
-router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'partner', 'admin'), freelancerController.setCategoryRate);
-router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), freelancerController.removeCategory);
+router.post('/freelancers/:id/categories', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), requireLeaderFeature('valores'), freelancerController.addCategory);
+router.put('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'partner', 'admin'), requireLeaderFeature('valores'), freelancerController.setCategoryRate);
+router.delete('/freelancers/:id/categories/:category_id', authorize('agency', 'leader', 'partner', 'freelancer', 'admin'), requireLeaderFeature('valores'), freelancerController.removeCategory);
 
 // ----- Funções/categorias -----
 // Lista completa (com a flag `active`) para a tela de gestão da agência.
@@ -238,7 +238,7 @@ router.get('/jobs/:id', jobController.show);
 router.get('/jobs/:id/freelancer-profile', authorize('supermarket'), jobController.freelancerProfile);
 router.post('/jobs', authorize('supermarket'), jobController.create);
 router.put('/jobs/:id', authorize('supermarket'), jobController.update);
-router.put('/agency/jobs/:id', authorize('agency', 'leader', 'partner'), jobController.updateByAgency);
+router.put('/agency/jobs/:id', authorize('agency', 'leader', 'partner'), requireLeaderFeature('horarios'), jobController.updateByAgency);
 router.delete('/jobs/:id', authorize('supermarket'), jobController.delete);
 router.post('/jobs/:id/cancel', authorize('supermarket'), jobController.cancel);
 router.post('/jobs/:id/accept', authorize('freelancer'), jobController.accept);
@@ -251,9 +251,9 @@ router.post('/jobs/:id/release-payment', authorize('agency', 'partner'), require
 router.post('/jobs/:id/no-show', authorize('agency', 'leader', 'partner'), jobController.noShow);
 router.post('/jobs/:id/force-checkout', authorize('agency', 'leader', 'partner'), jobController.forceCheckout);
 router.post('/jobs/:id/reassign', authorize('agency', 'leader', 'partner'), jobController.reassign);
-router.put('/agency/jobs/:id/timesheet', authorize('agency', 'leader', 'partner'), jobController.correctTimesheet);
-router.post('/agency/jobs/:id/break-start', authorize('agency', 'leader', 'partner'), jobController.breakStart);
-router.post('/agency/jobs/:id/break-end', authorize('agency', 'leader', 'partner'), jobController.breakEnd);
+router.put('/agency/jobs/:id/timesheet', authorize('agency', 'leader', 'partner'), requireLeaderFeature('horarios'), jobController.correctTimesheet);
+router.post('/agency/jobs/:id/break-start', authorize('agency', 'leader', 'partner'), requireLeaderFeature('horarios'), jobController.breakStart);
+router.post('/agency/jobs/:id/break-end', authorize('agency', 'leader', 'partner'), requireLeaderFeature('horarios'), jobController.breakEnd);
 router.post('/jobs/:id/review', authorize('agency'), jobController.review);
 router.post('/jobs/:id/review-by-supermarket', authorize('supermarket'), reviewController.createBySupermarket);
 router.get('/jobs/:id/review', authorize('agency', 'leader', 'partner', 'admin', 'supermarket'), reviewController.getByJob);

@@ -10,6 +10,7 @@ import { SupermarketMember } from '../models/SupermarketMember'
 import { AgencyMember } from '../models/AgencyMember'
 import { AgencyPartner } from '../models/AgencyPartner'
 import { defaultPartnerPermissions, sanitizePartnerPermissions } from '../helpers/agencyPartnerPermissions'
+import { sanitizeAgencyMemberPermissions } from '../helpers/agencyMemberPermissions'
 import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
 import { ContractTemplate } from '../models/ContractTemplate'
@@ -43,6 +44,7 @@ async function profileWithContext(user: { id: string; role: Role }) {
       payType: m.payType ?? null,
       payAmount: m.payAmount != null ? Number(m.payAmount) : null,
       availableBalance: Number(m.availableBalance ?? 0),
+      permissions: sanitizeAgencyMemberPermissions(m.permissions),
     }
   }
 

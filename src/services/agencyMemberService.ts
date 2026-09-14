@@ -7,6 +7,7 @@ import { Branch } from '../models/Branch'
 import { Freelancer } from '../models/Freelancer'
 import { Supermarket } from '../models/Supermarket'
 import { AgencyMember, AGENCY_MEMBER_PAY_TYPES, AgencyMemberPayType } from '../models/AgencyMember'
+import { sanitizeAgencyMemberPermissions } from '../helpers/agencyMemberPermissions'
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer'
 import { AgencyMemberBranch } from '../models/AgencyMemberBranch'
 import { AgencyMemberPayment } from '../models/AgencyMemberPayment'
@@ -59,6 +60,7 @@ async function serialize(member: AgencyMember & { id: string }) {
     availableBalance: Number(member.availableBalance ?? 0),
     teamRoleId: member.teamRoleId ?? null,
     teamRole: teamRoleService.serialize(teamRole),
+    permissions: sanitizeAgencyMemberPermissions(member.permissions),
     scope: {
       freelancerIds: freelancers.map((f) => f.freelancerId),
       branchIds: branches.map((b) => b.branchId),
@@ -180,7 +182,13 @@ export const agencyMemberService = {
   async update(
     id: string,
     agencyId: string,
-    data: { payType?: unknown; payAmount?: unknown; active?: unknown; teamRoleId?: unknown }
+    data: {
+      payType?: unknown
+      payAmount?: unknown
+      active?: unknown
+      teamRoleId?: unknown
+      permissions?: unknown
+    }
   ) {
     const member = await AgencyMember.findOne({ where: { id, agencyId } })
     if (!member) throw new Error('Líder não encontrado.')
@@ -193,6 +201,9 @@ export const agencyMemberService = {
     if (data.active !== undefined) patch.active = data.active === true || data.active === 'true'
     if (data.teamRoleId !== undefined) {
       patch.teamRoleId = await teamRoleService.resolveId(data.teamRoleId, 'agency', agencyId)
+    }
+    if (data.permissions !== undefined) {
+      patch.permissions = sanitizeAgencyMemberPermissions(data.permissions)
     }
     await member.update(patch)
     return serialize(member)

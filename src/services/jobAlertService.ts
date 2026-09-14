@@ -312,7 +312,10 @@ export const jobAlertService = {
       ? rows
       : rows.filter(
           (a: any) =>
-            inBranchScope(actor, a.alertJob?.branchId) && inFreelancerScope(actor, a.freelancerId)
+            inBranchScope(actor, a.alertJob?.branchId) &&
+            // Ocorrência sem colaborador ainda (ex.: vaga sem preencher) não deve exigir
+            // escopo de colaborador — só o de filial.
+            (!a.freelancerId || inFreelancerScope(actor, a.freelancerId))
         )
     return scoped.map((a) => this.serialize(a))
   },
@@ -378,7 +381,8 @@ export const jobAlertService = {
       throw new Error('Ocorrência não encontrada.')
     }
     if (!actor.isOwner) {
-      if (!inBranchScope(actor, a.alertJob?.branchId) || !inFreelancerScope(actor, a.freelancerId)) {
+      const freelancerOk = !a.freelancerId || inFreelancerScope(actor, a.freelancerId)
+      if (!inBranchScope(actor, a.alertJob?.branchId) || !freelancerOk) {
         throw new Error('Ocorrência não encontrada.')
       }
     }

@@ -2,6 +2,7 @@
 
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
+import { AgencyMemberPermissions, defaultAgencyMemberPermissions } from '../helpers/agencyMemberPermissions'
 
 export const AGENCY_MEMBER_PAY_TYPES = ['hora', 'diaria', 'mensal', 'por_colaborador'] as const
 export type AgencyMemberPayType = (typeof AGENCY_MEMBER_PAY_TYPES)[number]
@@ -11,6 +12,8 @@ export type AgencyMemberPayType = (typeof AGENCY_MEMBER_PAY_TYPES)[number]
  * de colaboradores de uma agência, sem nenhum acesso financeiro/contábil. Pode ter um
  * escopo (subconjunto de colaboradores e/ou de filiais) — sem escopo = rede toda.
  * Tem valor de pagamento próprio e carteira própria (creditada pela agência, sacável).
+ * `permissions` só cobre o que é configurável (editar horário/ponto, editar valor/hora do
+ * colaborador) — ver/atuar em vagas continua sempre liberado, sem toggle.
  */
 export interface AgencyMember {
   id: string
@@ -22,6 +25,7 @@ export interface AgencyMember {
   availableBalance: number
   /** Cargo configurável na equipe (`team_roles`, scope 'agency'). NULL = sem cargo. */
   teamRoleId?: string | null
+  permissions: AgencyMemberPermissions
   createdAt: Date
   updatedAt: Date
 }
@@ -35,6 +39,7 @@ export interface AgencyMemberCreationAttributes
     | 'payAmount'
     | 'availableBalance'
     | 'teamRoleId'
+    | 'permissions'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -75,6 +80,11 @@ export const AgencyMember = sequelize.define<AgencyMemberInstance, AgencyMember>
       references: { model: 'team_roles', key: 'id' },
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL',
+    },
+    permissions: {
+      type: DataTypes.JSONB,
+      allowNull: false,
+      defaultValue: defaultAgencyMemberPermissions(),
     },
     createdAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updatedAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },

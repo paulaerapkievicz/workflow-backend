@@ -4,6 +4,8 @@ import { User, UserInstance } from '../models/User'
 import { profileService } from '../services/profileService'
 import { AgencyPartner } from '../models/AgencyPartner'
 import { AgencyPartnerFeature, sanitizePartnerPermissions } from '../helpers/agencyPartnerPermissions'
+import { AgencyMember } from '../models/AgencyMember'
+import { AgencyMemberFeature, sanitizeAgencyMemberPermissions } from '../helpers/agencyMemberPermissions'
 
 export type Role = 'admin' | 'supermarket' | 'freelancer' | 'agency' | 'leader' | 'partner'
 
@@ -78,6 +80,30 @@ export function requireAgencyFeature(feature: AgencyPartnerFeature) {
       const permissions = sanitizePartnerPermissions(partner.permissions)
       if (!permissions[feature]) {
         return res.status(403).json({ message: 'Você não tem permissão para acessar esta área.' })
+      }
+      return next()
+    } catch {
+      return res.status(500).json({ message: 'Erro ao verificar permissão.' })
+    }
+  }
+}
+
+/**
+ * Gate de permissão configurável pro líder (`role: 'leader'`) — o dono liga/desliga
+ * 'horarios'/'valores' em `agency_members.permissions`. No-op pra todo mundo que não for
+ * líder: dono, sócio e admin seguem só sob o `authorize()` da rota, como sempre. Ver/atuar
+ * em vagas (pool, alocações, ao vivo, alertas) não passa por aqui — é sempre liberado.
+ */
+export function requireLeaderFeature(feature: AgencyMemberFeature) {
+  return async (req: AuthRequest, res: Response, next: NextFunction) => {
+    if (!req.user) return res.status(401).json({ message: 'Não autorizado.' })
+    if (req.user.role !== 'leader') return next()
+    try {
+      const member = await AgencyMember.findOne({ where: { userId: req.user.id, active: true } })
+      if (!member) return res.status(403).json({ message: 'Líder não encontrado ou inativo.' })
+      const permissions = sanitizeAgencyMemberPermissions(member.permissions)
+      if (!permissions[feature]) {
+        return res.status(403).json({ message: 'Você não tem permissão para fazer isso. Peça ao responsável pela agência para liberar essa ação para o seu perfil.' })
       }
       return next()
     } catch {

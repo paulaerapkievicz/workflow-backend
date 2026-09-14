@@ -1243,6 +1243,26 @@ async function main() {
   const inScopeEdit = await req('PUT', `/agency/jobs/${inScopeJob.id}`, { token: leaderT, body: { checkinRadius: 350 } })
   ok(inScopeEdit.status === 200, 'líder gerencia vaga dentro do escopo', inScopeEdit.data?.message)
 
+  // Permissões configuráveis do líder ('horarios'/'valores') — ver/atuar em vagas continua
+  // sempre liberado (já coberto acima); só editar horário e valor/hora é opcional por líder.
+  const offHorarios = await req('PUT', `/agency/members/${leaderMember.id}`, { token: agencyT, body: { permissions: { horarios: false } } })
+  ok(offHorarios.status === 200 && offHorarios.data.permissions.horarios === false && offHorarios.data.permissions.valores === true, 'agência desliga a permissão de horários do líder', offHorarios.data?.permissions)
+  const blockedSchedule = await req('PUT', `/agency/jobs/${inScopeJob.id}`, { token: leaderT, body: { checkinRadius: 360 } })
+  ok(blockedSchedule.status === 403, 'líder sem permissão de horários é barrado ao editar a vaga', blockedSchedule.data?.message)
+  const ownerStillEditsSchedule = await req('PUT', `/agency/jobs/${inScopeJob.id}`, { token: agencyT, body: { checkinRadius: 360 } })
+  ok(ownerStillEditsSchedule.status === 200, 'dono da agência não é afetado pela permissão do líder', ownerStillEditsSchedule.data?.message)
+  const onHorarios = await req('PUT', `/agency/members/${leaderMember.id}`, { token: agencyT, body: { permissions: { horarios: true } } })
+  ok(onHorarios.status === 200 && onHorarios.data.permissions.horarios === true, 'agência religa a permissão de horários do líder')
+  const allowedScheduleAgain = await req('PUT', `/agency/jobs/${inScopeJob.id}`, { token: leaderT, body: { checkinRadius: 350 } })
+  ok(allowedScheduleAgain.status === 200, 'líder volta a editar a vaga depois de religada a permissão', allowedScheduleAgain.data?.message)
+
+  const offValores = await req('PUT', `/agency/members/${leaderMember.id}`, { token: agencyT, body: { permissions: { valores: false } } })
+  ok(offValores.status === 200 && offValores.data.permissions.valores === false, 'agência desliga a permissão de valores do líder', offValores.data?.permissions)
+  const blockedRate = await req('POST', `/freelancers/${freelancerId}/categories`, { token: leaderT, body: { categoryId: catCaixa.id, hourlyRate: 21 } })
+  ok(blockedRate.status === 403, 'líder sem permissão de valores é barrado ao definir valor/hora', blockedRate.data?.message)
+  const onValores = await req('PUT', `/agency/members/${leaderMember.id}`, { token: agencyT, body: { permissions: { valores: true } } })
+  ok(onValores.status === 200 && onValores.data.permissions.valores === true, 'agência religa a permissão de valores do líder')
+
   // Líder cadastra colaborador — entra no escopo dele automaticamente.
   const leaderFreeEmail = `colab-lider-${Date.now()}@email.com`
   const leaderCreatesFree = await req('POST', '/agency/freelancers', {
@@ -1575,6 +1595,25 @@ async function main() {
   const unfAlert = (await agAlerts('?status=open')).find((a) => a.jobId === unf.job.id && a.type === 'shift_unfilled_started')
   ok(!!unfAlert && unfAlert.severity === 'critical', 'vaga descoberta após o início gera alerta crítico', unfAlert?.severity)
   ok((await superAlerts()).some((a) => a.jobId === unf.job.id), 'supermercado vê o alerta de vaga descoberta (afeta a entrega)')
+
+  // Regressão: líder com escopo de colaborador restrito (mas com a filial no escopo) precisa
+  // ver a ocorrência de uma vaga ainda sem colaborador — o filtro de escopo de colaborador
+  // não pode se aplicar a uma ocorrência que ainda não tem colaborador nenhum (freelancerId null).
+  const scopedLeaderEmail = `lider-escopo-alerta-${Date.now()}@email.com`
+  const scopedLeaderCreate = await req('POST', '/agency/members', {
+    token: agencyT,
+    body: { name: 'Líder Escopo Alerta', email: scopedLeaderEmail, password: '123456', payType: 'mensal', payAmount: 100 },
+  })
+  await req('PUT', `/agency/members/${scopedLeaderCreate.data.id}/scope`, {
+    token: agencyT, body: { freelancerIds: [free2Id], branchIds: [branchCentro.id] },
+  })
+  const scopedLeaderT = await login(scopedLeaderEmail)
+  const scopedLeaderAlerts = (await req('GET', '/alerts?status=open', { token: scopedLeaderT })).data
+  ok(
+    scopedLeaderAlerts.some((a) => a.jobId === unf.job.id),
+    'líder com escopo de colaborador ainda vê ocorrência de vaga sem colaborador na filial dele',
+    scopedLeaderAlerts.map((a) => a.jobId)
+  )
 
   // Aceitar resolve o alerta de vaga descoberta (turno reposicionado para "começa agora").
   await req('POST', `/jobs/${unf.job.id}/accept`, { token: freeT })
