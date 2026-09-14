@@ -4,6 +4,9 @@ import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 import { Agency } from './Agency'
 
+export const PROFILE_PHOTO_STATUSES = ['none', 'pending', 'approved', 'rejected'] as const
+export type ProfilePhotoStatus = (typeof PROFILE_PHOTO_STATUSES)[number]
+
 export interface Freelancer {
   id: string
   agencyId: string | null
@@ -13,11 +16,15 @@ export interface Freelancer {
   phone?: string
   document?: string | null
   profilePhotoUrl?: string | null
+  /** Estado da foto de perfil enviada no onboarding — 'approved' direto quando a agência não exige revisão. */
+  profilePhotoStatus: ProfilePhotoStatus
+  profilePhotoRejectionReason?: string | null
+  profilePhotoSubmittedAt?: Date | null
+  profilePhotoReviewedAt?: Date | null
   skills?: string
   registrationStatus: 'pending' | 'approved' | 'rejected'
   availableBalance: number
   blockedUntil?: Date | null
-  onboardingApprovedAt?: Date | null
   ratingAvg?: number | null
   ratingCount: number
   createdAt: Date
@@ -33,11 +40,14 @@ export interface FreelancerCreationAttributes
     | 'phone'
     | 'document'
     | 'profilePhotoUrl'
+    | 'profilePhotoStatus'
+    | 'profilePhotoRejectionReason'
+    | 'profilePhotoSubmittedAt'
+    | 'profilePhotoReviewedAt'
     | 'skills'
     | 'registrationStatus'
     | 'availableBalance'
     | 'blockedUntil'
-    | 'onboardingApprovedAt'
     | 'ratingAvg'
     | 'ratingCount'
     | 'createdAt'
@@ -95,6 +105,24 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
     type: DataTypes.STRING,
     allowNull: true
   },
+  profilePhotoStatus: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'none',
+    validate: { isIn: [[...PROFILE_PHOTO_STATUSES]] }
+  },
+  profilePhotoRejectionReason: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  profilePhotoSubmittedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  profilePhotoReviewedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
   skills: {
     type: DataTypes.TEXT
   },
@@ -110,10 +138,6 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
     defaultValue: 0
   },
   blockedUntil: {
-    type: DataTypes.DATE,
-    allowNull: true
-  },
-  onboardingApprovedAt: {
     type: DataTypes.DATE,
     allowNull: true
   },

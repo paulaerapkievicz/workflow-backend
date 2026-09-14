@@ -12,6 +12,7 @@ import { contractTemplateService } from './contractTemplateService'
 import { contractMergeService } from './contractMergeService'
 import { contractPdfService } from './contractPdfService'
 import { assertField, maskCpfForDisplay } from '../helpers/validation'
+import { onboardingBlockReason } from '../helpers/onboarding'
 
 const CONTRACTS_DIR = path.resolve(__dirname, '..', '..', 'public', 'uploads', 'contracts')
 
@@ -36,7 +37,7 @@ export const freelancerContractSignatureService = {
   async agreementFor(freelancer: FreelancerInstance) {
     const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
     const { template, renderedHtml, missing } = await renderActiveTemplate(freelancer)
-    const onboardingApproved = !!freelancer.onboardingApprovedAt
+    const onboardingApproved = (await onboardingBlockReason(freelancer)) === null
     const contractComplete = !!contract?.completedAt
 
     const lastSigned = await FreelancerContractSignature.findOne({
@@ -74,7 +75,7 @@ export const freelancerContractSignatureService = {
     freelancer: FreelancerInstance,
     opts: { signerName?: string; signerCpf?: string; ip?: string; userAgent?: string; baseUrl?: string }
   ) {
-    if (!freelancer.onboardingApprovedAt) {
+    if ((await onboardingBlockReason(freelancer)) !== null) {
       throw new Error('O contrato só pode ser assinado após a aprovação do onboarding.')
     }
     const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })

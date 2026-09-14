@@ -4,6 +4,7 @@ import { Freelancer } from '../models/Freelancer';
 import { FreelancerCategory } from '../models/FreelancerCategory';
 import { Category } from '../models/Category';
 import { User } from '../models/User';
+import { Agency } from '../models/Agency';
 import { AgencyActor } from '../helpers/agencyScope';
 import { assertField } from '../helpers/validation';
 
@@ -48,11 +49,65 @@ export const freelancerService = {
     return await freelancer.update(patch);
   },
 
-  async setProfilePhoto(freelancerId: string, url: string) {
+  /**
+   * Colaborador envia (ou reenvia) a foto de perfil no onboarding. Se a agência exige aprovação,
+   * fica 'pending' até a agência revisar; senão já vale direto como foto de perfil ('approved').
+   */
+  async submitProfilePhoto(freelancerId: string, url: string) {
     const freelancer = await Freelancer.findByPk(freelancerId);
     if (!freelancer) throw new Error('Colaborador não encontrado.');
-    await freelancer.update({ profilePhotoUrl: url });
+    const agency = freelancer.agencyId ? await Agency.findByPk(freelancer.agencyId) : null;
+    const needsApproval = !!agency?.requirePhotoApproval;
+    await freelancer.update({
+      profilePhotoUrl: url,
+      profilePhotoStatus: needsApproval ? 'pending' : 'approved',
+      profilePhotoRejectionReason: null,
+      profilePhotoSubmittedAt: new Date(),
+      profilePhotoReviewedAt: needsApproval ? null : new Date(),
+    });
     return freelancer;
+  },
+
+  /** Agência aprova ou recusa a foto de perfil enviada por um colaborador da rede. */
+  async reviewProfilePhoto(
+    freelancerId: string,
+    agencyId: string,
+    data: { approved: boolean; reason?: string }
+  ) {
+    const freelancer = await Freelancer.findByPk(freelancerId);
+    if (!freelancer || freelancer.agencyId !== agencyId) throw new Error('Colaborador não encontrado.');
+    if (freelancer.profilePhotoStatus !== 'pending') {
+      throw new Error('Não há foto pendente de revisão para este colaborador.');
+    }
+    if (data.approved) {
+      await freelancer.update({
+        profilePhotoStatus: 'approved',
+        profilePhotoReviewedAt: new Date(),
+        profilePhotoRejectionReason: null,
+      });
+    } else {
+      if (!data.reason?.trim()) throw new Error('Informe o motivo da recusa.');
+      await freelancer.update({
+        profilePhotoStatus: 'rejected',
+        profilePhotoReviewedAt: new Date(),
+        profilePhotoRejectionReason: data.reason.trim(),
+      });
+    }
+    return freelancer;
+  },
+
+  /** Colaboradores da agência com foto pendente ou recusada (fila de revisão do onboarding). */
+  async listPhotoReviewsForAgency(agencyId: string, actor?: AgencyActor | null) {
+    const where: any = { agencyId, profilePhotoStatus: { [Op.in]: ['pending', 'rejected'] } };
+    if (actor?.scopeFreelancerIds) where.id = { [Op.in]: actor.scopeFreelancerIds };
+    return Freelancer.findAll({
+      where,
+      attributes: [
+        'id', 'name', 'profilePhotoUrl', 'profilePhotoStatus',
+        'profilePhotoRejectionReason', 'profilePhotoSubmittedAt', 'profilePhotoReviewedAt',
+      ],
+      order: [['profilePhotoSubmittedAt', 'DESC']],
+    });
   },
 
   async deleteFreelancer(id: string) {

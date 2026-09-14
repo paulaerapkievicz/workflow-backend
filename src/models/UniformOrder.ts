@@ -3,15 +3,7 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
-export const UNIFORM_ORDER_STATUSES = [
-  'pending_payment',
-  'paid',
-  'shipped',
-  'delivered',
-  'photo_submitted',
-  'approved',
-  'rejected',
-] as const
+export const UNIFORM_ORDER_STATUSES = ['pending_payment', 'paid', 'shipped', 'delivered'] as const
 export type UniformOrderStatus = (typeof UNIFORM_ORDER_STATUSES)[number]
 
 export const SHIRT_SIZES = ['PP', 'P', 'M', 'G', 'GG', 'XGG'] as const
@@ -27,12 +19,9 @@ export interface UniformOrder {
   paymentUrl?: string | null
   shippingAddress?: Record<string, unknown> | null
   trackingCode?: string | null
-  selfiePhotoUrl?: string | null
-  rejectionReason?: string | null
   paidAt?: Date | null
   shippedAt?: Date | null
   deliveredAt?: Date | null
-  reviewedAt?: Date | null
   createdAt: Date
   updatedAt: Date
 }
@@ -48,12 +37,9 @@ export interface UniformOrderCreationAttributes
     | 'paymentUrl'
     | 'shippingAddress'
     | 'trackingCode'
-    | 'selfiePhotoUrl'
-    | 'rejectionReason'
     | 'paidAt'
     | 'shippedAt'
     | 'deliveredAt'
-    | 'reviewedAt'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -86,12 +72,9 @@ export const UniformOrder = sequelize.define<UniformOrderInstance, UniformOrder>
     paymentUrl: { type: DataTypes.TEXT, allowNull: true },
     shippingAddress: { type: DataTypes.JSONB, allowNull: true },
     trackingCode: { type: DataTypes.STRING, allowNull: true },
-    selfiePhotoUrl: { type: DataTypes.STRING, allowNull: true },
-    rejectionReason: { type: DataTypes.TEXT, allowNull: true },
     paidAt: { type: DataTypes.DATE, allowNull: true },
     shippedAt: { type: DataTypes.DATE, allowNull: true },
     deliveredAt: { type: DataTypes.DATE, allowNull: true },
-    reviewedAt: { type: DataTypes.DATE, allowNull: true },
     createdAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updatedAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   },

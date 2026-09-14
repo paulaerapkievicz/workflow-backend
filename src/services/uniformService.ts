@@ -7,7 +7,7 @@ import { SHIRT_SIZES } from '../models/UniformOrder'
 import { paymentGatewayService } from './paymentGatewayService'
 
 /** Estados em que o colaborador ainda está no meio do processo do uniforme. */
-const OPEN_STATUSES = ['pending_payment', 'paid', 'shipped', 'delivered', 'photo_submitted']
+const OPEN_STATUSES = ['pending_payment', 'paid', 'shipped']
 
 function addressSnapshot(contract: FreelancerContract | null) {
   if (!contract) return null
@@ -136,32 +136,6 @@ export const uniformService = {
     if (!order || order.freelancerId !== freelancer.id) throw new Error('Pedido de uniforme não encontrado.')
     if (order.status !== 'shipped') throw new Error('O uniforme ainda não foi enviado.')
     await order.update({ status: 'delivered', deliveredAt: new Date() })
-    return order
-  },
-
-  async submitSelfie(id: string, freelancer: FreelancerInstance, photoUrl: string) {
-    const order = await UniformOrder.findByPk(id)
-    if (!order || order.freelancerId !== freelancer.id) throw new Error('Pedido de uniforme não encontrado.')
-    if (!['delivered', 'photo_submitted', 'rejected'].includes(order.status)) {
-      throw new Error('Confirme o recebimento do uniforme antes de enviar a selfie.')
-    }
-    await order.update({ status: 'photo_submitted', selfiePhotoUrl: photoUrl, rejectionReason: null })
-    return order
-  },
-
-  async review(id: string, agencyId: string, data: { approved: boolean; reason?: string }) {
-    const order = await this.assertAgencyOrder(id, agencyId)
-    if (order.status !== 'photo_submitted') throw new Error('Não há selfie para revisar neste pedido.')
-    if (data.approved) {
-      await order.update({ status: 'approved', reviewedAt: new Date(), rejectionReason: null })
-      await Freelancer.update(
-        { onboardingApprovedAt: new Date() },
-        { where: { id: order.freelancerId } }
-      )
-    } else {
-      if (!data.reason?.trim()) throw new Error('Informe o motivo da recusa.')
-      await order.update({ status: 'rejected', reviewedAt: new Date(), rejectionReason: data.reason.trim() })
-    }
     return order
   },
 

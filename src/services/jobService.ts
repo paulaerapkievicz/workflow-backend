@@ -16,7 +16,6 @@ import { Review } from '../models/Review'
 import { Order } from '../models/Order'
 import { OrderItem } from '../models/OrderItem'
 import { Invoice } from '../models/Invoice'
-import { FreelancerContract } from '../models/FreelancerContract'
 import { UserInstance } from '../models/User'
 import { Agency } from '../models/Agency'
 import { SupermarketCategoryRate } from '../models/SupermarketCategoryRate'
@@ -33,6 +32,7 @@ import { resolveShifts } from '../helpers/shifts'
 import { jobLogService, resolveBreaksEnabled, sumClosedBreakMinutes } from './jobLogService'
 import { jobAlertService } from './jobAlertService'
 import { resolveAlertSettings } from '../helpers/alerts'
+import { onboardingBlockReason } from '../helpers/onboarding'
 
 const BR_TZ = 'America/Sao_Paulo'
 
@@ -115,20 +115,6 @@ async function assertNoScheduleClash(
       `${opts.subject ?? 'O colaborador'} já tem uma vaga aceita nesse período (${fmtWindow(clash.startTime, clash.endTime)}).`
     )
   }
-}
-
-/**
- * Se a agência exige onboarding, o colaborador só trabalha depois de concluir o perfil
- * contratual E ter o uniforme aprovado. Retorna a mensagem de bloqueio ou null.
- */
-export async function onboardingBlockReason(freelancer: FreelancerInstance): Promise<string | null> {
-  if (!freelancer.agencyId) return null
-  const agency = await Agency.findByPk(freelancer.agencyId)
-  if (!agency?.onboardingRequired) return null
-  const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
-  if (!contract?.completedAt) return 'Preencha o perfil contratual para aceitar vagas.'
-  if (!freelancer.onboardingApprovedAt) return 'Aguarde a aprovação do seu uniforme para aceitar vagas.'
-  return null
 }
 
 /** Campos de override de configuração operacional por vaga. */

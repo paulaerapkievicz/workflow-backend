@@ -1062,7 +1062,7 @@ async function main() {
     'GET /agency/reviews filtra por vaga', agencyReviewsFiltered.data?.length)
 
   section('Onboarding do colaborador (perfil contratual + trava de trabalho)')
-  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: true, uniformPrice: 80 } })
+  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: true, requireUniformPurchase: true, uniformPrice: 80 } })
   const availLocked = (await req('GET', '/jobs/available', { token: freeT })).data
   ok(Array.isArray(availLocked) && availLocked.length === 0, 'com onboarding ligado e sem contrato: nenhuma vaga', availLocked.length)
   const openJob = (await req('GET', '/jobs', { token: agencyT })).data.find((j) => j.status === 'pending')
@@ -1079,7 +1079,7 @@ async function main() {
   const ct = await req('PUT', '/freelancer/contract', { token: freeT, body: contractBody })
   ok(ct.status === 200 && ct.data.completedAt, 'perfil contratual concluído', ct.data?.completedAt)
   const accStillLocked = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
-  ok(accStillLocked.status === 400 && /uniforme/i.test(accStillLocked.data?.message || ''), 'ainda bloqueado até o uniforme ser aprovado', accStillLocked.data?.message)
+  ok(accStillLocked.status === 400 && /uniforme/i.test(accStillLocked.data?.message || ''), 'ainda bloqueado até o uniforme ser recebido', accStillLocked.data?.message)
 
   section('Compra do uniforme pelo app configurável + baixa manual')
   const disableFreePay = await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForFreelancers: false } })
@@ -1104,17 +1104,54 @@ async function main() {
   const uniformMarkPaidTwice = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/mark-paid`, { token: agencyT })
   ok(uniformMarkPaidTwice.status === 400, 'baixa manual recusada num uniforme que já não está aguardando pagamento', uniformMarkPaidTwice.status)
 
-  // Segue o fluxo normal de envio/revisão do uniforme, sem nenhuma mudança por causa da baixa manual.
+  // Segue o fluxo normal de envio/recebimento do uniforme, sem nenhuma mudança por causa da baixa manual.
   const uniformShip = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/ship`, { token: agencyT, body: { trackingCode: 'BR123' } })
   ok(uniformShip.status === 200 && uniformShip.data.status === 'shipped', 'uniforme pago manualmente segue pro envio normalmente', uniformShip.data)
 
   await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForFreelancers: true } })
 
-  // Simula a aprovação do uniforme (o fluxo com Mercado Pago exige credenciais reais).
-  await db.query(`UPDATE freelancers SET onboarding_approved_at = NOW() WHERE id = $1`, [freelancerId])
+  const uniformReceived = await req('POST', `/freelancer/uniform/${uniformNoGateway.data.id}/received`, { token: freeT })
+  ok(uniformReceived.status === 200 && uniformReceived.data.status === 'delivered', 'colaborador confirma recebimento do uniforme', uniformReceived.data)
+  const availAfterUniform = (await req('GET', '/jobs/available', { token: freeT })).data
+  ok(availAfterUniform.length > 0, 'uniforme entregue: vagas voltam a aparecer (foto não é exigida)', availAfterUniform.length)
+
+  section('Aprovação de foto configurável (independente do uniforme)')
+  await req('PUT', '/agency/settings', { token: agencyT, body: { requireUniformPurchase: false, requirePhotoApproval: true } })
+  const availNoPhoto = (await req('GET', '/jobs/available', { token: freeT })).data
+  ok(availNoPhoto.length === 0, 'com aprovação de foto ligada e sem foto: nenhuma vaga', availNoPhoto.length)
+
+  const fdPhoto = new FormData()
+  fdPhoto.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'foto.jpg')
+  const photoUpload = await fetch(`${BASE}/freelancer/profile-photo`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fdPhoto })
+  const photoUploadData = await photoUpload.json()
+  ok(photoUpload.status === 200 && photoUploadData.profilePhotoStatus === 'pending', 'foto enviada fica pendente de revisão', photoUploadData)
+
+  const accBlockedByPhoto = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
+  ok(accBlockedByPhoto.status === 400 && /foto/i.test(accBlockedByPhoto.data?.message || ''), 'ainda bloqueado até a foto ser aprovada', accBlockedByPhoto.data?.message)
+
+  const photoReviews = await req('GET', '/agency/photo-reviews', { token: agencyT })
+  ok(photoReviews.status === 200 && photoReviews.data.some((f) => f.id === freelancerId && f.profilePhotoStatus === 'pending'),
+    'agência vê a foto pendente na fila de revisão', photoReviews.data?.length)
+
+  const photoRejected = await req('POST', `/freelancers/${freelancerId}/photo-review`, { token: agencyT, body: { approved: false, reason: 'Foto cortada, envie outra' } })
+  ok(photoRejected.status === 200 && photoRejected.data.profilePhotoStatus === 'rejected', 'agência recusa a foto com motivo', photoRejected.data)
+
+  const meAfterReject = (await req('GET', '/auth/me', { token: freeT })).data
+  ok(meAfterReject.profile?.onboarding?.photoRejectionReason === 'Foto cortada, envie outra',
+    'colaborador vê o motivo da recusa no onboarding', meAfterReject.profile?.onboarding)
+
+  const fdPhoto2 = new FormData()
+  fdPhoto2.append('photo', new Blob(['y'], { type: 'image/jpeg' }), 'foto2.jpg')
+  const photoReupload = await fetch(`${BASE}/freelancer/profile-photo`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fdPhoto2 })
+  const photoReuploadData = await photoReupload.json()
+  ok(photoReupload.status === 200 && photoReuploadData.profilePhotoStatus === 'pending', 'reenvio da foto volta pra pendente', photoReuploadData)
+
+  const photoApproved = await req('POST', `/freelancers/${freelancerId}/photo-review`, { token: agencyT, body: { approved: true } })
+  ok(photoApproved.status === 200 && photoApproved.data.profilePhotoStatus === 'approved', 'agência aprova a foto', photoApproved.data)
+
   const availOk = (await req('GET', '/jobs/available', { token: freeT })).data
-  ok(availOk.length > 0, 'onboarding aprovado: vagas voltam a aparecer', availOk.length)
-  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: false } })
+  ok(availOk.length > 0, 'foto aprovada: vagas voltam a aparecer', availOk.length)
+  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: false, requirePhotoApproval: false } })
 
   section('Convites da agência (supermercado e freelancer)')
   const inviteMarketRes = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'supermarket' } })

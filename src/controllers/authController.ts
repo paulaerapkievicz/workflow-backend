@@ -22,6 +22,7 @@ import { teamRoleService } from '../services/teamRoleService'
 import { AuthRequest, Role } from '../middlewares/auth'
 import { assertField } from '../helpers/validation'
 import { resolveLoginEmail, emailAlreadyRegistered } from '../helpers/loginCredentials'
+import { onboardingBlockReason } from '../helpers/onboarding'
 
 /** Serializa o perfil e anexa contexto extra por papel (permissões do supermercado, onboarding do colaborador). */
 async function profileWithContext(user: { id: string; role: Role }) {
@@ -65,13 +66,16 @@ async function profileWithContext(user: { id: string; role: Role }) {
     const f = profile as any
     const agency = f.agencyId ? await Agency.findByPk(f.agencyId) : null
     const contract = await FreelancerContract.findOne({ where: { freelancerId: f.id } })
-    const uniform = await UniformOrder.findOne({
-      where: { freelancerId: f.id },
-      order: [['createdAt', 'DESC']],
-    })
+    const requireUniformPurchase = !!agency?.requireUniformPurchase
+    const requirePhotoApproval = !!agency?.requirePhotoApproval
+    // A seção de uniforme só existe (e só é buscada) quando a agência exige a compra.
+    const uniform = requireUniformPurchase
+      ? await UniformOrder.findOne({ where: { freelancerId: f.id }, order: [['createdAt', 'DESC']] })
+      : null
     const required = !!agency?.onboardingRequired
     const contractComplete = !!contract?.completedAt
-    const approved = !!f.onboardingApprovedAt
+    const blockReason = await onboardingBlockReason(f)
+    const approved = blockReason === null
     // Autocadastro aguardando a agência aprovar: bloqueia tudo até lá.
     const awaitingRegistration = f.registrationStatus === 'pending'
     const contractTemplate = f.agencyId
@@ -85,11 +89,16 @@ async function profileWithContext(user: { id: string; role: Role }) {
       onboarding: {
         required,
         contractComplete,
+        requireUniformPurchase,
+        requirePhotoApproval,
         uniformStatus: uniform?.status ?? null,
+        photoStatus: f.profilePhotoStatus ?? 'none',
+        photoRejectionReason: f.profilePhotoRejectionReason ?? null,
         approved,
+        blockReason,
         registrationStatus: f.registrationStatus ?? 'approved',
         awaitingRegistration,
-        blocked: awaitingRegistration || (required && (!contractComplete || !approved)),
+        blocked: awaitingRegistration || !approved,
         contractTemplateAvailable: !!contractTemplate,
         contractSigned: contractSigned > 0,
       },

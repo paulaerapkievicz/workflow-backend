@@ -77,20 +77,6 @@ export const onboardingController = {
     }
   },
 
-  // POST /freelancer/uniform/:id/selfie  (multipart, campo "photo")
-  async submitSelfie(req: AuthRequest, res: Response) {
-    try {
-      const freelancer = await profileService.freelancerForUser(req.user!)
-      if (!freelancer) return res.status(400).json({ message: 'Perfil de colaborador não encontrado.' })
-      if (!req.file) return res.status(400).json({ message: 'Envie a foto de uniforme.' })
-      return res.json(
-        await uniformService.submitSelfie(req.params.id, freelancer, `/uploads/${req.file.filename}`)
-      )
-    } catch (error) {
-      return fail(res, error)
-    }
-  },
-
   // GET /agency/uniforms
   async listForAgency(req: AuthRequest, res: Response) {
     try {
@@ -119,22 +105,6 @@ export const onboardingController = {
       const agencyId = await profileService.agencyIdForUser(req.user!)
       if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
       return res.json(await uniformService.markShipped(req.params.id, agencyId, req.body?.trackingCode))
-    } catch (error) {
-      return fail(res, error)
-    }
-  },
-
-  // POST /agency/uniforms/:id/review { approved, reason? }
-  async reviewUniform(req: AuthRequest, res: Response) {
-    try {
-      const agencyId = await profileService.agencyIdForUser(req.user!)
-      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
-      return res.json(
-        await uniformService.review(req.params.id, agencyId, {
-          approved: req.body?.approved === true,
-          reason: req.body?.reason,
-        })
-      )
     } catch (error) {
       return fail(res, error)
     }

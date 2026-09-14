@@ -51,6 +51,10 @@ export interface Agency {
   /** Ordem personalizada do menu lateral (lista de hrefs). NULL = ordem padrão. */
   sidebarOrder?: string[] | null
   onboardingRequired: boolean
+  /** Exige a compra do uniforme (via este app) para o colaborador aceitar vagas; some do onboarding quando desligado. */
+  requireUniformPurchase: boolean
+  /** Exige aprovação da agência para a foto de perfil enviada no onboarding; sem isso, a foto enviada já vale direto. */
+  requirePhotoApproval: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
   /** Liga/desliga o pagamento da fatura mensal pelo app pros mercados-clientes (chave-mestra; override por cliente em Supermarket.appPaymentEnabled). */
@@ -103,6 +107,8 @@ export interface AgencyCreationAttributes
     | 'statusColors'
     | 'sidebarOrder'
     | 'onboardingRequired'
+    | 'requireUniformPurchase'
+    | 'requirePhotoApproval'
     | 'uniformPrice'
     | 'allowSelfRegistration'
     | 'appPaymentEnabledForSupermarkets'
@@ -284,6 +290,16 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     allowNull: true
   },
   onboardingRequired: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  requireUniformPurchase: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  requirePhotoApproval: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false

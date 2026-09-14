@@ -109,7 +109,8 @@ module.exports = {
 
     // ---- Onboarding concluído do Pedro (free2) — pronto para assinar o contrato ----
     // (free1 é usado no fluxo que testa a trava de onboarding, então fica sem contrato no seed.)
-    await queryInterface.bulkUpdate('freelancers', { onboarding_approved_at: now() }, { id: free2.id });
+    // Aprovação de onboarding agora é calculada ao vivo (perfil contratual + uniforme/foto, se exigidos) —
+    // basta o perfil contratual abaixo estar completo pra liberar (agência do seed não exige uniforme/foto).
     await queryInterface.bulkInsert('freelancer_contracts', [{
       id: uid(), freelancer_id: free2.id,
       full_name: 'Pedro Henrique Freelancer', cpf: '987.654.321-00', rg: '7654321', rg_issuer: 'SSP/RS',

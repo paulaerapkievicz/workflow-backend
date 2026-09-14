@@ -212,6 +212,8 @@ export const agencyService = {
       statusColors: resolveStatusColors(a),
       sidebarOrder: a.sidebarOrder ?? null,
       onboardingRequired: a.onboardingRequired,
+      requireUniformPurchase: a.requireUniformPurchase,
+      requirePhotoApproval: a.requirePhotoApproval,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
       appPaymentEnabledForSupermarkets: a.appPaymentEnabledForSupermarkets,
@@ -245,6 +247,8 @@ export const agencyService = {
       statusColors: unknown
       sidebarOrder: unknown
       onboardingRequired: boolean
+      requireUniformPurchase: boolean
+      requirePhotoApproval: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
       appPaymentEnabledForSupermarkets: boolean
@@ -341,6 +345,8 @@ export const agencyService = {
     }
 
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true
+    if (data.requireUniformPurchase != null) patch.requireUniformPurchase = data.requireUniformPurchase === true
+    if (data.requirePhotoApproval != null) patch.requirePhotoApproval = data.requirePhotoApproval === true
     if (data.allowSelfRegistration != null) patch.allowSelfRegistration = data.allowSelfRegistration === true
     if (data.uniformPrice != null) {
       const n = Number(data.uniformPrice)

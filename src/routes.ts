@@ -214,21 +214,21 @@ router.get('/closings/:id/pdf', authorize('agency', 'partner', 'supermarket', 'a
 router.get('/billing/summary', authorize('supermarket'), ensureCanViewInvoices, billingController.summary);
 router.get('/reports/freelancer', authorize('freelancer'), billingController.freelancerReport);
 
-// ----- Onboarding do colaborador (perfil contratual + uniforme) -----
+// ----- Onboarding do colaborador (perfil contratual + uniforme + foto) -----
 router.get('/freelancer/contract', authorize('freelancer'), onboardingController.getContract);
 router.put('/freelancer/contract', authorize('freelancer'), onboardingController.saveContract);
 router.get('/freelancer/uniform', authorize('freelancer'), onboardingController.getUniform);
 router.post('/freelancer/uniform', authorize('freelancer'), onboardingController.requestUniform);
 router.post('/freelancer/uniform/:id/sync', authorize('freelancer'), onboardingController.syncUniform);
 router.post('/freelancer/uniform/:id/received', authorize('freelancer'), onboardingController.confirmReceived);
-router.post('/freelancer/uniform/:id/selfie', authorize('freelancer'), upload.single('photo'), onboardingController.submitSelfie);
 router.post('/freelancer/profile-photo', authorize('freelancer'), upload.single('photo'), freelancerController.uploadProfilePhoto);
 router.get('/agency/uniforms', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.listForAgency);
+router.get('/agency/photo-reviews', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), freelancerController.listPhotoReviews);
+router.post('/freelancers/:id/photo-review', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), freelancerController.reviewPhoto);
 router.get('/agency/pending-counts', authorize('agency', 'leader', 'partner'), pendingController.agency);
 router.get('/supermarket/pending-counts', authorize('supermarket'), pendingController.supermarket);
 router.post('/agency/uniforms/:id/mark-paid', authorize('agency', 'partner'), requireAgencyFeature('financeiro'), onboardingController.markUniformPaid);
 router.post('/agency/uniforms/:id/ship', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.shipUniform);
-router.post('/agency/uniforms/:id/review', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.reviewUniform);
 
 // ----- Vagas -----
 router.get('/jobs', jobController.index);

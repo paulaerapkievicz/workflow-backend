@@ -116,16 +116,44 @@ export const freelancerController = {
     }
   },
 
-  // POST /freelancer/profile-photo (multipart, campo "photo") — o próprio colaborador envia a foto de perfil
+  // POST /freelancer/profile-photo (multipart, campo "photo") — o próprio colaborador envia a foto de perfil.
+  // Se a agência exige aprovação, fica pendente de revisão; senão já vale direto.
   async uploadProfilePhoto(req: AuthRequest, res: Response) {
     try {
       const freelancer = await profileService.freelancerForUser(req.user!);
       if (!freelancer) return res.status(400).json({ message: 'Perfil de colaborador não encontrado.' });
       if (!req.file) return res.status(400).json({ message: 'Envie a foto de perfil.' });
-      const updated = await freelancerService.setProfilePhoto(freelancer.id, `/uploads/${req.file.filename}`);
+      const updated = await freelancerService.submitProfilePhoto(freelancer.id, `/uploads/${req.file.filename}`);
       return res.json(updated);
     } catch (err) {
       return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao enviar foto de perfil.' });
+    }
+  },
+
+  // GET /agency/photo-reviews — colaboradores da rede com foto de perfil pendente/recusada
+  async listPhotoReviews(req: AuthRequest, res: Response) {
+    try {
+      const actor = await profileService.agencyContextForUser(req.user!);
+      if (!actor) return res.status(403).json({ message: 'Agência não encontrada.' });
+      return res.json(await freelancerService.listPhotoReviewsForAgency(actor.agencyId, actor));
+    } catch (err) {
+      return res.status(500).json({ message: err instanceof Error ? err.message : 'Erro.' });
+    }
+  },
+
+  // POST /freelancers/:id/photo-review { approved, reason? } — agência aprova/recusa a foto
+  async reviewPhoto(req: AuthRequest, res: Response) {
+    try {
+      const freelancer = await loadManageableFreelancer(req, res, req.params.id);
+      if (!freelancer) return;
+      if (!freelancer.agencyId) return res.status(400).json({ message: 'Colaborador sem agência.' });
+      const updated = await freelancerService.reviewProfilePhoto(freelancer.id, freelancer.agencyId, {
+        approved: req.body?.approved === true,
+        reason: req.body?.reason,
+      });
+      return res.json(updated);
+    } catch (err) {
+      return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao revisar foto.' });
     }
   },
 
