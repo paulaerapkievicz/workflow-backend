@@ -1627,6 +1627,9 @@ async function main() {
   ok(tpls.templates.some((t) => t.active) && tpls.tokens.length > 0, 'agência tem modelo de contrato ativo + campos de mesclagem')
   const agreement = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data
   ok(agreement.hasTemplate && agreement.canSign && agreement.missing.length === 0, 'colaborador com onboarding aprovado pode assinar', agreement.blockedReason)
+  const previewRes = await fetch(BASE + '/freelancer/contract/preview-pdf', { headers: { Authorization: `Bearer ${free2Tok}` } })
+  const previewBuf = Buffer.from(await previewRes.arrayBuffer())
+  ok(previewRes.status === 200 && previewBuf.slice(0, 4).toString() === '%PDF', 'colaborador baixa o rascunho do contrato em PDF antes de assinar', previewBuf.length)
   const signRes = await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: true } })
   ok(signRes.status === 201 && /^[0-9a-f]{64}$/.test(signRes.data.contentHash || ''), 'contrato assinado com hash SHA-256', signRes.data)
   ok(!!signRes.data.ipAddress, 'assinatura registra o IP do signatário')

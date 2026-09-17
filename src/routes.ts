@@ -170,6 +170,7 @@ router.get('/agency/contract-signatures', authorize('agency', 'partner'), requir
 router.get('/agency/contract-signatures/:id/document', authorize('agency', 'partner'), requireAgencyFeature('configuracoes'), contractSignatureController.agencyDocument);
 router.get('/freelancer/contract/agreement', authorize('freelancer'), contractSignatureController.myAgreement);
 router.post('/freelancer/contract/sign', authorize('freelancer'), contractSignatureController.sign);
+router.get('/freelancer/contract/preview-pdf', authorize('freelancer'), contractSignatureController.previewDocument);
 router.get('/freelancer/contract/document', authorize('freelancer'), contractSignatureController.myDocument);
 router.post('/agency/invites', authorize('agency', 'leader', 'partner'), inviteController.create);
 

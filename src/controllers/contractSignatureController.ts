@@ -48,6 +48,20 @@ export const contractSignatureController = {
     }
   },
 
+  // GET /freelancer/contract/preview-pdf — rascunho (sem assinatura), pode ser baixado antes de assinar
+  async previewDocument(req: AuthRequest, res: Response) {
+    try {
+      const freelancer = await profileService.freelancerForUser(req.user!)
+      if (!freelancer) return res.status(400).json({ message: 'Perfil de colaborador não encontrado.' })
+      const doc = await freelancerContractSignatureService.previewDocumentFor(freelancer)
+      res.setHeader('Content-Type', 'application/pdf')
+      res.setHeader('Content-Disposition', 'inline; filename="contrato-rascunho.pdf"')
+      doc.pipe(res)
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // GET /freelancer/contract/document
   async myDocument(req: AuthRequest, res: Response) {
     try {

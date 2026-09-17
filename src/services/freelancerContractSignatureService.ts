@@ -72,6 +72,14 @@ export const freelancerContractSignatureService = {
     }
   },
 
+  /** PDF do rascunho (sem assinatura) — o colaborador pode baixar antes de assinar. */
+  async previewDocumentFor(freelancer: FreelancerInstance) {
+    const { template, renderedHtml } = await renderActiveTemplate(freelancer)
+    if (!template) throw new Error('A sua agência ainda não publicou um modelo de contrato.')
+    const agency = freelancer.agencyId ? await Agency.findByPk(freelancer.agencyId) : null
+    return contractPdfService.buildPreviewPdf({ renderedHtml, title: template.title, agency })
+  },
+
   async sign(
     freelancer: FreelancerInstance,
     opts: { signerName?: string; signerCpf?: string; ip?: string; userAgent?: string; baseUrl?: string }

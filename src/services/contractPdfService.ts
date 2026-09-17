@@ -70,6 +70,29 @@ function drawBlocks(doc: PDFKit.PDFDocument, blocks: DocBlock[]) {
 }
 
 export const contractPdfService = {
+  /** Rascunho do contrato ainda não assinado — só o corpo do documento, sem a página de evidências. */
+  buildPreviewPdf(args: {
+    renderedHtml: string
+    title: string
+    agency: Pick<AgencyInstance, 'name' | 'legalName' | 'cnpj'> | null
+  }): PDFKit.PDFDocument {
+    const { renderedHtml, title, agency } = args
+    const doc = new PDFDocument({ margin: 56, size: 'A4' })
+
+    doc.fontSize(9).font('Helvetica').fillColor('#666')
+    doc.text(pdfSafe(agency?.legalName || agency?.name || 'Contrato'), { align: 'right' })
+    if (agency?.cnpj) doc.text(pdfSafe(`CNPJ ${agency.cnpj}`), { align: 'right' })
+    doc.fillColor('#b45309').font('Helvetica-Bold').text('RASCUNHO — documento ainda não assinado', { align: 'right' })
+    doc.fillColor('#000').moveDown(1)
+
+    doc.fontSize(15).font('Helvetica-Bold').text(pdfSafe(title), { align: 'center' })
+    doc.moveDown(1)
+
+    drawBlocks(doc, parseContractBlocks(renderedHtml))
+    doc.end()
+    return doc
+  },
+
   buildContractPdf(args: {
     renderedHtml: string
     signature: Pick<
