@@ -8,8 +8,17 @@ export const REQUIRED_CONTRACT_FIELDS = [
   'fullName', 'cpf', 'rg', 'pisNis', 'birthDate', 'maritalStatus', 'nationality',
   'motherName', 'addressCep', 'addressStreet', 'addressNumber', 'addressNeighborhood',
   'addressCity', 'addressState', 'bankName', 'bankBranch', 'bankAccount',
-  'emergencyContactName', 'emergencyContactPhone', 'shirtSize',
+  'pixKey', 'pixKeyType', 'emergencyContactName', 'emergencyContactPhone', 'shirtSize',
 ] as const
+
+/**
+ * Tipos de chave Pix aceitos no onboarding do colaborador — sem `cnpj`, que representa uma
+ * pessoa jurídica e não faz sentido como chave pessoal. `freelancerContractService.upsert`
+ * confere que a chave realmente pertence ao colaborador (CPF/e-mail/telefone batendo com o
+ * cadastro dele); `aleatoria` não tem como ser conferida sem integração com o Banco Central.
+ */
+export const FREELANCER_PIX_KEY_TYPES = ['cpf', 'email', 'telefone', 'aleatoria'] as const
+export type FreelancerPixKeyType = (typeof FREELANCER_PIX_KEY_TYPES)[number]
 
 export interface FreelancerContract {
   id: string
@@ -40,6 +49,7 @@ export interface FreelancerContract {
   bankAccount?: string | null
   bankAccountType?: string | null
   pixKey?: string | null
+  pixKeyType?: FreelancerPixKeyType | null
   emergencyContactName?: string | null
   emergencyContactPhone?: string | null
   shirtSize?: string | null
@@ -95,6 +105,11 @@ export const FreelancerContract = sequelize.define<FreelancerContractInstance, F
     bankAccount: str(),
     bankAccountType: str(),
     pixKey: str(),
+    pixKeyType: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: { isIn: [[...FREELANCER_PIX_KEY_TYPES]] },
+    },
     emergencyContactName: str(),
     emergencyContactPhone: str(),
     shirtSize: str(),

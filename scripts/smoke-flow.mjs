@@ -1078,10 +1078,20 @@ async function main() {
     birthDate: '1995-05-10', maritalStatus: 'solteira', nationality: 'brasileira', motherName: 'Maria',
     addressCep: '01000-000', addressStreet: 'Rua A', addressNumber: '10', addressNeighborhood: 'Centro',
     addressCity: 'São Paulo', addressState: 'SP', bankName: 'Banco X', bankBranch: '0001', bankAccount: '12345-6',
+    pixKey: 'free1@email.com', pixKeyType: 'email',
     emergencyContactName: 'José', emergencyContactPhone: '(11) 99999-0000', shirtSize: 'M',
   }
+
+  // Chave Pix precisa ser do próprio colaborador — nunca de terceiros.
+  const pixThirdParty = await req('PUT', '/freelancer/contract', { token: freeT, body: { ...contractBody, pixKey: 'outra-pessoa@email.com', pixKeyType: 'email' } })
+  ok(pixThirdParty.status === 400 && /própri|terceiro/i.test(pixThirdParty.data?.message || ''), 'chave Pix de terceiro (e-mail) é recusada', pixThirdParty.data?.message)
+  const pixBadType = await req('PUT', '/freelancer/contract', { token: freeT, body: { ...contractBody, pixKeyType: 'cnpj' } })
+  ok(pixBadType.status === 400, 'tipo de chave Pix inválido (cnpj) é recusado', pixBadType.data?.message)
+  const pixWrongCpf = await req('PUT', '/freelancer/contract', { token: freeT, body: { ...contractBody, pixKey: '987.654.321-00', pixKeyType: 'cpf' } })
+  ok(pixWrongCpf.status === 400 && /própri|terceiro/i.test(pixWrongCpf.data?.message || ''), 'chave Pix de terceiro (CPF diferente do cadastro) é recusada', pixWrongCpf.data?.message)
+
   const ct = await req('PUT', '/freelancer/contract', { token: freeT, body: contractBody })
-  ok(ct.status === 200 && ct.data.completedAt, 'perfil contratual concluído', ct.data?.completedAt)
+  ok(ct.status === 200 && ct.data.completedAt, 'perfil contratual concluído (com chave Pix própria)', ct.data?.completedAt)
   const accStillLocked = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
   ok(accStillLocked.status === 400 && /uniforme/i.test(accStillLocked.data?.message || ''), 'ainda bloqueado até o uniforme ser recebido', accStillLocked.data?.message)
 

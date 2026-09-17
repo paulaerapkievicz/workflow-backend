@@ -120,7 +120,7 @@ module.exports = {
       address_cep: '99020-200', address_street: 'Rua Morom', address_number: '120', address_complement: 'Casa',
       address_neighborhood: 'Vila Rodrigues', address_city: 'Passo Fundo', address_state: 'RS',
       bank_name: 'Caixa Econômica', bank_branch: '0987-6', bank_account: '54321-0', bank_account_type: 'Poupança',
-      pix_key: 'free2@email.com', emergency_contact_name: 'Ana Freelancer', emergency_contact_phone: '(54) 99999-1111',
+      pix_key: 'free2@email.com', pix_key_type: 'email', emergency_contact_name: 'Ana Freelancer', emergency_contact_phone: '(54) 99999-1111',
       shirt_size: 'G', completed_at: now(), ...ts,
     }]);
 
