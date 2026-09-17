@@ -1600,8 +1600,29 @@ async function main() {
   const brProfile2 = (await req('GET', `/branches/${branchCentro.id}/profile`, { token: superT })).data
   ok(brProfile2.profile.cnpj === '12345678000195' && !brProfile2.profile.inherited.includes('cnpj'), 'CNPJ próprio da filial deixa de ser herdado')
 
-  section('Contrato eletrônico do colaborador')
+  section('Aprovação do onboarding pela agência (dados do perfil contratual)')
   const free2Tok = await login('free2@email.com')
+  const reviewsBefore = (await req('GET', '/agency/onboarding-reviews', { token: agencyT })).data
+  ok(reviewsBefore.some((r) => r.id === free2Id), 'colaborador com perfil completo aparece na fila de aprovação', reviewsBefore)
+  const contractForAgency = (await req('GET', `/agency/freelancers/${free2Id}/contract`, { token: agencyT })).data
+  ok(contractForAgency.pixKey === 'free2@email.com' && contractForAgency.cpf, 'agência vê os dados completos do onboarding no cadastro do colaborador', contractForAgency)
+  const contractForOther = await req('GET', `/agency/freelancers/${free2Id}/contract`, { token: otherAgencyT })
+  ok(contractForOther.status === 400, 'outra agência não acessa os dados do onboarding do colaborador', contractForOther.status)
+  const agreementBeforeApproval = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data
+  ok(!agreementBeforeApproval.canSign && /revisar|aprova/i.test(agreementBeforeApproval.blockedReason || ''), 'sem a agência aprovar o onboarding, ainda não pode assinar', agreementBeforeApproval.blockedReason)
+  const signBeforeApproval = await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: true } })
+  ok(signBeforeApproval.status === 400, 'assinatura recusada antes da aprovação do onboarding', signBeforeApproval.data?.message)
+  const approveOnboarding = await req('POST', `/agency/freelancers/${free2Id}/onboarding/approve`, { token: agencyT })
+  ok(approveOnboarding.status === 200 && !!approveOnboarding.data.approvedAt, 'agência confere os dados e aprova o onboarding', approveOnboarding.data)
+  const reviewsAfter = (await req('GET', '/agency/onboarding-reviews', { token: agencyT })).data
+  ok(!reviewsAfter.some((r) => r.id === free2Id), 'colaborador aprovado sai da fila de aprovação', reviewsAfter)
+  const editAfterApproval = await req('PUT', '/freelancer/contract', { token: free2Tok, body: { rgIssuer: 'SSP/RS 2' } })
+  ok(editAfterApproval.status === 200 && !editAfterApproval.data.approvedAt, 'editar o perfil depois de aprovado invalida a aprovação', editAfterApproval.data?.approvedAt)
+  const reviewsAfterEdit = (await req('GET', '/agency/onboarding-reviews', { token: agencyT })).data
+  ok(reviewsAfterEdit.some((r) => r.id === free2Id), 'colaborador volta pra fila de aprovação depois de editar', reviewsAfterEdit)
+  await req('POST', `/agency/freelancers/${free2Id}/onboarding/approve`, { token: agencyT })
+
+  section('Contrato eletrônico do colaborador')
   const tpls = (await req('GET', '/agency/contract-templates', { token: agencyT })).data
   ok(tpls.templates.some((t) => t.active) && tpls.tokens.length > 0, 'agência tem modelo de contrato ativo + campos de mesclagem')
   const agreement = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data

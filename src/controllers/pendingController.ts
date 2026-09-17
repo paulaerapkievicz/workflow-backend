@@ -75,6 +75,7 @@ export const pendingController = {
           uniformsToShip: 0,
           photosToReview: 0,
           contractsPending: 0,
+          onboardingReviewsToApprove: 0,
           registrationsToApprove,
           branchesToApprove,
           memberCreditsToReview,
@@ -85,15 +86,17 @@ export const pendingController = {
         })
       }
 
-      const [uniformsToShip, photosToReview, contractsDone] = await Promise.all([
+      const [uniformsToShip, photosToReview, contractsDone, onboardingReviewsToApprove] = await Promise.all([
         UniformOrder.count({ where: { freelancerId: ids, status: 'paid' } }),
         Freelancer.count({ where: { id: ids, profilePhotoStatus: 'pending' } }),
         FreelancerContract.count({ where: { freelancerId: ids, completedAt: { [Op.ne]: null } } }),
+        FreelancerContract.count({ where: { freelancerId: ids, completedAt: { [Op.ne]: null }, approvedAt: null } }),
       ])
       return res.json({
         uniformsToShip,
         photosToReview,
         contractsPending: Math.max(0, ids.length - contractsDone),
+        onboardingReviewsToApprove,
         registrationsToApprove,
         branchesToApprove,
         memberCreditsToReview,

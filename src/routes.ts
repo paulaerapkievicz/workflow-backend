@@ -232,6 +232,9 @@ router.get('/agency/pending-counts', authorize('agency', 'leader', 'partner'), p
 router.get('/supermarket/pending-counts', authorize('supermarket'), pendingController.supermarket);
 router.post('/agency/uniforms/:id/mark-paid', authorize('agency', 'partner'), requireAgencyFeature('financeiro'), onboardingController.markUniformPaid);
 router.post('/agency/uniforms/:id/ship', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.shipUniform);
+router.get('/agency/onboarding-reviews', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.listOnboardingReviews);
+router.get('/agency/freelancers/:id/contract', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.getContractForAgency);
+router.post('/agency/freelancers/:id/onboarding/approve', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.approveOnboarding);
 
 // ----- Vagas -----
 router.get('/jobs', jobController.index);

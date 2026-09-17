@@ -12,7 +12,6 @@ import { contractTemplateService } from './contractTemplateService'
 import { contractMergeService } from './contractMergeService'
 import { contractPdfService } from './contractPdfService'
 import { assertField, maskCpfForDisplay } from '../helpers/validation'
-import { onboardingBlockReason } from '../helpers/onboarding'
 
 const CONTRACTS_DIR = path.resolve(__dirname, '..', '..', 'public', 'uploads', 'contracts')
 
@@ -37,8 +36,10 @@ export const freelancerContractSignatureService = {
   async agreementFor(freelancer: FreelancerInstance) {
     const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
     const { template, renderedHtml, missing } = await renderActiveTemplate(freelancer)
-    const onboardingApproved = (await onboardingBlockReason(freelancer)) === null
     const contractComplete = !!contract?.completedAt
+    // A assinatura só libera depois que a agência revisou e confirmou os dados do onboarding
+    // (`freelancerContractService.approve`) — não basta o perfil estar completo.
+    const onboardingApproved = !!contract?.approvedAt
 
     const lastSigned = await FreelancerContractSignature.findOne({
       where: { freelancerId: freelancer.id, status: 'signed' },
@@ -50,8 +51,8 @@ export const freelancerContractSignatureService = {
 
     let blockedReason: string | null = null
     if (!template) blockedReason = 'A sua agência ainda não publicou um modelo de contrato.'
-    else if (!onboardingApproved) blockedReason = 'Conclua o onboarding e aguarde a aprovação da agência.'
     else if (!contractComplete) blockedReason = 'Preencha todos os dados do perfil contratual no onboarding.'
+    else if (!onboardingApproved) blockedReason = 'Aguarde a agência revisar e aprovar os dados do seu onboarding.'
     else if (missing.length) blockedReason = `Faltam dados no seu cadastro para preencher o contrato: ${missing.join(', ')}.`
 
     return {
@@ -75,11 +76,11 @@ export const freelancerContractSignatureService = {
     freelancer: FreelancerInstance,
     opts: { signerName?: string; signerCpf?: string; ip?: string; userAgent?: string; baseUrl?: string }
   ) {
-    if ((await onboardingBlockReason(freelancer)) !== null) {
-      throw new Error('O contrato só pode ser assinado após a aprovação do onboarding.')
-    }
     const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
     if (!contract?.completedAt) throw new Error('Preencha todos os dados do perfil contratual antes de assinar.')
+    if (!contract?.approvedAt) {
+      throw new Error('O contrato só pode ser assinado depois que a agência revisar e aprovar o seu onboarding.')
+    }
 
     const { template, renderedHtml, missing } = await renderActiveTemplate(freelancer)
     if (!template) throw new Error('A sua agência ainda não publicou um modelo de contrato.')

@@ -99,6 +99,10 @@ async function profileWithContext(user: { id: string; role: Role }) {
         registrationStatus: f.registrationStatus ?? 'approved',
         awaitingRegistration,
         blocked: awaitingRegistration || !approved,
+        // Revisão dos dados do onboarding pela agência — distinta de `approved` (que também
+        // exige uniforme/foto quando a agência liga essas obrigatoriedades). É o que libera a
+        // assinatura do contrato e a seção de dados no perfil pra quem tem permissão.
+        contractDataApproved: !!contract?.approvedAt,
         contractTemplateAvailable: !!contractTemplate,
         contractSigned: contractSigned > 0,
       },

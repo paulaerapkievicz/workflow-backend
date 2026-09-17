@@ -1,6 +1,7 @@
 import { FreelancerContract, REQUIRED_CONTRACT_FIELDS, FREELANCER_PIX_KEY_TYPES } from '../models/FreelancerContract'
-import { FreelancerInstance } from '../models/Freelancer'
+import { Freelancer, FreelancerInstance } from '../models/Freelancer'
 import { assertField, normalizeCpf, normalizeEmail, normalizePhone } from '../helpers/validation'
+import { contractTemplateService } from './contractTemplateService'
 
 /** Normalizadores dos campos tipados do perfil contratual (só rodam quando há valor). */
 const CONTRACT_FIELD_NORMALIZERS: Record<string, (v: unknown) => string> = {
@@ -101,10 +102,65 @@ export const freelancerContractService = {
     const completed = isComplete(merged)
     patch.completedAt = completed ? existing?.completedAt ?? new Date() : null
 
+    // Qualquer edição depois de aprovado invalida a aprovação — a agência revisou um dado que
+    // já não é mais o que está gravado, então precisa conferir de novo antes de liberar o contrato.
+    if (existing?.approvedAt) {
+      patch.approvedAt = null
+      patch.approvedBy = null
+    }
+
     if (existing) {
       await existing.update(patch)
       return existing.reload()
     }
     return FreelancerContract.create({ freelancerId: freelancer.id, ...patch } as any)
+  },
+
+  /**
+   * Colaboradores com o perfil contratual completo aguardando a agência revisar e confirmar
+   * os dados (CPF, RG, endereço, dados bancários, Pix…) — ver `approve`.
+   */
+  async listPendingApproval(agencyId: string) {
+    const freelancers = await Freelancer.findAll({
+      where: { agencyId },
+      attributes: ['id', 'name', 'email'],
+    })
+    if (!freelancers.length) return []
+    const contracts = await FreelancerContract.findAll({
+      where: { freelancerId: freelancers.map((f) => f.id) },
+    })
+    const byFreelancer = new Map(contracts.map((c) => [c.freelancerId, c]))
+    return freelancers
+      .map((f) => ({ freelancer: f, contract: byFreelancer.get(f.id) ?? null }))
+      .filter(({ contract }) => contract?.completedAt && !contract.approvedAt)
+      .map(({ freelancer, contract }) => ({
+        id: freelancer.id,
+        name: freelancer.name,
+        email: freelancer.email,
+        completedAt: contract!.completedAt,
+      }))
+  },
+
+  /** Dados completos do onboarding de um colaborador — só para a agência dele. */
+  async getForAgency(freelancerId: string, agencyId: string) {
+    const freelancer = await Freelancer.findOne({ where: { id: freelancerId, agencyId } })
+    if (!freelancer) throw new Error('Colaborador não encontrado.')
+    return FreelancerContract.findOne({ where: { freelancerId } })
+  },
+
+  /**
+   * A agência confere os dados do onboarding e confirma — libera a seção no perfil do
+   * colaborador e a etapa de assinatura do contrato. Exige o perfil completo e um modelo de
+   * contrato ativo (é o modelo que vai ser enviado pro colaborador assinar).
+   */
+  async approve(freelancerId: string, agencyId: string, approvedByUserId: string) {
+    const freelancer = await Freelancer.findOne({ where: { id: freelancerId, agencyId } })
+    if (!freelancer) throw new Error('Colaborador não encontrado.')
+    const contract = await FreelancerContract.findOne({ where: { freelancerId } })
+    if (!contract?.completedAt) throw new Error('O perfil contratual do colaborador ainda não está completo.')
+    const template = await contractTemplateService.activeForAgency(agencyId)
+    if (!template) throw new Error('Cadastre um modelo de contrato ativo antes de aprovar o onboarding.')
+    await contract.update({ approvedAt: new Date(), approvedBy: approvedByUserId })
+    return contract.reload()
   },
 }

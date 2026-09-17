@@ -110,6 +110,39 @@ export const onboardingController = {
     }
   },
 
+  // GET /agency/onboarding-reviews — colaboradores com o onboarding completo aguardando aprovação
+  async listOnboardingReviews(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await freelancerContractService.listPendingApproval(agencyId))
+    } catch (error) {
+      return fail(res, error, 500)
+    }
+  },
+
+  // GET /agency/freelancers/:id/contract — dados completos do onboarding (perfil contratual)
+  async getContractForAgency(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await freelancerContractService.getForAgency(req.params.id, agencyId))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
+  // POST /agency/freelancers/:id/onboarding/approve — confere os dados e libera o contrato
+  async approveOnboarding(req: AuthRequest, res: Response) {
+    try {
+      const agencyId = await profileService.agencyIdForUser(req.user!)
+      if (!agencyId) return res.status(403).json({ message: 'Agência não encontrada.' })
+      return res.json(await freelancerContractService.approve(req.params.id, agencyId, req.user!.id))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // POST /payments/mercadopago/webhook  (público)
   async mercadoPagoWebhook(req: AuthRequest, res: Response) {
     const body = req.body ?? {}
