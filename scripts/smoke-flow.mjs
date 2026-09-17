@@ -1076,9 +1076,9 @@ async function main() {
   const contractBody = {
     fullName: 'Joana Freelancer', cpf: '123.456.789-09', rg: '12.345.678-9', pisNis: '123.45678.90-1',
     birthDate: '1995-05-10', maritalStatus: 'solteira', nationality: 'brasileira', motherName: 'Maria',
-    addressCep: '01000-000', addressStreet: 'Rua A', addressNumber: '10', addressNeighborhood: 'Centro',
-    addressCity: 'São Paulo', addressState: 'SP', bankName: 'Banco X', bankBranch: '0001', bankAccount: '12345-6',
-    pixKey: 'free1@email.com', pixKeyType: 'email',
+    ctpsNumber: '1234567', addressCep: '01000-000', addressStreet: 'Rua A', addressNumber: '10',
+    addressNeighborhood: 'Centro', addressCity: 'São Paulo', addressState: 'SP', bankName: 'Banco X',
+    bankBranch: '0001', bankAccount: '12345-6', pixKey: 'free1@email.com', pixKeyType: 'email',
     emergencyContactName: 'José', emergencyContactPhone: '(11) 99999-0000', shirtSize: 'M',
   }
 

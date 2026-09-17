@@ -10,8 +10,8 @@ import { DataTypes, Model, Optional } from 'sequelize'
  */
 export const REQUIRED_CONTRACT_FIELDS = [
   'fullName', 'cpf', 'rg', 'pisNis', 'birthDate', 'maritalStatus', 'nationality',
-  'motherName', 'addressCep', 'addressStreet', 'addressNumber', 'addressNeighborhood',
-  'addressCity', 'addressState', 'pixKey', 'pixKeyType', 'shirtSize',
+  'motherName', 'ctpsNumber', 'addressCep', 'addressStreet', 'addressNumber', 'addressNeighborhood',
+  'addressCity', 'addressState', 'pixKey', 'pixKeyType',
 ] as const
 
 /**
