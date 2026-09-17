@@ -3,12 +3,15 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 
-/** Campos obrigatórios para considerar o perfil contratual "concluído". */
+/**
+ * Campos obrigatórios para considerar o perfil contratual "concluído". Só entram aqui dados
+ * de fato necessários para a contratação — dados de conta bancária e contato de emergência
+ * são informativos e ficam de fora (o colaborador pode completá-los depois).
+ */
 export const REQUIRED_CONTRACT_FIELDS = [
   'fullName', 'cpf', 'rg', 'pisNis', 'birthDate', 'maritalStatus', 'nationality',
   'motherName', 'addressCep', 'addressStreet', 'addressNumber', 'addressNeighborhood',
-  'addressCity', 'addressState', 'bankName', 'bankBranch', 'bankAccount',
-  'pixKey', 'pixKeyType', 'emergencyContactName', 'emergencyContactPhone', 'shirtSize',
+  'addressCity', 'addressState', 'pixKey', 'pixKeyType', 'shirtSize',
 ] as const
 
 /**
