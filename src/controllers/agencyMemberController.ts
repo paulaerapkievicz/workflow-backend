@@ -113,6 +113,15 @@ export const agencyMemberController = {
     }
   },
 
+  // PUT /leader/wallet/pix — o próprio líder informa/atualiza a chave Pix do cadastro
+  async updateOwnPix(req: AuthRequest, res: Response) {
+    try {
+      return res.json(await agencyMemberService.updateOwnPix(req.user!.id, req.body?.pixKey, req.body?.pixKeyType))
+    } catch (error) {
+      return fail(res, error)
+    }
+  },
+
   // GET /agency/member-credits?status=pending — créditos "por colaborador que trabalhou"
   async jobCredits(req: AuthRequest, res: Response) {
     try {

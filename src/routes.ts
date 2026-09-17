@@ -186,6 +186,7 @@ router.post('/agency/member-credits/:id/release', authorize('agency', 'partner')
 router.post('/agency/member-credits/:id/cancel', authorize('agency', 'partner'), requireAgencyFeature('equipe'), agencyMemberController.cancelJobCredit);
 // Carteira do próprio líder
 router.get('/leader/wallet', authorize('leader'), agencyMemberController.myWallet);
+router.put('/leader/wallet/pix', authorize('leader'), agencyMemberController.updateOwnPix);
 
 // ----- Sócios de agência (gestão só pelo dono — nunca por outro sócio) -----
 router.get('/agency/partners', authorize('agency'), agencyPartnerController.index);

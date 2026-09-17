@@ -1346,6 +1346,18 @@ async function main() {
 
   const leaderWallet = (await req('GET', '/leader/wallet', { token: leaderT })).data
   ok(Number(leaderWallet.availableBalance) === payAmt && leaderWallet.payments.length === 1, 'carteira do líder mostra saldo e créditos', leaderWallet)
+
+  // Chave Pix cadastrada no perfil do líder (distinta da coletada a cada saque) — a agência pode
+  // informar/editar, e o próprio líder também (self-service).
+  const setLeaderPixByAgency = await req('PUT', `/agency/members/${leaderMember.id}`, { token: agencyT, body: { pixKey: 'lider-cadastro@email.com', pixKeyType: 'email' } })
+  ok(setLeaderPixByAgency.status === 200 && setLeaderPixByAgency.data.pixKey === 'lider-cadastro@email.com', 'agência cadastra a chave Pix do líder', setLeaderPixByAgency.data)
+  const leaderWalletWithPix = (await req('GET', '/leader/wallet', { token: leaderT })).data
+  ok(leaderWalletWithPix.pixKey === 'lider-cadastro@email.com' && leaderWalletWithPix.pixKeyType === 'email', 'líder vê a chave Pix cadastrada na própria carteira', leaderWalletWithPix)
+  const leaderPixBadType = await req('PUT', '/leader/wallet/pix', { token: leaderT, body: { pixKey: '123', pixKeyType: 'invalido' } })
+  ok(leaderPixBadType.status === 400, 'líder não consegue salvar tipo de chave Pix inválido', leaderPixBadType.data?.message)
+  const leaderPixSelf = await req('PUT', '/leader/wallet/pix', { token: leaderT, body: { pixKey: '11999998888', pixKeyType: 'telefone' } })
+  ok(leaderPixSelf.status === 200 && leaderPixSelf.data.pixKeyType === 'telefone', 'líder atualiza a própria chave Pix', leaderPixSelf.data)
+
   const wdNoPix = await req('POST', '/withdrawals', { token: leaderT, body: { amount: payAmt } })
   ok(wdNoPix.status === 400 && /pix/i.test(wdNoPix.data?.message || ''), 'saque sem chave Pix é recusado', wdNoPix.data?.message)
   const leaderWd = await req('POST', '/withdrawals', { token: leaderT, body: { amount: payAmt, pixKey: 'lider@pix.com', pixKeyType: 'email' } })

@@ -3,6 +3,7 @@
 import { sequelize } from '../database'
 import { DataTypes, Model, Optional } from 'sequelize'
 import { AgencyMemberPermissions, defaultAgencyMemberPermissions } from '../helpers/agencyMemberPermissions'
+import { PixKeyType, PIX_KEY_TYPES } from './Withdrawal'
 
 export const AGENCY_MEMBER_PAY_TYPES = ['hora', 'diaria', 'mensal', 'por_colaborador'] as const
 export type AgencyMemberPayType = (typeof AGENCY_MEMBER_PAY_TYPES)[number]
@@ -25,6 +26,9 @@ export interface AgencyMember {
   availableBalance: number
   /** Cargo configurável na equipe (`team_roles`, scope 'agency'). NULL = sem cargo. */
   teamRoleId?: string | null
+  /** Chave Pix informada no próprio cadastro (não é a mesma coleta feita na hora do saque). */
+  pixKey?: string | null
+  pixKeyType?: PixKeyType | null
   permissions: AgencyMemberPermissions
   createdAt: Date
   updatedAt: Date
@@ -39,6 +43,8 @@ export interface AgencyMemberCreationAttributes
     | 'payAmount'
     | 'availableBalance'
     | 'teamRoleId'
+    | 'pixKey'
+    | 'pixKeyType'
     | 'permissions'
     | 'createdAt'
     | 'updatedAt'
@@ -80,6 +86,12 @@ export const AgencyMember = sequelize.define<AgencyMemberInstance, AgencyMember>
       references: { model: 'team_roles', key: 'id' },
       onUpdate: 'CASCADE',
       onDelete: 'SET NULL',
+    },
+    pixKey: { type: DataTypes.STRING, allowNull: true },
+    pixKeyType: {
+      type: DataTypes.STRING,
+      allowNull: true,
+      validate: { isIn: [[...PIX_KEY_TYPES]] },
     },
     permissions: {
       type: DataTypes.JSONB,

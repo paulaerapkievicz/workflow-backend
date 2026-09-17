@@ -7,6 +7,7 @@ import { Branch } from '../models/Branch'
 import { Freelancer } from '../models/Freelancer'
 import { Supermarket } from '../models/Supermarket'
 import { AgencyMember, AGENCY_MEMBER_PAY_TYPES, AgencyMemberPayType } from '../models/AgencyMember'
+import { PIX_KEY_TYPES, PixKeyType } from '../models/Withdrawal'
 import { sanitizeAgencyMemberPermissions } from '../helpers/agencyMemberPermissions'
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer'
 import { AgencyMemberBranch } from '../models/AgencyMemberBranch'
@@ -27,6 +28,26 @@ function parsePay(payType: unknown, payAmount: unknown): { payType: AgencyMember
     throw new Error('Informe o valor de pagamento do líder (maior que zero).')
   }
   return { payType: payType as AgencyMemberPayType, payAmount: amount }
+}
+
+/**
+ * Chave Pix informada no cadastro do líder (guardada para consulta — distinta da chave
+ * pedida de novo a cada saque em `withdrawalService`). Sem restrição de posse: ao contrário
+ * do colaborador, o líder pode ser pago via CNPJ.
+ */
+function parsePix(pixKey: unknown, pixKeyType: unknown): { pixKey: string | null; pixKeyType: PixKeyType | null } {
+  const key = pixKey == null ? '' : String(pixKey).trim()
+  const type = pixKeyType == null ? '' : String(pixKeyType).trim()
+  if (!key && !type) return { pixKey: null, pixKeyType: null }
+  if (!type || !PIX_KEY_TYPES.includes(type as PixKeyType)) throw new Error('Selecione o tipo da chave Pix.')
+  if (!key) throw new Error('Informe a chave Pix.')
+
+  let normalized = key
+  if (type === 'cpf') normalized = assertField(key, 'A chave Pix (CPF)', 'cpf', { required: true })
+  else if (type === 'cnpj') normalized = assertField(key, 'A chave Pix (CNPJ)', 'cnpj', { required: true })
+  else if (type === 'email') normalized = assertField(key, 'A chave Pix (e-mail)', 'email', { required: true })
+  else if (type === 'telefone') normalized = assertField(key, 'A chave Pix (telefone)', 'phone', { required: true })
+  return { pixKey: normalized, pixKeyType: type as PixKeyType }
 }
 
 async function serialize(member: AgencyMember & { id: string }) {
@@ -60,6 +81,8 @@ async function serialize(member: AgencyMember & { id: string }) {
     availableBalance: Number(member.availableBalance ?? 0),
     teamRoleId: member.teamRoleId ?? null,
     teamRole: teamRoleService.serialize(teamRole),
+    pixKey: member.pixKey ?? null,
+    pixKeyType: member.pixKeyType ?? null,
     permissions: sanitizeAgencyMemberPermissions(member.permissions),
     scope: {
       freelancerIds: freelancers.map((f) => f.freelancerId),
@@ -143,6 +166,8 @@ export const agencyMemberService = {
       payType?: unknown
       payAmount?: unknown
       teamRoleId?: unknown
+      pixKey?: unknown
+      pixKeyType?: unknown
       freelancerIds?: string[]
       branchIds?: string[]
     }
@@ -155,6 +180,7 @@ export const agencyMemberService = {
     const email = assertField(data.email, 'O e-mail do líder', 'email', { required: true })
     const phone = assertField(data.phone, 'O telefone do líder', 'phone') || null
     const pay = parsePay(data.payType, data.payAmount)
+    const pix = parsePix(data.pixKey, data.pixKeyType)
     if (await emailAlreadyRegistered(email)) throw new Error('Este e-mail já está cadastrado.')
 
     const freelancerIds = data.freelancerIds ?? []
@@ -170,7 +196,10 @@ export const agencyMemberService = {
       )
       const teamRoleId = await teamRoleService.resolveId(data.teamRoleId, 'agency', agencyId, t)
       const created = await AgencyMember.create(
-        { agencyId, userId: user.id, active: true, payType: pay.payType, payAmount: pay.payAmount, teamRoleId },
+        {
+          agencyId, userId: user.id, active: true, payType: pay.payType, payAmount: pay.payAmount, teamRoleId,
+          pixKey: pix.pixKey, pixKeyType: pix.pixKeyType,
+        },
         { transaction: t }
       )
       await replaceScope(created.id, freelancerIds, branchIds, t)
@@ -187,6 +216,8 @@ export const agencyMemberService = {
       payAmount?: unknown
       active?: unknown
       teamRoleId?: unknown
+      pixKey?: unknown
+      pixKeyType?: unknown
       permissions?: unknown
     }
   ) {
@@ -202,11 +233,25 @@ export const agencyMemberService = {
     if (data.teamRoleId !== undefined) {
       patch.teamRoleId = await teamRoleService.resolveId(data.teamRoleId, 'agency', agencyId)
     }
+    if (data.pixKey !== undefined || data.pixKeyType !== undefined) {
+      const pix = parsePix(data.pixKey, data.pixKeyType)
+      patch.pixKey = pix.pixKey
+      patch.pixKeyType = pix.pixKeyType
+    }
     if (data.permissions !== undefined) {
       patch.permissions = sanitizeAgencyMemberPermissions(data.permissions)
     }
     await member.update(patch)
     return serialize(member)
+  },
+
+  /** O próprio líder informa/atualiza a chave Pix do seu cadastro. */
+  async updateOwnPix(userId: string, pixKey: unknown, pixKeyType: unknown) {
+    const member = await AgencyMember.findOne({ where: { userId } })
+    if (!member) throw new Error('Líder não encontrado.')
+    const pix = parsePix(pixKey, pixKeyType)
+    await member.update({ pixKey: pix.pixKey, pixKeyType: pix.pixKeyType })
+    return this.walletForUser(userId)
   },
 
   async setScope(id: string, agencyId: string, freelancerIds: string[], branchIds: string[]) {
@@ -278,6 +323,8 @@ export const agencyMemberService = {
       payType: member.payType ?? null,
       payAmount: member.payAmount != null ? Number(member.payAmount) : null,
       availableBalance: Number(member.availableBalance ?? 0),
+      pixKey: member.pixKey ?? null,
+      pixKeyType: member.pixKeyType ?? null,
       payments: payments.map((p) => ({
         id: p.id,
         amount: Number(p.amount),
