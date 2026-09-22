@@ -210,7 +210,7 @@ export const freelancerController = {
     try {
       const freelancer = await loadManageableFreelancer(req, res, req.params.id);
       if (!freelancer) return;
-      const updated = await freelancerService.updateFreelancer(req.params.id, req.body);
+      const updated = await freelancerService.updateFreelancer(req.params.id, req.body, req.user!.role);
       return res.json(updated);
     } catch (err) {
       return res.status(400).json({ message: err instanceof Error ? err.message : 'Erro ao atualizar freelancer.' });

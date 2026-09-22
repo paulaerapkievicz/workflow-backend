@@ -50,6 +50,10 @@ export interface Freelancer {
   blockedUntil?: Date | null
   ratingAvg?: number | null
   ratingCount: number
+  /** Override pessoal de visibilidade do menu Carteira. NULL = herda o padrão da agência. */
+  walletVisibleOverride?: boolean | null
+  /** Override pessoal de visibilidade do menu Relatório. NULL = herda o padrão da agência. */
+  reportVisibleOverride?: boolean | null
   createdAt: Date
   updatedAt: Date
 }
@@ -80,6 +84,8 @@ export interface FreelancerCreationAttributes
     | 'blockedUntil'
     | 'ratingAvg'
     | 'ratingCount'
+    | 'walletVisibleOverride'
+    | 'reportVisibleOverride'
     | 'createdAt'
     | 'updatedAt'
   > {}
@@ -209,6 +215,14 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
     type: DataTypes.INTEGER,
     allowNull: false,
     defaultValue: 0
+  },
+  walletVisibleOverride: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true
+  },
+  reportVisibleOverride: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true
   },
   createdAt: {
     allowNull: false,

@@ -219,6 +219,8 @@ export const agencyService = {
       allowSelfRegistration: a.allowSelfRegistration,
       appPaymentEnabledForSupermarkets: a.appPaymentEnabledForSupermarkets,
       appPaymentEnabledForFreelancers: a.appPaymentEnabledForFreelancers,
+      walletVisibleToFreelancers: a.walletVisibleToFreelancers,
+      reportVisibleToFreelancers: a.reportVisibleToFreelancers,
       loginEmailPolicy: a.loginEmailPolicy,
     }
   },
@@ -255,6 +257,8 @@ export const agencyService = {
       allowSelfRegistration: boolean
       appPaymentEnabledForSupermarkets: boolean
       appPaymentEnabledForFreelancers: boolean
+      walletVisibleToFreelancers: boolean
+      reportVisibleToFreelancers: boolean
       loginEmailPolicy: string
     }>
   ) {
@@ -363,6 +367,12 @@ export const agencyService = {
     }
     if (data.appPaymentEnabledForFreelancers != null) {
       patch.appPaymentEnabledForFreelancers = data.appPaymentEnabledForFreelancers === true
+    }
+    if (data.walletVisibleToFreelancers != null) {
+      patch.walletVisibleToFreelancers = data.walletVisibleToFreelancers === true
+    }
+    if (data.reportVisibleToFreelancers != null) {
+      patch.reportVisibleToFreelancers = data.reportVisibleToFreelancers === true
     }
     if (data.loginEmailPolicy != null) {
       if (data.loginEmailPolicy !== 'informed' && data.loginEmailPolicy !== 'pattern') {

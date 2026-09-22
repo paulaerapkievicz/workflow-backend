@@ -34,7 +34,7 @@ export const freelancerService = {
     return await Freelancer.findAll({ where });
   },
 
-  async updateFreelancer(id: string, data: any) {
+  async updateFreelancer(id: string, data: any, actorRole?: string) {
     const freelancer = await Freelancer.findByPk(id);
     if (!freelancer) return null;
 
@@ -46,6 +46,13 @@ export const freelancerService = {
     if (data.email !== undefined) patch.email = assertField(data.email, 'O e-mail', 'email', { required: true });
     if (data.phone !== undefined) patch.phone = assertField(data.phone, 'O telefone', 'phone') || null;
     if (data.document !== undefined) patch.document = assertField(data.document, 'O CPF', 'cpf') || null;
+
+    // Visibilidade de Carteira/Relatório: só agência/sócio/admin decide — nunca o próprio colaborador.
+    if (actorRole && ['agency', 'partner', 'admin'].includes(actorRole)) {
+      if (data.walletVisibleOverride !== undefined) patch.walletVisibleOverride = data.walletVisibleOverride;
+      if (data.reportVisibleOverride !== undefined) patch.reportVisibleOverride = data.reportVisibleOverride;
+    }
+
     return await freelancer.update(patch);
   },
 
