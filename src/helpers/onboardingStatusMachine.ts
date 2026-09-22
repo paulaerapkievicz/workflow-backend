@@ -11,7 +11,7 @@ export type { OnboardingStatus }
 
 export const ONBOARDING_PHASE_MESSAGES: Record<Exclude<OnboardingStatus, 'active'>, string> = {
   draft: 'Preencha seus dados e envie os documentos para iniciar o cadastro.',
-  pending_docs_review: 'Cadastro em análise.',
+  pending_docs_review: 'Cadastro enviado com sucesso! Está em análise pela agência.',
   pending_aso_upload: 'Documentos aprovados — aguardando o exame admissional (ASO).',
   pending_contract_generation: 'Aguardando a liberação do contrato pela agência.',
   pending_user_signature: 'Contrato liberado — assine para continuar.',

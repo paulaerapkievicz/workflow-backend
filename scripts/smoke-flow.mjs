@@ -1133,8 +1133,8 @@ async function main() {
   ok(resubmitBlocked.status === 400, 'não é possível reenviar o pré-cadastro já em análise', resubmitBlocked.data?.message)
 
   const meDocsReview = (await req('GET', '/auth/me', { token: novoT })).data
-  ok(meDocsReview.profile?.onboarding?.phaseMessage === 'Cadastro em análise.',
-    'colaborador vê "Cadastro em análise" enquanto a agência revisa', meDocsReview.profile?.onboarding)
+  ok(/cadastro enviado com sucesso/i.test(meDocsReview.profile?.onboarding?.phaseMessage || ''),
+    'colaborador vê a confirmação de envio enquanto a agência revisa', meDocsReview.profile?.onboarding)
 
   const rejectNoReason = await req('POST', `/agency/freelancers/${novoId}/onboarding/reject-documents`, { token: agencyT, body: {} })
   ok(rejectNoReason.status === 400, 'recusa de documentos exige motivo', rejectNoReason.data?.message)

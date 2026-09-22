@@ -82,6 +82,7 @@ async function profileWithContext(user: { id: string; role: Role }) {
         awaitingRegistration,
         requireUniformPurchase,
         requirePhotoApproval,
+        showFullProfile: !!agency?.showOnboardingDataToFreelancer,
         uniformStatus: uniform?.status ?? null,
         photoStatus: f.profilePhotoStatus ?? 'none',
         photoRejectionReason: f.profilePhotoRejectionReason ?? null,

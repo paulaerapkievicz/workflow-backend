@@ -214,6 +214,7 @@ export const agencyService = {
       onboardingRequired: a.onboardingRequired,
       requireUniformPurchase: a.requireUniformPurchase,
       requirePhotoApproval: a.requirePhotoApproval,
+      showOnboardingDataToFreelancer: a.showOnboardingDataToFreelancer,
       uniformPrice: Number(a.uniformPrice),
       allowSelfRegistration: a.allowSelfRegistration,
       appPaymentEnabledForSupermarkets: a.appPaymentEnabledForSupermarkets,
@@ -249,6 +250,7 @@ export const agencyService = {
       onboardingRequired: boolean
       requireUniformPurchase: boolean
       requirePhotoApproval: boolean
+      showOnboardingDataToFreelancer: boolean
       uniformPrice: number
       allowSelfRegistration: boolean
       appPaymentEnabledForSupermarkets: boolean
@@ -347,6 +349,9 @@ export const agencyService = {
     if (data.onboardingRequired != null) patch.onboardingRequired = data.onboardingRequired === true
     if (data.requireUniformPurchase != null) patch.requireUniformPurchase = data.requireUniformPurchase === true
     if (data.requirePhotoApproval != null) patch.requirePhotoApproval = data.requirePhotoApproval === true
+    if (data.showOnboardingDataToFreelancer != null) {
+      patch.showOnboardingDataToFreelancer = data.showOnboardingDataToFreelancer === true
+    }
     if (data.allowSelfRegistration != null) patch.allowSelfRegistration = data.allowSelfRegistration === true
     if (data.uniformPrice != null) {
       const n = Number(data.uniformPrice)

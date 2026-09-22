@@ -55,6 +55,9 @@ export interface Agency {
   requireUniformPurchase: boolean
   /** Exige aprovação da agência para a foto de perfil enviada no onboarding; sem isso, a foto enviada já vale direto. */
   requirePhotoApproval: boolean
+  /** Mostra os dados do pré-cadastro (CPF, RG, endereço…) e o contrato assinado no perfil do
+   *  colaborador, em modo consulta. Desligado (padrão), o perfil só traz foto/nome/e-mail/telefone/Pix. */
+  showOnboardingDataToFreelancer: boolean
   uniformPrice: number
   allowSelfRegistration: boolean
   /** Liga/desliga o pagamento da fatura mensal pelo app pros mercados-clientes (chave-mestra; override por cliente em Supermarket.appPaymentEnabled). */
@@ -109,6 +112,7 @@ export interface AgencyCreationAttributes
     | 'onboardingRequired'
     | 'requireUniformPurchase'
     | 'requirePhotoApproval'
+    | 'showOnboardingDataToFreelancer'
     | 'uniformPrice'
     | 'allowSelfRegistration'
     | 'appPaymentEnabledForSupermarkets'
@@ -300,6 +304,11 @@ export const Agency = sequelize.define<AgencyInstance, Agency>('Agency', {
     defaultValue: false
   },
   requirePhotoApproval: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  showOnboardingDataToFreelancer: {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false
