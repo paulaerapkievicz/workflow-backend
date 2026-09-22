@@ -75,7 +75,10 @@ export const pendingController = {
           uniformsToShip: 0,
           photosToReview: 0,
           contractsPending: 0,
-          onboardingReviewsToApprove: 0,
+          onboardingDocsToReview: 0,
+          onboardingAsoToUpload: 0,
+          onboardingContractToRelease: 0,
+          onboardingActivationsToConfirm: 0,
           registrationsToApprove,
           branchesToApprove,
           memberCreditsToReview,
@@ -86,17 +89,31 @@ export const pendingController = {
         })
       }
 
-      const [uniformsToShip, photosToReview, contractsDone, onboardingReviewsToApprove] = await Promise.all([
+      const [
+        uniformsToShip,
+        photosToReview,
+        contractsDone,
+        onboardingDocsToReview,
+        onboardingAsoToUpload,
+        onboardingContractToRelease,
+        onboardingActivationsToConfirm,
+      ] = await Promise.all([
         UniformOrder.count({ where: { freelancerId: ids, status: 'paid' } }),
         Freelancer.count({ where: { id: ids, profilePhotoStatus: 'pending' } }),
         FreelancerContract.count({ where: { freelancerId: ids, completedAt: { [Op.ne]: null } } }),
-        FreelancerContract.count({ where: { freelancerId: ids, completedAt: { [Op.ne]: null }, approvedAt: null } }),
+        Freelancer.count({ where: { id: ids, onboardingStatus: 'pending_docs_review' } }),
+        Freelancer.count({ where: { id: ids, onboardingStatus: 'pending_aso_upload' } }),
+        Freelancer.count({ where: { id: ids, onboardingStatus: 'pending_contract_generation' } }),
+        Freelancer.count({ where: { id: ids, onboardingStatus: 'pending_final_activation' } }),
       ])
       return res.json({
         uniformsToShip,
         photosToReview,
         contractsPending: Math.max(0, ids.length - contractsDone),
-        onboardingReviewsToApprove,
+        onboardingDocsToReview,
+        onboardingAsoToUpload,
+        onboardingContractToRelease,
+        onboardingActivationsToConfirm,
         registrationsToApprove,
         branchesToApprove,
         memberCreditsToReview,

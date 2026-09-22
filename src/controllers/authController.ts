@@ -11,10 +11,7 @@ import { AgencyMember } from '../models/AgencyMember'
 import { AgencyPartner } from '../models/AgencyPartner'
 import { defaultPartnerPermissions, sanitizePartnerPermissions } from '../helpers/agencyPartnerPermissions'
 import { sanitizeAgencyMemberPermissions } from '../helpers/agencyMemberPermissions'
-import { FreelancerContract } from '../models/FreelancerContract'
 import { UniformOrder } from '../models/UniformOrder'
-import { ContractTemplate } from '../models/ContractTemplate'
-import { FreelancerContractSignature } from '../models/FreelancerContractSignature'
 import { jwtService } from '../services/jwtService'
 import { profileService } from '../services/profileService'
 import { inviteService } from '../services/inviteService'
@@ -22,7 +19,7 @@ import { teamRoleService } from '../services/teamRoleService'
 import { AuthRequest, Role } from '../middlewares/auth'
 import { assertField } from '../helpers/validation'
 import { resolveLoginEmail, emailAlreadyRegistered } from '../helpers/loginCredentials'
-import { onboardingBlockReason } from '../helpers/onboarding'
+import { ONBOARDING_PHASE_MESSAGES } from '../helpers/onboardingStatusMachine'
 
 /** Serializa o perfil e anexa contexto extra por papel (permissões do supermercado, onboarding do colaborador). */
 async function profileWithContext(user: { id: string; role: Role }) {
@@ -65,46 +62,33 @@ async function profileWithContext(user: { id: string; role: Role }) {
   if (user.role === 'freelancer') {
     const f = profile as any
     const agency = f.agencyId ? await Agency.findByPk(f.agencyId) : null
-    const contract = await FreelancerContract.findOne({ where: { freelancerId: f.id } })
     const requireUniformPurchase = !!agency?.requireUniformPurchase
     const requirePhotoApproval = !!agency?.requirePhotoApproval
     // A seção de uniforme só existe (e só é buscada) quando a agência exige a compra.
     const uniform = requireUniformPurchase
       ? await UniformOrder.findOne({ where: { freelancerId: f.id }, order: [['createdAt', 'DESC']] })
       : null
-    const required = !!agency?.onboardingRequired
-    const contractComplete = !!contract?.completedAt
-    const blockReason = await onboardingBlockReason(f)
-    const approved = blockReason === null
-    // Autocadastro aguardando a agência aprovar: bloqueia tudo até lá.
+    // Autocadastro aguardando a agência aprovar: bloqueia tudo até lá, antes mesmo do funil de onboarding.
     const awaitingRegistration = f.registrationStatus === 'pending'
-    const contractTemplate = f.agencyId
-      ? await ContractTemplate.findOne({ where: { agencyId: f.agencyId, active: true }, attributes: ['id'] })
-      : null
-    const contractSigned = await FreelancerContractSignature.count({
-      where: { freelancerId: f.id, status: 'signed' },
-    })
+    const status = f.onboardingStatus as keyof typeof ONBOARDING_PHASE_MESSAGES | 'active'
     return {
       ...f.toJSON(),
       onboarding: {
-        required,
-        contractComplete,
+        status,
+        statusReason: f.onboardingStatusReason ?? null,
+        phaseMessage: status === 'active' ? null : ONBOARDING_PHASE_MESSAGES[status],
+        blocked: awaitingRegistration || status !== 'active',
+        registrationStatus: f.registrationStatus ?? 'approved',
+        awaitingRegistration,
         requireUniformPurchase,
         requirePhotoApproval,
         uniformStatus: uniform?.status ?? null,
         photoStatus: f.profilePhotoStatus ?? 'none',
         photoRejectionReason: f.profilePhotoRejectionReason ?? null,
-        approved,
-        blockReason,
-        registrationStatus: f.registrationStatus ?? 'approved',
-        awaitingRegistration,
-        blocked: awaitingRegistration || !approved,
-        // Revisão dos dados do onboarding pela agência — distinta de `approved` (que também
-        // exige uniforme/foto quando a agência liga essas obrigatoriedades). É o que libera a
-        // assinatura do contrato e a seção de dados no perfil pra quem tem permissão.
-        contractDataApproved: !!contract?.approvedAt,
-        contractTemplateAvailable: !!contractTemplate,
-        contractSigned: contractSigned > 0,
+        documentIdPhotoUrl: f.documentIdPhotoUrl ?? null,
+        addressProofPhotoUrl: f.addressProofPhotoUrl ?? null,
+        documentSelfiePhotoUrl: f.documentSelfiePhotoUrl ?? null,
+        asoDocumentUrl: f.asoDocumentUrl ?? null,
       },
     }
   }
@@ -243,9 +227,11 @@ export const authController = {
           await Commission.create({ agencyId: createdProfile.id, percentage: pct }, { transaction: t })
         } else if (role === 'freelancer') {
           let agencyId: string
+          let agency: import('../models/Agency').AgencyInstance | null
           if (invite) {
             // Convite direcionado: a agência já vetou esse colaborador ao gerar o link.
             agencyId = invite.agencyId
+            agency = await Agency.findByPk(agencyId, { transaction: t })
           } else {
             // Autocadastro aberto — só permitido se a agência escolhida abriu essa porta,
             // e fica pendente até a agência aprovar manualmente.
@@ -253,12 +239,14 @@ export const authController = {
             if (!agencyId) {
               throw new Error('Selecione a agência para se cadastrar.')
             }
-            const agency = await Agency.findByPk(agencyId, { transaction: t })
+            agency = await Agency.findByPk(agencyId, { transaction: t })
             if (!agency) throw new Error('Agência não encontrada.')
             if (!agency.allowSelfRegistration) {
               throw new Error('Esta agência não está aceitando novos cadastros. Peça um convite à agência.')
             }
           }
+          // Se a agência não exige onboarding, o colaborador já nasce ativo — pula o funil todo.
+          const onboardingStatus = agency?.onboardingRequired ? 'draft' : 'active'
           createdProfile = await Freelancer.create(
             {
               userId: user.id,
@@ -269,6 +257,8 @@ export const authController = {
               document: profile.document ?? undefined,
               skills: profile.skills ?? undefined,
               registrationStatus: invite ? 'approved' : 'pending',
+              onboardingStatus,
+              onboardingActivatedAt: onboardingStatus === 'active' ? new Date() : undefined,
             },
             { transaction: t }
           )

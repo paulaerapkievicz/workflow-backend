@@ -6,6 +6,7 @@ import { profileService } from '../services/profileService';
 import { sequelize } from '../database';
 import { User } from '../models/User';
 import { Freelancer } from '../models/Freelancer';
+import { Agency } from '../models/Agency';
 import { AgencyMemberFreelancer } from '../models/AgencyMemberFreelancer';
 import { AuthRequest } from '../middlewares/auth';
 import { inFreelancerScope } from '../helpers/agencyScope';
@@ -82,8 +83,20 @@ export const freelancerController = {
           { name, email: loginEmail, contactEmail: email, passwordHash, role: 'freelancer', phone: phone ?? null },
           { transaction: t }
         );
+        // Se a agência não exige onboarding, o colaborador já nasce ativo — pula o funil todo.
+        const agency = await Agency.findByPk(actor.agencyId, { transaction: t });
+        const onboardingStatus = agency?.onboardingRequired ? 'draft' : 'active';
         const created = await Freelancer.create(
-          { userId: user.id, agencyId: actor.agencyId, name, email, phone: phone ?? undefined, skills: skills ?? undefined },
+          {
+            userId: user.id,
+            agencyId: actor.agencyId,
+            name,
+            email,
+            phone: phone ?? undefined,
+            skills: skills ?? undefined,
+            onboardingStatus,
+            onboardingActivatedAt: onboardingStatus === 'active' ? new Date() : undefined,
+          },
           { transaction: t }
         );
         // Líder com escopo restrito: o colaborador que ele cadastra entra no escopo dele.

@@ -1065,107 +1065,185 @@ async function main() {
   ok(agencyReviewsFiltered.status === 200 && agencyReviewsFiltered.data.every((r) => r.jobId === settledJob.id),
     'GET /agency/reviews filtra por vaga', agencyReviewsFiltered.data?.length)
 
-  section('Onboarding do colaborador (perfil contratual + trava de trabalho)')
-  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: true, requireUniformPurchase: true, uniformPrice: 80 } })
-  const availLocked = (await req('GET', '/jobs/available', { token: freeT })).data
-  ok(Array.isArray(availLocked) && availLocked.length === 0, 'com onboarding ligado e sem contrato: nenhuma vaga', availLocked.length)
+  section('Onboarding do colaborador (funil único: pré-cadastro -> triagem -> ASO -> contrato -> assinatura -> ativação)')
+  await req('PUT', '/agency/settings', {
+    token: agencyT,
+    body: { onboardingRequired: true, requireUniformPurchase: true, requirePhotoApproval: true, uniformPrice: 80 },
+  })
+
+  // Colaboradores que já existiam (free1/free2) foram migrados direto pra 'active' e não passam
+  // pelo funil novo — só quem nasce depois disso entra em 'draft'.
+  const novoEmail = `colab-onboarding-${Date.now()}@email.com`
+  const novoCreate = await req('POST', '/agency/freelancers', {
+    token: agencyT, body: { name: 'Novo Colaborador', email: novoEmail, password: '123456' },
+  })
+  ok(novoCreate.status === 201 && novoCreate.data.onboardingStatus === 'draft',
+    'colaborador criado com a agência exigindo onboarding já nasce em draft', novoCreate.data)
+  const novoId = novoCreate.data.id
+  const novoT = await login(novoEmail)
+
+  const meNovoDraft = (await req('GET', '/auth/me', { token: novoT })).data
+  ok(meNovoDraft.profile?.onboarding?.status === 'draft' && meNovoDraft.profile?.onboarding?.blocked,
+    'colaborador em draft aparece bloqueado em /auth/me', meNovoDraft.profile?.onboarding)
+
+  const availDraft = (await req('GET', '/jobs/available', { token: novoT })).data
+  ok(Array.isArray(availDraft) && availDraft.length === 0, 'colaborador em draft não vê nenhuma vaga', availDraft.length)
   const openJob = (await req('GET', '/jobs', { token: agencyT })).data.find((j) => j.status === 'pending')
-  const accLocked = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
-  ok(accLocked.status === 400 && /perfil contratual/i.test(accLocked.data?.message || ''), 'aceite bloqueado sem perfil contratual', accLocked.data?.message)
+  const accDraft = await req('POST', `/jobs/${openJob.id}/accept`, { token: novoT })
+  ok(accDraft.status === 400 && /preencha seus dados/i.test(accDraft.data?.message || ''), 'aceite bloqueado em draft', accDraft.data?.message)
 
   const contractBody = {
-    fullName: 'Joana Freelancer', cpf: '123.456.789-09', rg: '12.345.678-9', pisNis: '123.45678.90-1',
-    birthDate: '1995-05-10', maritalStatus: 'solteira', nationality: 'brasileira', motherName: 'Maria',
+    fullName: 'Novo Colaborador', cpf: validCpf(), rg: '12.345.678-9', pisNis: '123.45678.90-1',
+    birthDate: '1995-05-10', maritalStatus: 'solteiro', nationality: 'brasileira', motherName: 'Maria',
     ctpsNumber: '1234567', addressCep: '01000-000', addressStreet: 'Rua A', addressNumber: '10',
     addressNeighborhood: 'Centro', addressCity: 'São Paulo', addressState: 'SP', bankName: 'Banco X',
-    bankBranch: '0001', bankAccount: '12345-6', pixKey: 'free1@email.com', pixKeyType: 'email',
+    bankBranch: '0001', bankAccount: '12345-6', pixKey: novoEmail, pixKeyType: 'email',
     emergencyContactName: 'José', emergencyContactPhone: '(11) 99999-0000', shirtSize: 'M',
   }
 
-  // Chave Pix precisa ser do próprio colaborador — nunca de terceiros.
-  const pixThirdParty = await req('PUT', '/freelancer/contract', { token: freeT, body: { ...contractBody, pixKey: 'outra-pessoa@email.com', pixKeyType: 'email' } })
-  ok(pixThirdParty.status === 400 && /própri|terceiro/i.test(pixThirdParty.data?.message || ''), 'chave Pix de terceiro (e-mail) é recusada', pixThirdParty.data?.message)
-  const pixBadType = await req('PUT', '/freelancer/contract', { token: freeT, body: { ...contractBody, pixKeyType: 'cnpj' } })
-  ok(pixBadType.status === 400, 'tipo de chave Pix inválido (cnpj) é recusado', pixBadType.data?.message)
-  const pixWrongCpf = await req('PUT', '/freelancer/contract', { token: freeT, body: { ...contractBody, pixKey: '987.654.321-00', pixKeyType: 'cpf' } })
-  ok(pixWrongCpf.status === 400 && /própri|terceiro/i.test(pixWrongCpf.data?.message || ''), 'chave Pix de terceiro (CPF diferente do cadastro) é recusada', pixWrongCpf.data?.message)
+  const submitDocs = async (token, fields, { withPhotos = true } = {}) => {
+    const fd = new FormData()
+    for (const [k, v] of Object.entries(fields)) fd.append(k, v)
+    if (withPhotos) {
+      fd.append('documentIdPhoto', new Blob(['id'], { type: 'image/jpeg' }), 'rg.jpg')
+      fd.append('addressProofPhoto', new Blob(['addr'], { type: 'image/jpeg' }), 'comprovante.jpg')
+      fd.append('documentSelfiePhoto', new Blob(['selfie'], { type: 'image/jpeg' }), 'selfie.jpg')
+    }
+    const res = await fetch(`${BASE}/freelancer/onboarding/documents`, {
+      method: 'PUT', headers: { Authorization: `Bearer ${token}` }, body: fd,
+    })
+    let data = null
+    try { data = await res.json() } catch { /* vazio */ }
+    return { status: res.status, data }
+  }
 
-  const ct = await req('PUT', '/freelancer/contract', { token: freeT, body: contractBody })
-  ok(ct.status === 200 && ct.data.completedAt, 'perfil contratual concluído (com chave Pix própria)', ct.data?.completedAt)
-  const accStillLocked = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
-  ok(accStillLocked.status === 400 && /uniforme/i.test(accStillLocked.data?.message || ''), 'ainda bloqueado até o uniforme ser recebido', accStillLocked.data?.message)
+  // Chave Pix precisa ser do próprio colaborador — nunca de terceiros (mesma regra de sempre).
+  const pixThirdParty = await submitDocs(novoT, { ...contractBody, pixKey: 'outra-pessoa@email.com', pixKeyType: 'email' }, { withPhotos: false })
+  ok(pixThirdParty.status === 400 && /própri|terceiro/i.test(pixThirdParty.data?.message || ''), 'chave Pix de terceiro é recusada no pré-cadastro', pixThirdParty.data?.message)
 
-  section('Compra do uniforme pelo app configurável + baixa manual')
-  const disableFreePay = await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForFreelancers: false } })
-  ok(disableFreePay.status === 200 && disableFreePay.data.appPaymentEnabledForFreelancers === false, 'agência desliga a compra de uniforme pelo app')
+  const semFotos = await submitDocs(novoT, contractBody, { withPhotos: false })
+  ok(semFotos.status === 400 && /foto|selfie|rg\/cnh|comprovante/i.test(semFotos.data?.message || ''),
+    'pré-cadastro sem as 3 fotos de documento é recusado', semFotos.data?.message)
 
-  const uniformNoGateway = await req('POST', '/freelancer/uniform', { token: freeT, body: { shirtSize: 'M' } })
-  ok(
-    uniformNoGateway.status === 201 && uniformNoGateway.data.status === 'pending_payment' && !uniformNoGateway.data.paymentUrl,
-    'pedido de uniforme registrado sem link de pagamento (pagamento pelo app desligado)',
-    uniformNoGateway.data
-  )
+  const docsOk = await submitDocs(novoT, contractBody)
+  ok(docsOk.status === 200 && docsOk.data.onboardingStatus === 'pending_docs_review',
+    'pré-cadastro completo (dados + fotos) avança pra triagem de documentos', docsOk.data)
 
-  const uniformMarkBlocked = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/mark-paid`, { token: freeT })
-  ok(uniformMarkBlocked.status === 403, 'colaborador não pode dar baixa manual no próprio uniforme', uniformMarkBlocked.status)
+  const resubmitBlocked = await submitDocs(novoT, contractBody)
+  ok(resubmitBlocked.status === 400, 'não é possível reenviar o pré-cadastro já em análise', resubmitBlocked.data?.message)
 
-  const uniformMarkPaid = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/mark-paid`, { token: agencyT })
-  ok(
-    uniformMarkPaid.status === 200 && uniformMarkPaid.data.status === 'paid' && uniformMarkPaid.data.paymentProvider === 'manual',
-    'agência dá baixa manual no uniforme',
-    uniformMarkPaid.data
-  )
-  const uniformMarkPaidTwice = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/mark-paid`, { token: agencyT })
-  ok(uniformMarkPaidTwice.status === 400, 'baixa manual recusada num uniforme que já não está aguardando pagamento', uniformMarkPaidTwice.status)
+  const meDocsReview = (await req('GET', '/auth/me', { token: novoT })).data
+  ok(meDocsReview.profile?.onboarding?.phaseMessage === 'Cadastro em análise.',
+    'colaborador vê "Cadastro em análise" enquanto a agência revisa', meDocsReview.profile?.onboarding)
 
-  // Segue o fluxo normal de envio/recebimento do uniforme, sem nenhuma mudança por causa da baixa manual.
-  const uniformShip = await req('POST', `/agency/uniforms/${uniformNoGateway.data.id}/ship`, { token: agencyT, body: { trackingCode: 'BR123' } })
-  ok(uniformShip.status === 200 && uniformShip.data.status === 'shipped', 'uniforme pago manualmente segue pro envio normalmente', uniformShip.data)
+  const rejectNoReason = await req('POST', `/agency/freelancers/${novoId}/onboarding/reject-documents`, { token: agencyT, body: {} })
+  ok(rejectNoReason.status === 400, 'recusa de documentos exige motivo', rejectNoReason.data?.message)
+  const rejectDocs = await req('POST', `/agency/freelancers/${novoId}/onboarding/reject-documents`, { token: agencyT, body: { reason: 'Foto do RG ilegível' } })
+  ok(rejectDocs.status === 200 && rejectDocs.data.onboardingStatus === 'draft' && rejectDocs.data.onboardingStatusReason === 'Foto do RG ilegível',
+    'agência recusa os documentos e devolve pro pré-cadastro com o motivo', rejectDocs.data)
 
-  await req('PUT', '/agency/settings', { token: agencyT, body: { appPaymentEnabledForFreelancers: true } })
+  const docsOk2 = await submitDocs(novoT, contractBody)
+  ok(docsOk2.status === 200 && docsOk2.data.onboardingStatus === 'pending_docs_review',
+    'colaborador reenvia o pré-cadastro depois da recusa', docsOk2.data)
 
-  const uniformReceived = await req('POST', `/freelancer/uniform/${uniformNoGateway.data.id}/received`, { token: freeT })
-  ok(uniformReceived.status === 200 && uniformReceived.data.status === 'delivered', 'colaborador confirma recebimento do uniforme', uniformReceived.data)
-  const availAfterUniform = (await req('GET', '/jobs/available', { token: freeT })).data
-  ok(availAfterUniform.length > 0, 'uniforme entregue: vagas voltam a aparecer (foto não é exigida)', availAfterUniform.length)
+  const asoBeforeApproval = await req('POST', `/agency/freelancers/${novoId}/onboarding/aso`, { token: agencyT })
+  ok(asoBeforeApproval.status !== 200, 'não dá pra anexar o ASO antes de aprovar os documentos', asoBeforeApproval.status)
 
-  section('Aprovação de foto configurável (independente do uniforme)')
-  await req('PUT', '/agency/settings', { token: agencyT, body: { requireUniformPurchase: false, requirePhotoApproval: true } })
-  const availNoPhoto = (await req('GET', '/jobs/available', { token: freeT })).data
-  ok(availNoPhoto.length === 0, 'com aprovação de foto ligada e sem foto: nenhuma vaga', availNoPhoto.length)
+  const approveDocs = await req('POST', `/agency/freelancers/${novoId}/onboarding/approve-documents`, { token: agencyT })
+  ok(approveDocs.status === 200 && approveDocs.data.onboardingStatus === 'pending_aso_upload',
+    'agência aprova os documentos ("Aprovar Documentos")', approveDocs.data)
+  const approveTwice = await req('POST', `/agency/freelancers/${novoId}/onboarding/approve-documents`, { token: agencyT })
+  ok(approveTwice.status === 400, 'não dá pra aprovar documentos duas vezes', approveTwice.status)
+
+  const asoFd = new FormData()
+  asoFd.append('file', new Blob(['%PDF-1.4 aso'], { type: 'application/pdf' }), 'aso.pdf')
+  const asoRes = await fetch(`${BASE}/agency/freelancers/${novoId}/onboarding/aso`, {
+    method: 'POST', headers: { Authorization: `Bearer ${agencyT}` }, body: asoFd,
+  })
+  const asoData = await asoRes.json()
+  ok(asoRes.status === 200 && asoData.onboardingStatus === 'pending_contract_generation' && !!asoData.asoDocumentUrl,
+    'agência anexa o PDF do ASO (exame admissional externo) e avança pra geração do contrato', asoData)
+
+  const releaseContractRes = await req('POST', `/agency/freelancers/${novoId}/onboarding/release-contract`, { token: agencyT })
+  ok(releaseContractRes.status === 200 && releaseContractRes.data.onboardingStatus === 'pending_user_signature',
+    'agência libera o contrato ("Liberar Contrato")', releaseContractRes.data)
+
+  section('Contrato eletrônico do colaborador')
+  const tpls = (await req('GET', '/agency/contract-templates', { token: agencyT })).data
+  ok(tpls.templates.some((t) => t.active) && tpls.tokens.length > 0, 'agência tem modelo de contrato ativo + campos de mesclagem')
+  const agreement = (await req('GET', '/freelancer/contract/agreement', { token: novoT })).data
+  ok(agreement.hasTemplate && agreement.canSign && agreement.missing.length === 0, 'colaborador na etapa de assinatura pode assinar', agreement.blockedReason)
+  const previewRes = await fetch(BASE + '/freelancer/contract/preview-pdf', { headers: { Authorization: `Bearer ${novoT}` } })
+  const previewBuf = Buffer.from(await previewRes.arrayBuffer())
+  ok(previewRes.status === 200 && previewBuf.slice(0, 4).toString() === '%PDF', 'colaborador baixa o rascunho do contrato em PDF antes de assinar', previewBuf.length)
+  const signRes = await req('POST', '/freelancer/contract/sign', { token: novoT, body: { accepted: true } })
+  ok(signRes.status === 201 && /^[0-9a-f]{64}$/.test(signRes.data.contentHash || ''), 'contrato assinado com hash SHA-256', signRes.data)
+  ok(!!signRes.data.ipAddress, 'assinatura registra o IP do signatário')
+  ok((await req('POST', '/freelancer/contract/sign', { token: novoT, body: { accepted: false } })).status === 400, 'assinatura sem marcar o aceite é recusada')
+  const agencySigs = (await req('GET', '/agency/contract-signatures', { token: agencyT })).data
+  ok(agencySigs.some((s) => s.id === signRes.data.id && s.freelancer), 'agência vê a assinatura do colaborador (com o nome dele)')
+  const verify = (await req('GET', `/contracts/verify/${signRes.data.id}`)).data
+  ok(verify.contentHash === signRes.data.contentHash && /\*\*\*/.test(verify.signerCpfMasked || ''), 'verificação pública confere o hash e mascara o CPF')
+  const docRes = await fetch(BASE + '/freelancer/contract/document', { headers: { Authorization: `Bearer ${novoT}` } })
+  const docBuf = Buffer.from(await docRes.arrayBuffer())
+  ok(docRes.status === 200 && docBuf.slice(0, 4).toString() === '%PDF' && docBuf.length > 1000, 'PDF do contrato assinado é gerado (> 1 KB)', docBuf.length)
+
+  const meAfterSign = (await req('GET', '/auth/me', { token: novoT })).data
+  ok(meAfterSign.profile?.onboarding?.status === 'pending_final_activation',
+    'assinar avança automaticamente pra ativação final', meAfterSign.profile?.onboarding)
+
+  section('Ativação final (uniforme e foto viram pré-condições checadas uma vez, não gates ao vivo)')
+  const activateNoUniform = await req('POST', `/agency/freelancers/${novoId}/onboarding/activate`, { token: agencyT })
+  ok(activateNoUniform.status === 400 && /uniforme/i.test(activateNoUniform.data?.message || ''),
+    'ativação recusada sem o uniforme entregue', activateNoUniform.data?.message)
+
+  const uniformOrder = await req('POST', '/freelancer/uniform', { token: novoT, body: { shirtSize: 'M' } })
+  ok(uniformOrder.status === 201, 'colaborador pede o uniforme', uniformOrder.data)
+  await req('POST', `/agency/uniforms/${uniformOrder.data.id}/mark-paid`, { token: agencyT })
+  await req('POST', `/agency/uniforms/${uniformOrder.data.id}/ship`, { token: agencyT, body: { trackingCode: 'BR999' } })
+  const uniformReceived = await req('POST', `/freelancer/uniform/${uniformOrder.data.id}/received`, { token: novoT })
+  ok(uniformReceived.status === 200 && uniformReceived.data.status === 'delivered', 'colaborador confirma o recebimento do uniforme', uniformReceived.data)
+
+  const activateNoPhoto = await req('POST', `/agency/freelancers/${novoId}/onboarding/activate`, { token: agencyT })
+  ok(activateNoPhoto.status === 400 && /foto/i.test(activateNoPhoto.data?.message || ''),
+    'ativação recusada sem a foto de perfil aprovada', activateNoPhoto.data?.message)
 
   const fdPhoto = new FormData()
   fdPhoto.append('photo', new Blob(['x'], { type: 'image/jpeg' }), 'foto.jpg')
-  const photoUpload = await fetch(`${BASE}/freelancer/profile-photo`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fdPhoto })
+  const photoUpload = await fetch(`${BASE}/freelancer/profile-photo`, { method: 'POST', headers: { Authorization: `Bearer ${novoT}` }, body: fdPhoto })
   const photoUploadData = await photoUpload.json()
-  ok(photoUpload.status === 200 && photoUploadData.profilePhotoStatus === 'pending', 'foto enviada fica pendente de revisão', photoUploadData)
-
-  const accBlockedByPhoto = await req('POST', `/jobs/${openJob.id}/accept`, { token: freeT })
-  ok(accBlockedByPhoto.status === 400 && /foto/i.test(accBlockedByPhoto.data?.message || ''), 'ainda bloqueado até a foto ser aprovada', accBlockedByPhoto.data?.message)
+  ok(photoUpload.status === 200 && photoUploadData.profilePhotoStatus === 'pending', 'foto de perfil enviada fica pendente de revisão', photoUploadData)
 
   const photoReviews = await req('GET', '/agency/photo-reviews', { token: agencyT })
-  ok(photoReviews.status === 200 && photoReviews.data.some((f) => f.id === freelancerId && f.profilePhotoStatus === 'pending'),
+  ok(photoReviews.status === 200 && photoReviews.data.some((f) => f.id === novoId && f.profilePhotoStatus === 'pending'),
     'agência vê a foto pendente na fila de revisão', photoReviews.data?.length)
 
-  const photoRejected = await req('POST', `/freelancers/${freelancerId}/photo-review`, { token: agencyT, body: { approved: false, reason: 'Foto cortada, envie outra' } })
+  const photoRejected = await req('POST', `/freelancers/${novoId}/photo-review`, { token: agencyT, body: { approved: false, reason: 'Foto cortada, envie outra' } })
   ok(photoRejected.status === 200 && photoRejected.data.profilePhotoStatus === 'rejected', 'agência recusa a foto com motivo', photoRejected.data)
 
-  const meAfterReject = (await req('GET', '/auth/me', { token: freeT })).data
-  ok(meAfterReject.profile?.onboarding?.photoRejectionReason === 'Foto cortada, envie outra',
-    'colaborador vê o motivo da recusa no onboarding', meAfterReject.profile?.onboarding)
+  const meAfterPhotoReject = (await req('GET', '/auth/me', { token: novoT })).data
+  ok(meAfterPhotoReject.profile?.onboarding?.photoRejectionReason === 'Foto cortada, envie outra',
+    'colaborador vê o motivo da recusa da foto', meAfterPhotoReject.profile?.onboarding)
 
   const fdPhoto2 = new FormData()
   fdPhoto2.append('photo', new Blob(['y'], { type: 'image/jpeg' }), 'foto2.jpg')
-  const photoReupload = await fetch(`${BASE}/freelancer/profile-photo`, { method: 'POST', headers: { Authorization: `Bearer ${freeT}` }, body: fdPhoto2 })
-  const photoReuploadData = await photoReupload.json()
-  ok(photoReupload.status === 200 && photoReuploadData.profilePhotoStatus === 'pending', 'reenvio da foto volta pra pendente', photoReuploadData)
-
-  const photoApproved = await req('POST', `/freelancers/${freelancerId}/photo-review`, { token: agencyT, body: { approved: true } })
+  await fetch(`${BASE}/freelancer/profile-photo`, { method: 'POST', headers: { Authorization: `Bearer ${novoT}` }, body: fdPhoto2 })
+  const photoApproved = await req('POST', `/freelancers/${novoId}/photo-review`, { token: agencyT, body: { approved: true } })
   ok(photoApproved.status === 200 && photoApproved.data.profilePhotoStatus === 'approved', 'agência aprova a foto', photoApproved.data)
 
-  const availOk = (await req('GET', '/jobs/available', { token: freeT })).data
-  ok(availOk.length > 0, 'foto aprovada: vagas voltam a aparecer', availOk.length)
-  await req('PUT', '/agency/settings', { token: agencyT, body: { onboardingRequired: false, requirePhotoApproval: false } })
+  const activateOk = await req('POST', `/agency/freelancers/${novoId}/onboarding/activate`, { token: agencyT })
+  ok(activateOk.status === 200 && activateOk.data.onboardingStatus === 'active' && !!activateOk.data.onboardingActivatedAt,
+    'agência ativa o colaborador ("Ativar Colaborador")', activateOk.data)
+
+  const meActive = (await req('GET', '/auth/me', { token: novoT })).data
+  ok(meActive.profile?.onboarding?.status === 'active' && !meActive.profile?.onboarding?.blocked,
+    'colaborador ativo não fica mais bloqueado', meActive.profile?.onboarding)
+  const availActive = (await req('GET', '/jobs/available', { token: novoT })).data
+  ok(Array.isArray(availActive), 'colaborador ativo já pode listar vagas disponíveis', availActive.length)
+
+  await req('PUT', '/agency/settings', {
+    token: agencyT, body: { onboardingRequired: false, requireUniformPurchase: false, requirePhotoApproval: false },
+  })
 
   section('Convites da agência (supermercado e freelancer)')
   const inviteMarketRes = await req('POST', '/agency/invites', { token: agencyT, body: { role: 'supermarket' } })
@@ -1599,54 +1677,6 @@ async function main() {
   await req('PUT', `/branches/${branchCentro.id}/profile`, { token: superT, body: { cnpj: '12345678000195' } })
   const brProfile2 = (await req('GET', `/branches/${branchCentro.id}/profile`, { token: superT })).data
   ok(brProfile2.profile.cnpj === '12345678000195' && !brProfile2.profile.inherited.includes('cnpj'), 'CNPJ próprio da filial deixa de ser herdado')
-
-  section('Aprovação do onboarding pela agência (dados do perfil contratual)')
-  const free2Tok = await login('free2@email.com')
-  const reviewsBefore = (await req('GET', '/agency/onboarding-reviews', { token: agencyT })).data
-  ok(reviewsBefore.some((r) => r.id === free2Id), 'colaborador com perfil completo aparece na fila de aprovação', reviewsBefore)
-  const contractForAgency = (await req('GET', `/agency/freelancers/${free2Id}/contract`, { token: agencyT })).data
-  ok(contractForAgency.pixKey === 'free2@email.com' && contractForAgency.cpf, 'agência vê os dados completos do onboarding no cadastro do colaborador', contractForAgency)
-  const contractForOther = await req('GET', `/agency/freelancers/${free2Id}/contract`, { token: otherAgencyT })
-  ok(contractForOther.status === 400, 'outra agência não acessa os dados do onboarding do colaborador', contractForOther.status)
-  const agreementBeforeApproval = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data
-  ok(!agreementBeforeApproval.canSign && /revisar|aprova/i.test(agreementBeforeApproval.blockedReason || ''), 'sem a agência aprovar o onboarding, ainda não pode assinar', agreementBeforeApproval.blockedReason)
-  const signBeforeApproval = await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: true } })
-  ok(signBeforeApproval.status === 400, 'assinatura recusada antes da aprovação do onboarding', signBeforeApproval.data?.message)
-  const approveOnboarding = await req('POST', `/agency/freelancers/${free2Id}/onboarding/approve`, { token: agencyT })
-  ok(approveOnboarding.status === 200 && !!approveOnboarding.data.approvedAt, 'agência confere os dados e aprova o onboarding', approveOnboarding.data)
-  const reviewsAfter = (await req('GET', '/agency/onboarding-reviews', { token: agencyT })).data
-  ok(!reviewsAfter.some((r) => r.id === free2Id), 'colaborador aprovado sai da fila de aprovação', reviewsAfter)
-  const editAfterApproval = await req('PUT', '/freelancer/contract', { token: free2Tok, body: { rgIssuer: 'SSP/RS 2' } })
-  ok(editAfterApproval.status === 200 && !editAfterApproval.data.approvedAt, 'editar o perfil depois de aprovado invalida a aprovação', editAfterApproval.data?.approvedAt)
-  const reviewsAfterEdit = (await req('GET', '/agency/onboarding-reviews', { token: agencyT })).data
-  ok(reviewsAfterEdit.some((r) => r.id === free2Id), 'colaborador volta pra fila de aprovação depois de editar', reviewsAfterEdit)
-  await req('POST', `/agency/freelancers/${free2Id}/onboarding/approve`, { token: agencyT })
-
-  section('Contrato eletrônico do colaborador')
-  const tpls = (await req('GET', '/agency/contract-templates', { token: agencyT })).data
-  ok(tpls.templates.some((t) => t.active) && tpls.tokens.length > 0, 'agência tem modelo de contrato ativo + campos de mesclagem')
-  const agreement = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data
-  ok(agreement.hasTemplate && agreement.canSign && agreement.missing.length === 0, 'colaborador com onboarding aprovado pode assinar', agreement.blockedReason)
-  const previewRes = await fetch(BASE + '/freelancer/contract/preview-pdf', { headers: { Authorization: `Bearer ${free2Tok}` } })
-  const previewBuf = Buffer.from(await previewRes.arrayBuffer())
-  ok(previewRes.status === 200 && previewBuf.slice(0, 4).toString() === '%PDF', 'colaborador baixa o rascunho do contrato em PDF antes de assinar', previewBuf.length)
-  const signRes = await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: true } })
-  ok(signRes.status === 201 && /^[0-9a-f]{64}$/.test(signRes.data.contentHash || ''), 'contrato assinado com hash SHA-256', signRes.data)
-  ok(!!signRes.data.ipAddress, 'assinatura registra o IP do signatário')
-  ok((await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: false } })).status === 400, 'assinatura sem marcar o aceite é recusada')
-  const agencySigs = (await req('GET', '/agency/contract-signatures', { token: agencyT })).data
-  ok(agencySigs.some((s) => s.id === signRes.data.id && s.freelancer), 'agência vê a assinatura do colaborador (com o nome dele)')
-  const verify = (await req('GET', `/contracts/verify/${signRes.data.id}`)).data
-  ok(verify.contentHash === signRes.data.contentHash && /\*\*\*/.test(verify.signerCpfMasked || ''), 'verificação pública confere o hash e mascara o CPF')
-  const docRes = await fetch(BASE + '/freelancer/contract/document', { headers: { Authorization: `Bearer ${free2Tok}` } })
-  const docBuf = Buffer.from(await docRes.arrayBuffer())
-  ok(docRes.status === 200 && docBuf.slice(0, 4).toString() === '%PDF' && docBuf.length > 1000, 'PDF do contrato assinado é gerado (> 1 KB)', docBuf.length)
-  const activeTpl = tpls.templates.find((t) => t.active)
-  await req('PUT', `/agency/contract-templates/${activeTpl.id}`, { token: agencyT, body: { bodyHtml: `${activeTpl.bodyHtml}<p>Clausula adicional {{dataAtual}}.</p>` } })
-  const agreement2 = (await req('GET', '/freelancer/contract/agreement', { token: free2Tok })).data
-  ok(agreement2.canSign && agreement2.supersededSignature, 'modelo alterado libera nova assinatura e marca a anterior como superada')
-  const sign2 = await req('POST', '/freelancer/contract/sign', { token: free2Tok, body: { accepted: true } })
-  ok(sign2.status === 201 && sign2.data.id !== signRes.data.id && sign2.data.contentHash !== signRes.data.contentHash, 'nova assinatura cria uma segunda linha (histórico preservado)')
 
   section('Alertas de ocorrência nas vagas (atraso, falta, vaga descoberta…)')
   const alertAdminT = await login('admin@email.com')

@@ -35,11 +35,10 @@ export const freelancerContractSignatureService = {
   /** Estado do contrato para a área do colaborador. */
   async agreementFor(freelancer: FreelancerInstance) {
     const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
+    // A assinatura só libera quando o funil de onboarding chega na fase de assinatura — a
+    // agência já aprovou os documentos, anexou o ASO e liberou o contrato antes disso.
+    const readyToSign = freelancer.onboardingStatus === 'pending_user_signature'
     const { template, renderedHtml, missing } = await renderActiveTemplate(freelancer)
-    const contractComplete = !!contract?.completedAt
-    // A assinatura só libera depois que a agência revisou e confirmou os dados do onboarding
-    // (`freelancerContractService.approve`) — não basta o perfil estar completo.
-    const onboardingApproved = !!contract?.approvedAt
 
     const lastSigned = await FreelancerContractSignature.findOne({
       where: { freelancerId: freelancer.id, status: 'signed' },
@@ -51,8 +50,7 @@ export const freelancerContractSignatureService = {
 
     let blockedReason: string | null = null
     if (!template) blockedReason = 'A sua agência ainda não publicou um modelo de contrato.'
-    else if (!contractComplete) blockedReason = 'Preencha todos os dados do perfil contratual no onboarding.'
-    else if (!onboardingApproved) blockedReason = 'Aguarde a agência revisar e aprovar os dados do seu onboarding.'
+    else if (!readyToSign) blockedReason = 'Aguarde a agência liberar essa etapa para assinar o contrato.'
     else if (missing.length) blockedReason = `Faltam dados no seu cadastro para preencher o contrato: ${missing.join(', ')}.`
 
     return {
@@ -60,13 +58,12 @@ export const freelancerContractSignatureService = {
       templateTitle: template?.title ?? null,
       renderedHtml,
       missing,
-      onboardingApproved,
-      contractComplete,
+      readyToSign,
       signerName: contract?.fullName || freelancer.name,
       signerCpf: contract?.cpf || null,
       signedCurrent,
       supersededSignature,
-      canSign: !!template && onboardingApproved && contractComplete && missing.length === 0 && !signedCurrent,
+      canSign: !!template && readyToSign && missing.length === 0 && !signedCurrent,
       blockedReason: signedCurrent ? null : blockedReason,
       signature: lastSigned ? this.serialize(lastSigned) : null,
     }
@@ -84,11 +81,11 @@ export const freelancerContractSignatureService = {
     freelancer: FreelancerInstance,
     opts: { signerName?: string; signerCpf?: string; ip?: string; userAgent?: string; baseUrl?: string }
   ) {
-    const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
-    if (!contract?.completedAt) throw new Error('Preencha todos os dados do perfil contratual antes de assinar.')
-    if (!contract?.approvedAt) {
-      throw new Error('O contrato só pode ser assinado depois que a agência revisar e aprovar o seu onboarding.')
+    if (freelancer.onboardingStatus !== 'pending_user_signature') {
+      throw new Error('O contrato só pode ser assinado depois que a agência liberar essa etapa.')
     }
+    const contract = await FreelancerContract.findOne({ where: { freelancerId: freelancer.id } })
+    if (!contract) throw new Error('Perfil contratual não encontrado.')
 
     const { template, renderedHtml, missing } = await renderActiveTemplate(freelancer)
     if (!template) throw new Error('A sua agência ainda não publicou um modelo de contrato.')

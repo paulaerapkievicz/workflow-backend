@@ -5,6 +5,7 @@ import {
   freelancerContractSignatureService,
   ACCEPTANCE_TEXT,
 } from '../services/freelancerContractSignatureService'
+import { freelancerOnboardingStatusService } from '../services/freelancerOnboardingStatusService'
 
 function fail(res: Response, err: unknown, code = 400) {
   return res.status(code).json({ message: err instanceof Error ? err.message : 'Erro inesperado.' })
@@ -42,6 +43,7 @@ export const contractSignatureController = {
         userAgent: req.headers['user-agent'],
         baseUrl: frontendBaseUrl(),
       })
+      await freelancerOnboardingStatusService.advanceAfterSignature(freelancer)
       return res.status(201).json(signature)
     } catch (error) {
       return fail(res, error)

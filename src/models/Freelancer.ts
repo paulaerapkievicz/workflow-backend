@@ -7,6 +7,22 @@ import { Agency } from './Agency'
 export const PROFILE_PHOTO_STATUSES = ['none', 'pending', 'approved', 'rejected'] as const
 export type ProfilePhotoStatus = (typeof PROFILE_PHOTO_STATUSES)[number]
 
+/**
+ * Pipeline único de onboarding, em ordem: pré-cadastro (dados + fotos de documento) -> triagem
+ * da agência -> exame admissional/ASO -> geração do contrato -> assinatura -> ativação final.
+ * Enquanto não chega em 'active', o colaborador fica preso ao Pré-App (ver RequireAuth no front).
+ */
+export const ONBOARDING_STATUSES = [
+  'draft',
+  'pending_docs_review',
+  'pending_aso_upload',
+  'pending_contract_generation',
+  'pending_user_signature',
+  'pending_final_activation',
+  'active',
+] as const
+export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number]
+
 export interface Freelancer {
   id: string
   agencyId: string | null
@@ -23,6 +39,13 @@ export interface Freelancer {
   profilePhotoReviewedAt?: Date | null
   skills?: string
   registrationStatus: 'pending' | 'approved' | 'rejected'
+  onboardingStatus: OnboardingStatus
+  onboardingStatusReason?: string | null
+  onboardingActivatedAt?: Date | null
+  documentIdPhotoUrl?: string | null
+  addressProofPhotoUrl?: string | null
+  documentSelfiePhotoUrl?: string | null
+  asoDocumentUrl?: string | null
   availableBalance: number
   blockedUntil?: Date | null
   ratingAvg?: number | null
@@ -46,6 +69,13 @@ export interface FreelancerCreationAttributes
     | 'profilePhotoReviewedAt'
     | 'skills'
     | 'registrationStatus'
+    | 'onboardingStatus'
+    | 'onboardingStatusReason'
+    | 'onboardingActivatedAt'
+    | 'documentIdPhotoUrl'
+    | 'addressProofPhotoUrl'
+    | 'documentSelfiePhotoUrl'
+    | 'asoDocumentUrl'
     | 'availableBalance'
     | 'blockedUntil'
     | 'ratingAvg'
@@ -131,6 +161,36 @@ export const Freelancer = sequelize.define<FreelancerInstance, Freelancer>('Free
     allowNull: false,
     defaultValue: 'approved',
     validate: { isIn: [['pending', 'approved', 'rejected']] }
+  },
+  onboardingStatus: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'draft',
+    validate: { isIn: [[...ONBOARDING_STATUSES]] }
+  },
+  onboardingStatusReason: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  onboardingActivatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  documentIdPhotoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  addressProofPhotoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  documentSelfiePhotoUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  asoDocumentUrl: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
   availableBalance: {
     type: DataTypes.DECIMAL(10, 2),

@@ -77,8 +77,10 @@ module.exports = {
     ]);
 
     // ---- Freelancers ----
-    const free1 = { id: uid(), agency_id: agency.id, user_id: free1User.id, name: free1User.name, email: free1User.email, phone: free1User.phone, skills: 'Reposição, Organização de gôndolas', available_balance: 0, rating_count: 0, ...ts };
-    const free2 = { id: uid(), agency_id: agency.id, user_id: free2User.id, name: free2User.name, email: free2User.email, phone: free2User.phone, skills: 'Caixa, Atendimento', available_balance: freelancerAmountPaid, rating_count: 0, ...ts };
+    // Colaboradores do seed já nascem 'active' — representam colaboradores pré-existentes,
+    // não passam pelo novo funil de onboarding (draft -> ... -> active).
+    const free1 = { id: uid(), agency_id: agency.id, user_id: free1User.id, name: free1User.name, email: free1User.email, phone: free1User.phone, skills: 'Reposição, Organização de gôndolas', available_balance: 0, rating_count: 0, onboarding_status: 'active', onboarding_activated_at: now(), ...ts };
+    const free2 = { id: uid(), agency_id: agency.id, user_id: free2User.id, name: free2User.name, email: free2User.email, phone: free2User.phone, skills: 'Caixa, Atendimento', available_balance: freelancerAmountPaid, rating_count: 0, onboarding_status: 'active', onboarding_activated_at: now(), ...ts };
     await queryInterface.bulkInsert('freelancers', [free1, free2]);
 
     // Funções que cada colaborador exerce + o valor/hora que ele recebe em cada uma.

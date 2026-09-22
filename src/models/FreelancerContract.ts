@@ -57,9 +57,6 @@ export interface FreelancerContract {
   emergencyContactPhone?: string | null
   shirtSize?: string | null
   completedAt?: Date | null
-  /** Preenchido quando a agência confere os dados e confirma — libera a seção no perfil e o contrato. */
-  approvedAt?: Date | null
-  approvedBy?: string | null
   createdAt: Date
   updatedAt: Date
 }
@@ -67,7 +64,7 @@ export interface FreelancerContract {
 export interface FreelancerContractCreationAttributes
   extends Optional<
     FreelancerContract,
-    'id' | 'completedAt' | 'approvedAt' | 'approvedBy' | 'createdAt' | 'updatedAt'
+    'id' | 'completedAt' | 'createdAt' | 'updatedAt'
   > {}
 
 export interface FreelancerContractInstance
@@ -123,14 +120,6 @@ export const FreelancerContract = sequelize.define<FreelancerContractInstance, F
     emergencyContactPhone: str(),
     shirtSize: str(),
     completedAt: { type: DataTypes.DATE, allowNull: true },
-    approvedAt: { type: DataTypes.DATE, allowNull: true },
-    approvedBy: {
-      type: DataTypes.UUID,
-      allowNull: true,
-      references: { model: 'users', key: 'id' },
-      onUpdate: 'CASCADE',
-      onDelete: 'SET NULL',
-    },
     createdAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
     updatedAt: { allowNull: false, type: DataTypes.DATE, defaultValue: DataTypes.NOW },
   },

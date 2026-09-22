@@ -218,9 +218,19 @@ router.get('/reports/freelancer', authorize('freelancer'), billingController.fre
 router.get('/reports/freelancer/pdf', authorize('freelancer'), billingController.freelancerReportPdf);
 router.get('/freelancer/outcomes', authorize('freelancer'), billingController.freelancerOutcomes);
 
-// ----- Onboarding do colaborador (perfil contratual + uniforme + foto) -----
+// ----- Onboarding do colaborador (funil único: pré-cadastro -> triagem -> ASO -> contrato -> assinatura -> ativação) -----
 router.get('/freelancer/contract', authorize('freelancer'), onboardingController.getContract);
 router.put('/freelancer/contract', authorize('freelancer'), onboardingController.saveContract);
+router.put(
+  '/freelancer/onboarding/documents',
+  authorize('freelancer'),
+  upload.fields([
+    { name: 'documentIdPhoto', maxCount: 1 },
+    { name: 'addressProofPhoto', maxCount: 1 },
+    { name: 'documentSelfiePhoto', maxCount: 1 },
+  ]),
+  onboardingController.submitOnboardingDocuments
+);
 router.get('/freelancer/uniform', authorize('freelancer'), onboardingController.getUniform);
 router.post('/freelancer/uniform', authorize('freelancer'), onboardingController.requestUniform);
 router.post('/freelancer/uniform/:id/sync', authorize('freelancer'), onboardingController.syncUniform);
@@ -233,9 +243,13 @@ router.get('/agency/pending-counts', authorize('agency', 'leader', 'partner'), p
 router.get('/supermarket/pending-counts', authorize('supermarket'), pendingController.supermarket);
 router.post('/agency/uniforms/:id/mark-paid', authorize('agency', 'partner'), requireAgencyFeature('financeiro'), onboardingController.markUniformPaid);
 router.post('/agency/uniforms/:id/ship', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.shipUniform);
-router.get('/agency/onboarding-reviews', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.listOnboardingReviews);
+router.get('/agency/onboarding-board', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.listOnboardingBoard);
 router.get('/agency/freelancers/:id/contract', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.getContractForAgency);
-router.post('/agency/freelancers/:id/onboarding/approve', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.approveOnboarding);
+router.post('/agency/freelancers/:id/onboarding/approve-documents', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.approveDocuments);
+router.post('/agency/freelancers/:id/onboarding/reject-documents', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.rejectDocuments);
+router.post('/agency/freelancers/:id/onboarding/aso', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), uploadDocument.single('file'), onboardingController.uploadAso);
+router.post('/agency/freelancers/:id/onboarding/release-contract', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.releaseContract);
+router.post('/agency/freelancers/:id/onboarding/activate', authorize('agency', 'partner'), requireAgencyFeature('colaboradores'), onboardingController.activate);
 
 // ----- Vagas -----
 router.get('/jobs', jobController.index);
